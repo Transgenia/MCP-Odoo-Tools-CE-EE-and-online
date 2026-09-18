@@ -7,10 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 ## [0.1.0] - 2026-09-17
 
 ### Added
-- Clean-room MIT MCP server (`server/`, package `odoo-mcp-tools`) with 18 generic
+- Clean-room MIT MCP server (`server/`, package `odoo-mcp-tools`) with 20 generic
   Odoo tools (search/read/search_read/search_count/create/write/unlink/execute,
   fields_get/list_models/module_info, export JSON/CSV, translate get/set, report,
   version, connections).
+- Studio-style low-code tools (CE & EE, no Studio app): `odoo_add_field` (manual
+  `x_` custom fields) and `odoo_add_automation` (safe_eval-validated automated
+  actions, version-introspective over `base.automation`). Skill
+  `odoo-studio-style` + doc `docs/odoo-studio-parity.md` explain the parity and
+  the safe_eval caveat (esp. Odoo online/SaaS).
 - Transport layer: XML-RPC, JSON-RPC, and an auto-fallback that handles the
   Odoo 17+ `/jsonrpc` API-key rejection transparently.
 - Cross-version compatibility layer (Odoo 10-19): version/edition/deployment
