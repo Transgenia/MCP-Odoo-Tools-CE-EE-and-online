@@ -57,7 +57,10 @@ find ~/.claude/plugins/cache -path "*/odoo-tools/context/odoo/context" -type d 2
 ## Cross-version notes
 
 - Use modern names (`account.move`, `account.move.line`, `stock.package`); the
-  compat layer maps them for the target version. See `/odoo-tools:odoo-crossversion`.
+  compat layer maps clean renames for the target version.
+  Accounting is a **merge, not a rename**: on v10-12 `account.move` stays
+  `account.move` (journal entries) and `account.invoice` stays `account.invoice`
+  (invoices) — never auto-rewritten. See `/odoo-tools:odoo-crossversion`.
 - Dropped fields come back as a `dropped_fields` warning, not a hard failure.
 - Enterprise-only models raise a clear error on Community instances.
 

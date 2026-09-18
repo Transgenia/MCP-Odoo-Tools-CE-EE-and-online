@@ -40,7 +40,14 @@ _FORBIDDEN_NODES = (ast.Import, ast.ImportFrom, ast.FunctionDef,
 
 
 def validate_safe_eval(code: str) -> None:
-    """Raise CompatError if ``code`` would be rejected by Odoo's safe_eval."""
+    """Raise CompatError if ``code`` would be rejected by Odoo's safe_eval.
+
+    Mirrors ``odoo/tools/safe_eval.py`` ``_BLACKLIST``: ``STORE_ATTR`` /
+    ``DELETE_ATTR`` are forbidden, so direct field assignment such as
+    ``rec.priority = '3'`` fails server-side. Callers must use
+    ``records.write({...})`` instead. Only a bare ``action = {...}`` Name
+    assignment is allowed as the return channel.
+    """
     try:
         tree = ast.parse(code, mode="exec")
     except SyntaxError as exc:
@@ -54,6 +61,22 @@ def validate_safe_eval(code: str) -> None:
                 f"server-action code uses '{type(node).__name__}', which Odoo safe_eval forbids",
                 remediation="no import/def/class/return/with; use only expressions and "
                 "assignments over env, model, record(s), datetime, etc.",
+            )
+        if isinstance(node, ast.Attribute) and isinstance(
+            node.ctx, (ast.Store, ast.AugStore, ast.Del)
+        ):
+            raise CompatError(
+                "server-action code assigns to an attribute; Odoo safe_eval "
+                "forbids STORE_ATTR/DELETE_ATTR",
+                remediation="use records.write({'field': value}) instead of "
+                "rec.field = value; only 'action = {...}' may be assigned",
+            )
+        if isinstance(node, ast.Subscript) and isinstance(
+            node.ctx, (ast.Store, ast.AugStore, ast.Del)
+        ):
+            raise CompatError(
+                "server-action code assigns to a subscript; Odoo safe_eval forbids it",
+                remediation="use records.write({'field': value}) instead of rec['field'] = value",
             )
         if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
             raise CompatError(
@@ -89,11 +112,15 @@ def _model_id(ctx: ToolContext, model: str) -> int:
             "label": {"type": "string", "description": "human label (field_description)"},
             "field_type": {"type": "string", "enum": list(_FIELD_TYPES)},
             "relation": {"type": "string", "description": "co-model for relational types"},
-            "relation_field": {"type": "string", "description": "inverse field for one2many"},
+            "relation_field": {"type": "string", "description": "inverse field for one2many (required when field_type is one2many)"},
+            "currency_field": {
+                "type": "string",
+                "description": "for monetary fields: many2one to res.currency holding the currency (defaults to currency_id)",
+            },
             "selection": {
                 "type": "array",
                 "description": "for selection fields: list of [value, label] pairs",
-                "items": {"type": "array"},
+                "items": {"type": "array", "minItems": 2, "maxItems": 2},
             },
             "required": {"type": "boolean", "default": False},
             "help": {"type": "string"},
@@ -111,8 +138,13 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
     if ftype not in _FIELD_TYPES:
         raise CompatError(f"unsupported field_type '{ftype}'",
                           remediation=f"one of: {', '.join(_FIELD_TYPES)}")
-    if ftype in _NEEDS_RELATION and not args.get("relation"):
+    if ftype in _NEEDS_RELATION and not (args.get("relation") or "").strip():
         raise CompatError(f"field_type '{ftype}' requires 'relation' (the co-model)")
+    if ftype == "one2many" and not (args.get("relation_field") or "").strip():
+        raise CompatError(
+            "field_type 'one2many' requires 'relation_field' (the inverse many2one on the co-model)",
+            remediation="pass the existing many2one field name on the relation model",
+        )
     if ftype == "selection" and not args.get("selection"):
         raise CompatError("selection fields require a 'selection' list of [value, label] pairs")
 
@@ -132,15 +164,48 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
     if args.get("help"):
         vals["help"] = args["help"]
     if args.get("relation"):
-        vals["relation"] = args["relation"]
+        relation_raw = (args["relation"] or "").strip()
+        relation = resolve_model(relation_raw, facts)
+        requires_edition(relation, facts)
+        vals["relation"] = relation
     if args.get("relation_field"):
         vals["relation_field"] = args["relation_field"]
+    if ftype == "monetary" and args.get("currency_field"):
+        vals["currency_field"] = args["currency_field"]
     if ftype == "selection":
         # Custom selection fields accept the char repr on all supported versions.
-        pairs = [(str(v), str(lbl)) for v, lbl in args["selection"]]
+        raw_pairs = args["selection"]
+        if not isinstance(raw_pairs, (list, tuple)) or not raw_pairs:
+            raise CompatError(
+                "selection fields require a non-empty 'selection' list of [value, label] pairs"
+            )
+        pairs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for item in raw_pairs:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                raise CompatError(
+                    f"selection entry {item!r} must be exactly [value, label]",
+                    remediation="pass selection as [[\"a\", \"A\"], [\"b\", \"B\"]]",
+                )
+            v, lbl = item
+            if not isinstance(v, str) or not isinstance(lbl, str) or not v or not lbl:
+                raise CompatError(
+                    f"selection entry {item!r} must be two non-empty strings",
+                    remediation="pass selection as [[\"a\", \"A\"], [\"b\", \"B\"]]",
+                )
+            if v in seen:
+                raise CompatError(f"duplicate selection value {v!r}")
+            seen.add(v)
+            pairs.append((v, lbl))
         vals["selection"] = repr(pairs)
 
     new_id = ctx.session.execute("ir.model.fields", "create", [vals])
+    try:
+        inv = getattr(ctx.session, "invalidate_fields", None)
+        if callable(inv):
+            inv(model)
+    except Exception:  # noqa: S110 — cache invalidation must not fail writes
+        pass
     return {"model": model, "field": name, "type": ftype, "field_id": new_id}
 
 
@@ -177,14 +242,17 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     code = args["code"]
     validate_safe_eval(code)  # refuse forbidden python up front (esp. on SaaS)
 
-    # Introspect base.automation so we adapt across versions (inline server-action
-    # delegation in v16+, vs a linked ir.actions.server in older lines).
+    # Odoo 10 uses the legacy automated-action model; 11+ uses base.automation.
+    automation_model = "base.action.rule" if facts.version == 10 else "base.automation"
+    # Introspect the automation model so we adapt across versions (inline
+    # server-action delegation in v16+, vs a linked ir.actions.server older).
     try:
-        fg = ctx.session.fields_get("base.automation")
+        fg = ctx.session.fields_get(automation_model)
     except OdooFault as exc:
+        module = "base_action_rule" if facts.version == 10 else "base_automation"
         raise CompatError(
-            "base.automation is not available on this instance",
-            remediation="ensure the 'base_automation' module is installed",
+            f"{automation_model} is not available on this instance",
+            remediation=f"ensure the '{module}' module is installed",
         ) from exc
 
     model_id = _model_id(ctx, model)
@@ -201,21 +269,33 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
         # v16+: base.automation delegates to ir.actions.server (inline code).
         base_vals["state"] = "code"
         base_vals["code"] = code
-        auto_id = ctx.session.execute("base.automation", "create", [base_vals])
+        auto_id = ctx.session.execute(automation_model, "create", [base_vals])
         return {"model": model, "automation_id": auto_id, "mode": "inline-server-action"}
 
-    # Older: create the server action, then link it.
-    server_vals = {"name": name, "model_id": model_id, "state": "code", "code": code}
-    server_id = ctx.session.execute("ir.actions.server", "create", [server_vals])
+    # Older: resolve the link field BEFORE creating anything so we never
+    # leave an orphan ir.actions.server behind.
     link_field = "action_server_id" if "action_server_id" in fg else (
         "action_server_ids" if "action_server_ids" in fg else None
     )
     if link_field is None:
         raise CompatError(
-            "could not find how base.automation links its server action on this version",
-            remediation="inspect base.automation with odoo_fields_get and create it manually",
+            f"could not find how {automation_model} links its server action on this version",
+            remediation="inspect the automation model with odoo_fields_get and create it manually",
         )
+    # Older: create the server action, then link it.
+    server_vals = {"name": name, "model_id": model_id, "state": "code", "code": code}
+    server_id = ctx.session.execute("ir.actions.server", "create", [server_vals])
     base_vals[link_field] = server_id if link_field.endswith("_id") else [(6, 0, [server_id])]
-    auto_id = ctx.session.execute("base.automation", "create", [base_vals])
+    try:
+        auto_id = ctx.session.execute(automation_model, "create", [base_vals])
+    except OdooFault as exc:
+        try:
+            ctx.session.execute("ir.actions.server", "unlink", [[server_id]])
+        except Exception:  # noqa: S110 — best-effort orphan cleanup
+            pass
+        raise CompatError(
+            f"automation creation failed; orphan server action {server_id} was removed",
+            remediation="check trigger, domain and permissions, then retry",
+        ) from exc
     return {"model": model, "automation_id": auto_id, "server_action_id": server_id,
             "mode": "linked-server-action"}

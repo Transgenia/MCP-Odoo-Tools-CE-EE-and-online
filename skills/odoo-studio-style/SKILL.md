@@ -65,11 +65,12 @@ odoo_add_automation {
   "model": "crm.lead",
   "name": "Tag hot leads",
   "trigger": "on_create_or_write",
-  "code": "for rec in records:\n    if rec.probability and rec.probability > 80:\n        rec.priority = '3'"
+  "code": "for rec in records:\n    if rec.probability and rec.probability > 80:\n        rec.write({'priority': '3'})"
 }
 ```
 safe_eval rules (enforced by the tool): **no** `import`/`def`/`class`/`return`/
-`with`, no underscore/dunder access. Available names include `env`, `model`,
+`with`, no underscore/dunder access, **no attribute or subscript assignment**
+(Odoo forbids `STORE_ATTR`: `rec.field = value` fails server-side). Available names include `env`, `model`,
 `record`/`records`, `datetime`, `dateutil`, `time`, `UserError`. To return an
 action, assign `action = {...}` as the last statement (never `return`).
 
