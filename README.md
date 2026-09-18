@@ -77,10 +77,17 @@ cache) → compat (resolve model/field/capability) → tools → MCP stdio.
 
 ## Scope
 
-This is the **public generic core**. Localization-, governance- and
-tenant-specific engines (e.g. CFDI/SAT, VoBo enforcement, S3 backup, invoice
-vision) are intentionally **out of scope** here and live in a separate private
-layer.
+This is the **public generic core**: it talks to Odoo and nothing else. Any
+localization-, governance- or tenant-specific engines (e.g. country e-invoicing,
+approval workflows, backups, document AI) are intentionally **out of scope** and
+are not part of this repository.
+
+## Commercial support
+
+Need help implementing this against your Odoo, or a custom AI/ERP integration?
+[Transgenia](https://transgenia.org) offers AI and Odoo implementation services.
+Contact **dev@transgenia.org**. (This is the only Transgenia-specific content in
+the repo; the plugin itself is vendor-neutral and works with any Odoo instance.)
 
 ## Development
 

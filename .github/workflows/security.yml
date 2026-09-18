@@ -1,0 +1,38 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
+  leak-guard:
+    name: no-internal-data guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Grep for internal/tenant markers (must be absent)
+        run: |
+          # This repo must contain NO internal client data, infra hosts, fiscal
+          # IDs or credentials. Only the vendor-neutral tooling + the public
+          # Transgenia author/brand and services offer are allowed.
+          patterns='CTR1708039T5|192\.227\.249\.105|74\.208\.106\.165|odoo\.transgenia\.org|transgenia\.odoo\.com|BEGIN [A-Z ]*PRIVATE KEY|ODOO_API_KEY=[A-Za-z0-9]{8,}|ODOO_PASSWORD=[^<>]'
+          if grep -RInE "$patterns" \
+              --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist \
+              --exclude-dir=.github .; then
+            echo "::error::Forbidden internal/secret marker found (see matches above)"
+            exit 1
+          fi
+          echo "OK: no internal-data markers found."
