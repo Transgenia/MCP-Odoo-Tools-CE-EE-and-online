@@ -1,0 +1,33 @@
+MCP-Odoo-Tools-CE-EE-and-online
+Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+
+This product is licensed under the MIT License (see LICENSE).
+
+------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------
+
+1) odoo-agent (MIT)
+   Author: Francisco Ramírez  <https://github.com/frangramirez/odoo-agent>
+   Reused components: the TypeScript XML-RPC CLI (`cli/`), the generic Odoo
+   agent definition (`agents/odoo.md`, adapted), the domain knowledge context
+   (`context/odoo/context/`), and the SessionStart hook pattern (adapted).
+   Used under the terms of the MIT License.
+
+------------------------------------------------------------------------
+Clean-room statement (MCP server)
+------------------------------------------------------------------------
+
+The Python MCP server under `server/` is an original, independent
+implementation. It does NOT copy or adapt source code from any AGPL-licensed
+Odoo MCP project (including rosenvladimirov/odoo-claude-mcp or forks thereof).
+It relies solely on Odoo's publicly documented XML-RPC / JSON-RPC interfaces and
+publicly known model/field naming, which are not themselves subject to copyright.
+Any behavioral similarity reflects those public interfaces, not shared code.
+
+------------------------------------------------------------------------
+Odoo
+------------------------------------------------------------------------
+
+"Odoo" is a trademark of Odoo S.A. This project is an independent,
+community-oriented tool and is not affiliated with or endorsed by Odoo S.A.

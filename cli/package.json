@@ -1,0 +1,24 @@
+{
+  "name": "odoo-cli",
+  "version": "2.0.0",
+  "description": "CLI tool para consultar Odoo via XML-RPC",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "odoo": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "xmlrpc": "^1.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/xmlrpc": "^1.3.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

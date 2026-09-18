@@ -1,0 +1,17 @@
+# Example: build the MCP server image locally.
+# The current build ships the stdio transport (attach with `docker run -i`).
+# A multi-tenant HTTP transport is on the roadmap; see docs/architecture.md.
+services:
+  odoo-mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: odoo-mcp-tools:local
+    environment:
+      ODOO_URL: ${ODOO_URL}
+      ODOO_DB: ${ODOO_DB}
+      ODOO_LOGIN: ${ODOO_LOGIN}
+      ODOO_API_KEY: ${ODOO_API_KEY}
+      ODOO_TRANSPORT_PREF: ${ODOO_TRANSPORT_PREF:-auto}
+    stdin_open: true
+    tty: false
