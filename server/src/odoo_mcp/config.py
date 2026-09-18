@@ -88,3 +88,9 @@ class Settings:
             "otel": bool(self.otel_endpoint),
             "has_secret": bool(self.secret),
         }
+
+    def __repr__(self) -> str:
+        # Security: never expose password/api_key via repr() or logging.
+        return f"Settings({self.redacted()!r})"
+
+    __str__ = __repr__
