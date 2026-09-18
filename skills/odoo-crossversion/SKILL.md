@@ -11,11 +11,19 @@ whatever exists on the target version.
 
 ## Model name resolution
 
+Accounting is a **merge, not a rename**: `account.move` (journal entries)
+exists on all versions 10-19. On v10-12 `account.invoice` is a **separate**
+invoice model folded into `account.move` at v13.
+
 | You pass | Odoo ≤ 12 | Odoo ≥ 13 |
 |----------|-----------|-----------|
-| `account.move` | → `account.invoice` | `account.move` |
-| `account.move.line` | → `account.invoice.line` | `account.move.line` |
+| `account.move` | `account.move` (journal entries — never rewritten) | `account.move` |
+| `account.move.line` | `account.move.line` (never rewritten) | `account.move.line` |
 | `account.invoice` (historical) | `account.invoice` | → `account.move` |
+| `account.invoice.line` (historical) | `account.invoice.line` | → `account.move.line` |
+
+> On v10-12 name the model you actually mean (`account.invoice` for invoices,
+> `account.move` for journal entries), especially for writes/deletes.
 
 | You pass | Odoo ≤ 18 | Odoo ≥ 19 |
 |----------|-----------|-----------|

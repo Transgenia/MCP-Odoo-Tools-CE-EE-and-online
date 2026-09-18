@@ -29,7 +29,9 @@ control. For that, build a module. This plugin is for the small stuff, fast.
 ## The safe_eval caveat (especially Odoo online/SaaS)
 
 Automations run server-side under Odoo's **safe_eval**: no `import`, `def`,
-`class`, `return`, `with`, or underscore/dunder access. On **Odoo online/SaaS**
+`class`, `return`, `with`, or underscore/dunder access — and **no attribute or
+subscript assignment** (`STORE_ATTR` is blacklisted: `rec.field = value` fails
+server-side; use `records.write({'field': value})`). On **Odoo online/SaaS**
 this is strictly enforced. `odoo_add_automation` validates your python **before**
 sending it and refuses forbidden constructs with a clear remediation, so you find
 out locally instead of via a server error.

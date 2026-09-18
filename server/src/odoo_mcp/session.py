@@ -96,3 +96,10 @@ class OdooSession:
     def name_get(self, model: str, ids: list[int]) -> list[list[Any]]:
         # name_get has no useful caching across arbitrary id sets; call directly
         return self.execute(model, "name_get", [ids])
+
+    def invalidate_fields(self, model: str) -> None:
+        """Drop cached ``fields_get`` entries for ``model`` (best-effort)."""
+        try:
+            self.schema.invalidate_fields(self.creds.fingerprint(), model)
+        except Exception:  # noqa: S110 — cache invalidation must not fail writes
+            pass

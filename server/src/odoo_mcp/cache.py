@@ -56,6 +56,14 @@ class _SimpleTTLCache:
         with self._lock:
             self._data.clear()
 
+    def delete(self, key: Hashable) -> None:
+        with self._lock:
+            self._data.pop(key, None)
+
+    def keys(self) -> list[Hashable]:
+        with self._lock:
+            return list(self._data.keys())
+
 
 class SchemaCache:
     """TTL cache keyed by ``(tenant, model, version, kind)``.
@@ -111,3 +119,60 @@ class SchemaCache:
         with self._lock:
             self.hits = 0
             self.misses = 0
+
+    def delete(self, key: Hashable) -> None:
+        try:
+            if self._is_cachetools:
+                self._impl.pop(key, None)
+            else:
+                self._impl.delete(key)
+        except Exception:  # noqa: S110 — best-effort cache eviction
+            pass
+
+    def invalidate(self, predicate: Callable[[Hashable], bool]) -> int:
+        """Delete every key matching ``predicate``. Returns count removed."""
+        if self._is_cachetools:
+            try:
+                keys = list(self._impl.keys())
+            except Exception:
+                return 0
+            removed = 0
+            for k in keys:
+                try:
+                    if predicate(k):
+                        self._impl.pop(k, None)
+                        removed += 1
+                except Exception:  # noqa: S112 — keep evicting other keys
+                    continue
+            return removed
+        try:
+            keys = self._impl.keys()
+        except Exception:
+            return 0
+        removed = 0
+        for k in keys:
+            try:
+                if predicate(k):
+                    self._impl.delete(k)
+                    removed += 1
+            except Exception:  # noqa: S112 — keep evicting other keys
+                continue
+        return removed
+
+    def invalidate_fields(self, fingerprint: str, model: str) -> int:
+        """Drop cached ``fields_get`` entries for ``model``/tenant.
+
+        Called after ``odoo_add_field`` so an immediate verification
+        ``odoo_fields_get`` does not serve the pre-create schema (TTL 300s).
+        """
+
+        def _match(key: Hashable) -> bool:
+            return (
+                isinstance(key, tuple)
+                and len(key) >= 3
+                and key[0] == fingerprint
+                and key[1] == "fields"
+                and key[2] == model
+            )
+
+        return self.invalidate(_match)

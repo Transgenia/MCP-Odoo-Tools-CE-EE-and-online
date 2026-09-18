@@ -65,6 +65,8 @@ node ~/.claude/tools/odoo-cli/dist/cli.js invoices '{"state":"posted","limit":20
 node ~/.claude/tools/odoo-cli/dist/cli.js fields '{"model":"res.partner"}'
 ```
 
-> Note: the CLI targets modern model names (e.g. `account.move`). For Odoo ≤ 12
-> instances prefer the MCP server, whose compat layer maps `account.move` back to
-> `account.invoice` automatically.
+> Note: the CLI targets modern model names (e.g. `account.move`) and has no
+> compat mapping. For Odoo ≤ 12 use the historical name you actually mean
+> (`account.invoice` for invoices, `account.move` for journal entries), or
+> prefer the MCP server. The MCP resolver never rewrites `account.move` →
+> `account.invoice` on older versions (merge, not a rename).
