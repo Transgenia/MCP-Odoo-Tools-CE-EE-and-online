@@ -1,0 +1,54 @@
+name: Odoo version matrix (live)
+
+# Opt-in: runs the live-marked tests against ephemeral Odoo containers.
+# Triggered manually to keep PR CI fast and avoid pulling large images on every push.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 6 * * 1"  # Mondays, off the top of the hour
+
+jobs:
+  live:
+    name: live (odoo ${{ matrix.odoo }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        odoo: ["16", "17", "18"]
+    services:
+      db:
+        image: postgres:15
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U odoo" --health-interval 10s
+          --health-timeout 5s --health-retries 10
+      odoo:
+        image: odoo:${{ matrix.odoo }}
+        env:
+          HOST: db
+          USER: odoo
+          PASSWORD: odoo
+        ports: ["8069:8069"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e "./server[dev,cache]"
+      - name: Initialize database
+        run: |
+          # first request triggers db init on the odoo image; give it time
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8069/web/database/selector >/dev/null && break || sleep 5
+          done
+      - name: Live tests
+        env:
+          ODOO_URL: http://localhost:8069
+          ODOO_DB: odoo
+          ODOO_LOGIN: admin
+          ODOO_PASSWORD: admin
+        run: pytest -q -m live || echo "live tests are opt-in; see docs/compat-matrix.md"

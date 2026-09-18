@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "odoo-mcp-tools"
+version = "0.1.0"
+description = "Clean-room MCP server for Odoo (Community, Enterprise, online) across versions 10-19."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Transgenia", email = "dev@transgenia.org" }]
+keywords = ["odoo", "erp", "mcp", "model-context-protocol", "xml-rpc", "json-rpc"]
+dependencies = [
+    # Pinned to the stable 1.x low-level Server API (decorators + Tool.inputSchema).
+    # mcp 2.x reworked the low-level API; 2.x support is tracked separately.
+    "mcp>=1.2,<2",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+cache = ["cachetools>=5.3"]
+metrics = ["prometheus-client>=0.20"]
+otel = [
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-exporter-otlp-proto-http>=1.24",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+odoo-mcp = "odoo_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online"
+Repository = "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odoo_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Optional-dependency loaders intentionally catch broad exceptions to degrade
+# gracefully when an extra (cachetools/prometheus/otel) is not installed.
+ignore = ["BLE001"]
+
+[tool.pytest.ini_options]
+markers = ["live: tests that require a real/ephemeral Odoo instance (opt-in)"]
+asyncio_mode = "auto"

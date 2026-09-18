@@ -1,0 +1,29 @@
+{
+  "name": "odoo-tools",
+  "version": "0.1.0",
+  "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer.",
+  "author": {
+    "name": "Transgenia",
+    "email": "dev@transgenia.org",
+    "url": "https://transgenia.org"
+  },
+  "homepage": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online",
+  "repository": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online",
+  "license": "MIT",
+  "keywords": ["odoo", "erp", "mcp", "xml-rpc", "json-rpc", "community", "enterprise", "saas"],
+  "mcpServers": {
+    "odoo": {
+      "command": "uvx",
+      "args": ["--from", "${CLAUDE_PLUGIN_ROOT}/server", "odoo-mcp"],
+      "env": {
+        "ODOO_URL": "${ODOO_URL}",
+        "ODOO_DB": "${ODOO_DB}",
+        "ODOO_LOGIN": "${ODOO_LOGIN}",
+        "ODOO_API_KEY": "${ODOO_API_KEY}",
+        "ODOO_PASSWORD": "${ODOO_PASSWORD}",
+        "ODOO_TRANSPORT_PREF": "${ODOO_TRANSPORT_PREF}"
+      }
+    }
+  },
+  "hooks": "./hooks/hooks.json"
+}
