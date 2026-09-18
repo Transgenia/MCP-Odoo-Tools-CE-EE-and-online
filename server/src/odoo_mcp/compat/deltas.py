@@ -27,6 +27,14 @@ class ModelRename:
     new: str
     changed_in: int
     note: str = ""
+    # A "merge" is NOT a clean rename: the ``new`` model already exists as a
+    # DISTINCT model before ``changed_in`` (e.g. account.move = journal entries
+    # exists on v10-12 alongside account.invoice = invoices, which was folded into
+    # account.move at v13). For merges we must only resolve old->new on
+    # ``version >= changed_in`` (where ``old`` is gone) and NEVER rewrite
+    # new->old on older versions, or a call meant for the ``new`` model would be
+    # redirected to a different model with different semantics.
+    merge: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,10 +65,19 @@ class Capability:
 
 # --- Model renames -----------------------------------------------------------
 MODEL_RENAMES: tuple[ModelRename, ...] = (
-    ModelRename("account.invoice", "account.move", 13, "Invoices unified into account.move in v13"),
+    # MERGE, not a rename: account.move (journal entries) already exists on v10-12
+    # as a distinct model; account.invoice (invoices) was folded into it at v13.
     ModelRename(
-        "account.invoice.line", "account.move.line", 13, "Invoice lines unified into account.move.line"
+        "account.invoice", "account.move", 13,
+        "Invoices merged into account.move in v13; account.move pre-exists as journal entries",
+        merge=True,
     ),
+    ModelRename(
+        "account.invoice.line", "account.move.line", 13,
+        "Invoice lines merged into account.move.line in v13; account.move.line pre-exists",
+        merge=True,
+    ),
+    # True rename: stock.package did not exist before v19.
     ModelRename(
         "stock.quant.package", "stock.package", 19, "Package model renamed (best-effort; saas~19.3)"
     ),

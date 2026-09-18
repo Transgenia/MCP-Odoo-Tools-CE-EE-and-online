@@ -13,15 +13,28 @@ this page summarizes it.
   `web_enterprise` module (`ir.module.module`), else `unknown`.
 - **Deployment** — `*.odoo.com` host ⇒ `saas`, else `onprem`.
 
-## Model renames
+## Model renames and merges
 
-| Modern name | Historical name | Boundary |
-|-------------|-----------------|----------|
-| `account.move` | `account.invoice` | new at v13 |
-| `account.move.line` | `account.invoice.line` | new at v13 |
-| `stock.package` | `stock.quant.package` | new at v19 (best-effort) |
+| Modern name | Historical name | Kind | Boundary |
+|-------------|-----------------|------|----------|
+| `account.move` | `account.invoice` | merge | invoices folded into `account.move` at v13 |
+| `account.move.line` | `account.invoice.line` | merge | folded at v13 |
+| `stock.package` | `stock.quant.package` | rename | new at v19 (best-effort) |
 
-You may pass either name; the resolver returns the one valid on the target.
+For a **rename** (e.g. `stock.package`) you may pass either name and the resolver
+returns the one valid on the target version.
+
+> **Accounting is a merge, not a rename.** `account.move` (journal entries) exists
+> on **all** versions 10-19. On v10-12 `account.invoice` (invoices) is a **separate
+> model** that was folded into `account.move` at v13. The resolver therefore:
+>
+> - maps `account.invoice` -> `account.move` only on **v13+** (where the invoice
+>   model no longer exists), and
+> - **never** rewrites `account.move` -> `account.invoice` on older versions
+>   (doing so would redirect a journal-entry call to the invoice model).
+>
+> On v10-12, name the model you actually mean (`account.invoice` for invoices,
+> `account.move` for journal entries), especially for writes/deletes.
 
 ## Field changes
 

@@ -25,15 +25,19 @@ def facts(version: int, edition: str = "community", deployment: str = "onprem") 
 @pytest.mark.parametrize(
     "requested,version,expected",
     [
-        # invoices: account.move on 13+, account.invoice on <=12
-        ("account.move", 12, "account.invoice"),
+        # MERGE (not a rename): account.move exists on ALL versions as journal
+        # entries, so it must NEVER be rewritten to account.invoice. account.invoice
+        # (invoices) exists on <=12 and is folded into account.move at v13.
+        ("account.move", 12, "account.move"),  # journal entries; must stay account.move
         ("account.move", 13, "account.move"),
         ("account.move", 19, "account.move"),
-        ("account.invoice", 12, "account.invoice"),
-        ("account.invoice", 13, "account.move"),  # historical name -> modern
+        ("account.invoice", 12, "account.invoice"),  # invoices model exists on <=12
+        ("account.invoice", 13, "account.move"),  # invoice model gone -> account.move
         ("account.invoice", 18, "account.move"),
-        # invoice lines
-        ("account.move.line", 11, "account.invoice.line"),
+        # invoice lines (same merge semantics)
+        ("account.move.line", 11, "account.move.line"),  # journal items; must stay
+        ("account.invoice.line", 11, "account.invoice.line"),  # invoice lines exist on <=12
+        ("account.invoice.line", 13, "account.move.line"),  # gone -> merged
         ("account.move.line", 13, "account.move.line"),
         # stock package rename (best-effort boundary v19)
         ("stock.package", 18, "stock.quant.package"),

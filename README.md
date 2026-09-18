@@ -56,8 +56,16 @@ connection with `odoo_version`.
 
 \* one of `ODOO_API_KEY` or `ODOO_PASSWORD`.
 
-Credentials stay in your environment; nothing is sent to Anthropic or persisted
-by the plugin.
+Credentials stay in your environment and the **MCP server** does not persist them
+to disk. Two caveats worth stating plainly:
+
+- **The optional CLI fallback writes a local `.env`** with your credentials under
+  `~/.claude/tools/odoo-cli`. See [`SECURITY.md`](SECURITY.md).
+- **When you drive Odoo through an AI agent**, the tool *results* (the Odoo records
+  you query) are returned to your MCP client and sent to your model provider (e.g.
+  Anthropic, for Claude) to be processed, exactly like any other tool an agent
+  uses. The MCP server talking directly to Odoo means Transgenia never proxies or
+  stores your data; it does not mean company data is withheld from the model.
 
 ## Support matrix
 
