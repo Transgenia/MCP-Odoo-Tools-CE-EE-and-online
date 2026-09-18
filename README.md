@@ -12,7 +12,9 @@ A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
   you can't run the MCP server, or for scripted batch access.
 - **Agents, skills, commands and domain context** to drive both surfaces.
 
-Maintained by [Transgenia](https://transgenia.org).
+Built and maintained by [Transgenia](https://transgenia.org), a **Registered
+partner of Anthropic**. (Registered tier — this plugin is an independent
+open-source project, not an Anthropic-certified or first-party product.)
 
 ## Why this exists
 
