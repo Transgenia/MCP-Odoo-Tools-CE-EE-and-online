@@ -5,8 +5,17 @@
 - Odoo credentials are read from the environment (`ODOO_URL`, `ODOO_DB`,
   `ODOO_LOGIN`, `ODOO_API_KEY`/`ODOO_PASSWORD`) or, in multi-tenant HTTP mode,
   from per-request headers (`X-Odoo-Url/Db/Login` + `Bearer`).
-- Secrets are never persisted to disk by this project and never written to logs.
-  The tenant cache key is `url|db|login` — the secret is not part of it.
+- The **MCP server** does not persist secrets to disk and never writes them to
+  logs. The tenant cache key is `url|db|login` — the secret is not part of it.
+- **Exception — CLI fallback:** `/odoo-tools:odoo-setup-cli` writes a local `.env`
+  containing your credentials under `~/.claude/tools/odoo-cli`. If you use that
+  surface, restrict its permissions (e.g. `chmod 600`), keep it out of version
+  control, and delete it when you stop using the CLI.
+- **Data path when used via an AI agent:** tool results (the Odoo records you
+  query) are returned to your MCP client and sent to your model provider (e.g.
+  Anthropic, for Claude) for processing, as with any MCP tool. Transgenia does not
+  proxy or store your data, but it is not withheld from the model — query with a
+  least-privilege user and avoid pulling fields the agent does not need.
 - The `Settings` object **redacts credentials in `repr()`/`str()`** so accidental
   logging cannot leak them (enforced by `tests/test_security_redaction.py`).
 - Prefer **API keys** (Odoo ≥ 14) over passwords. Use least-privilege Odoo users.

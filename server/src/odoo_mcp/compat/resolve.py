@@ -41,10 +41,14 @@ def resolve_model(name: str, facts: EnvFacts) -> str:
     the target version.
     """
     for r in MODEL_RENAMES:
-        if name == r.new and facts.version < r.changed_in:
-            return r.old
+        # old -> new once the old model is gone (valid for both renames and merges)
         if name == r.old and facts.version >= r.changed_in:
             return r.new
+        # new -> old on older versions ONLY for a clean rename. For a merge the
+        # ``new`` model already exists (as a different model) before changed_in, so
+        # rewriting it would redirect to the wrong records.
+        if name == r.new and facts.version < r.changed_in and not r.merge:
+            return r.old
     return name
 
 
