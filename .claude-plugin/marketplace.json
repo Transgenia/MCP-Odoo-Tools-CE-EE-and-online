@@ -1,5 +1,8 @@
 {
   "name": "transgenia-odoo-tools",
+  "metadata": {
+    "description": "Transgenia's Odoo tooling for Claude — a unified MCP server and CLI for Community, Enterprise and online instances across Odoo 10-19. Built by Transgenia, a Registered partner of Anthropic."
+  },
   "owner": {
     "name": "Transgenia",
     "email": "dev@transgenia.org",
