@@ -67,6 +67,15 @@ to disk. Two caveats worth stating plainly:
   uses. The MCP server talking directly to Odoo means Transgenia never proxies or
   stores your data; it does not mean company data is withheld from the model.
 
+### Telemetry (opt-in, disabled by default)
+
+No data leaves your machine unless you opt in with `ODOO_TELEMETRY=opt-in`
+and manually share the payload shown by `/odoo-doctor`. When enabled, only
+`plugin_version`, `odoo_version_major`, edition/deployment labels and aggregate
+generic tool counters are included — never URL, DB, login, secrets, PII,
+modules or billing. No schedules, no boot hooks, no background sends.
+Details: [`SECURITY.md`](SECURITY.md#opt-in-telemetry-disabled-by-default).
+
 ## Support matrix
 
 | Dimension | Coverage |

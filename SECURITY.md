@@ -31,6 +31,35 @@
 - **`.gitignore`** excludes `.env`, `*.env`, virtualenvs and build output so
   local credentials cannot be committed by accident.
 
+## Opt-in telemetry (disabled by default)
+
+- **Default: off.** Nothing is collected or sent unless the operator sets
+  `ODOO_TELEMETRY=opt-in` explicitly. Unset/any other value = disabled.
+  There is **no scheduler, no cron/4am job, no boot/startup hook, no background
+  thread and no network send** in the telemetry path. Sharing happens only when
+  a human runs `/odoo-doctor`, reads the exact payload on screen, and decides
+  to paste it somewhere.
+- **What is sent (allowlist only):** `plugin_version`, `odoo_version_major`
+  (10-19), `odoo_edition` (`community`/`enterprise`/`unknown`),
+  `odoo_deployment` (`onprem`/`saas`/`unknown`), `transport` label,
+  `tool_calls_total` and `tool_calls_by_tool` (counters keyed by generic tool
+  name only, e.g. `odoo_search_read`). Enforced in code by
+  `server/src/odoo_mcp/telemetry.py` (`ALLOWED_KEYS`, `assert_no_pii`) and
+  covered by `server/tests/test_telemetry_optin.py`.
+- **Purpose:** continuous improvement of the plugin only (which versions and
+  transports are actually used, which generic tools get exercised) so compat
+  fixes and docs target real usage instead of guesses.
+- **Frequency:** only on explicit manual run — there is no periodic send. Each
+  share is a deliberate, visible operator action.
+- **NEVER sent, even under opt-in:** URL, DB name, login/email, secrets, phone,
+  company/customer names, record contents, domains/ids/values, module lists,
+  revenues/billing, file paths, hostnames. The payload builder rejects unknown
+  tool keys and anything resembling an email/URL/secret.
+- **How to enable:** `export ODOO_TELEMETRY=opt-in` (same process env as the
+  other `ODOO_*` vars), then run `/odoo-doctor` and review the payload block.
+- **How to disable:** `unset ODOO_TELEMETRY` (or any value other than `opt-in`)
+  and restart the server. Disabling is immediate; no residual timers exist.
+
 ## Transport
 
 - Use HTTPS Odoo URLs. XML-RPC and JSON-RPC both run over the URL you provide.
