@@ -55,6 +55,16 @@ def validate_safe_eval(code: str) -> None:
                 remediation="no import/def/class/return/with; use only expressions and "
                 "assignments over env, model, record(s), datetime, etc.",
             )
+        # Odoo safe_eval rejects STORE_ATTR: plain attribute assignment
+        # (e.g. rec.priority = '3') compiles to STORE_ATTR and fails
+        # server-side. Force record.write({...}) instead (Codex PR5).
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store):
+            raise CompatError(
+                f"server-action code assigns attribute '{node.attr}'; "
+                "Odoo safe_eval forbids STORE_ATTR",
+                remediation="use record.write({'field': value}) instead of "
+                "rec.field = value (e.g. rec.write({'priority': '3'}))",
+            )
         if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
             raise CompatError(
                 f"server-action code accesses a private attribute '{node.attr}'",
@@ -77,6 +87,30 @@ def _model_id(ctx: ToolContext, model: str) -> int:
     return ids[0]
 
 
+def _invalidate_schema_cache(ctx: ToolContext, model: str) -> None:
+    """Drop cached schema entries for ``model`` after a successful write.
+
+    Conservative fallback: clear the whole schema cache when a targeted
+    invalidation API is unavailable (e.g. in unit-test fakes).
+    """
+    schema = getattr(ctx.session, "schema", None)
+    if schema is None:
+        return
+    invalidate = getattr(schema, "invalidate_model", None)
+    if callable(invalidate):
+        try:
+            invalidate(model)
+            return
+        except Exception:
+            pass
+    clear = getattr(schema, "clear", None)
+    if callable(clear):
+        try:
+            clear()
+        except Exception:
+            pass
+
+
 @registry.tool(
     "odoo_add_field",
     "Add a custom field to a model (Studio-style, works on CE and EE). Creates a "
@@ -89,7 +123,8 @@ def _model_id(ctx: ToolContext, model: str) -> int:
             "label": {"type": "string", "description": "human label (field_description)"},
             "field_type": {"type": "string", "enum": list(_FIELD_TYPES)},
             "relation": {"type": "string", "description": "co-model for relational types"},
-            "relation_field": {"type": "string", "description": "inverse field for one2many"},
+            "relation_field": {"type": "string", "description": "inverse field for one2many (required when field_type is one2many)"},
+            "currency_field": {"type": "string", "description": "currency field for monetary types (defaults to currency_id)"},
             "selection": {
                 "type": "array",
                 "description": "for selection fields: list of [value, label] pairs",
@@ -113,8 +148,27 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
                           remediation=f"one of: {', '.join(_FIELD_TYPES)}")
     if ftype in _NEEDS_RELATION and not args.get("relation"):
         raise CompatError(f"field_type '{ftype}' requires 'relation' (the co-model)")
+    # A one2many without its inverse field cannot be built by Odoo (Codex PR5).
+    if ftype == "one2many" and not args.get("relation_field"):
+        raise CompatError(
+            "field_type 'one2many' requires 'relation_field' (the inverse many2one on the co-model)",
+            remediation="pass relation_field naming the inverse field, e.g. relation_field='partner_id'",
+        )
     if ftype == "selection" and not args.get("selection"):
         raise CompatError("selection fields require a 'selection' list of [value, label] pairs")
+    # Validate selection entries BEFORE unpacking so malformed MCP input
+    # raises CompatError instead of an uncaught ValueError (Codex PR5).
+    if ftype == "selection" and args.get("selection") is not None:
+        for i, item in enumerate(args["selection"]):
+            if (
+                not isinstance(item, (list, tuple))
+                or len(item) != 2
+                or not all(isinstance(x, str) for x in item)
+            ):
+                raise CompatError(
+                    f"selection entry #{i} must be exactly [value, label] strings",
+                    remediation='pass selection as [["a","A"],["b","B"]]',
+                )
 
     name = args["name"]
     if not name.startswith("x_"):
@@ -132,15 +186,29 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
     if args.get("help"):
         vals["help"] = args["help"]
     if args.get("relation"):
-        vals["relation"] = args["relation"]
+        # Resolve the co-model through the same compat map as the target
+        # model (e.g. account.move on v12, stock.package on v18) — copying it
+        # verbatim points at the wrong model on older/newer lines (Codex PR5).
+        co_model = resolve_model(args["relation"], facts)
+        requires_edition(co_model, facts)
+        vals["relation"] = co_model
     if args.get("relation_field"):
         vals["relation_field"] = args["relation_field"]
+    # Monetary fields need a currency field; Odoo falls back to currency_id,
+    # which breaks on models without that conventional field (Codex PR5).
+    if ftype == "monetary" and args.get("currency_field"):
+        vals["currency_field"] = args["currency_field"]
     if ftype == "selection":
         # Custom selection fields accept the char repr on all supported versions.
+        # Entries were validated above, so this unpack cannot raise ValueError.
         pairs = [(str(v), str(lbl)) for v, lbl in args["selection"]]
         vals["selection"] = repr(pairs)
 
     new_id = ctx.session.execute("ir.model.fields", "create", [vals])
+    # Invalidate the cached schema for this model so an immediate
+    # odoo_fields_get sees the new field instead of the stale TTL entry
+    # (default TTL 300s) and reporting "no new field" (Codex PR5).
+    _invalidate_schema_cache(ctx, model)
     return {"model": model, "field": name, "type": ftype, "field_id": new_id}
 
 
@@ -177,14 +245,18 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     code = args["code"]
     validate_safe_eval(code)  # refuse forbidden python up front (esp. on SaaS)
 
-    # Introspect base.automation so we adapt across versions (inline server-action
-    # delegation in v16+, vs a linked ir.actions.server in older lines).
+    # Introspect the automation model so we adapt across versions (inline
+    # server-action delegation in v16+, vs a linked ir.actions.server in
+    # older lines). On Odoo 10 the model is the legacy base.action.rule
+    # (module base_action_rule), not base.automation (Codex PR5).
+    automation_model = "base.action.rule" if facts.version == 10 else "base.automation"
+    automation_module = "base_action_rule" if facts.version == 10 else "base_automation"
     try:
-        fg = ctx.session.fields_get("base.automation")
+        fg = ctx.session.fields_get(automation_model)
     except OdooFault as exc:
         raise CompatError(
-            "base.automation is not available on this instance",
-            remediation="ensure the 'base_automation' module is installed",
+            f"{automation_model} is not available on this instance",
+            remediation=f"ensure the '{automation_module}' module is installed",
         ) from exc
 
     model_id = _model_id(ctx, model)
@@ -201,21 +273,30 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
         # v16+: base.automation delegates to ir.actions.server (inline code).
         base_vals["state"] = "code"
         base_vals["code"] = code
-        auto_id = ctx.session.execute("base.automation", "create", [base_vals])
+        auto_id = ctx.session.execute(automation_model, "create", [base_vals])
         return {"model": model, "automation_id": auto_id, "mode": "inline-server-action"}
 
-    # Older: create the server action, then link it.
-    server_vals = {"name": name, "model_id": model_id, "state": "code", "code": code}
-    server_id = ctx.session.execute("ir.actions.server", "create", [server_vals])
+    # Older: determine the link field BEFORE creating the server action, then
+    # create + link. If the automation create fails, delete the orphan server
+    # action so failed attempts do not accumulate (Codex PR5).
     link_field = "action_server_id" if "action_server_id" in fg else (
         "action_server_ids" if "action_server_ids" in fg else None
     )
     if link_field is None:
         raise CompatError(
-            "could not find how base.automation links its server action on this version",
-            remediation="inspect base.automation with odoo_fields_get and create it manually",
+            f"could not find how {automation_model} links its server action on this version",
+            remediation=f"inspect {automation_model} with odoo_fields_get and create it manually",
         )
+    server_vals = {"name": name, "model_id": model_id, "state": "code", "code": code}
+    server_id = ctx.session.execute("ir.actions.server", "create", [server_vals])
     base_vals[link_field] = server_id if link_field.endswith("_id") else [(6, 0, [server_id])]
-    auto_id = ctx.session.execute("base.automation", "create", [base_vals])
+    try:
+        auto_id = ctx.session.execute(automation_model, "create", [base_vals])
+    except Exception:
+        try:
+            ctx.session.execute("ir.actions.server", "unlink", [[server_id]])
+        except Exception:
+            pass
+        raise
     return {"model": model, "automation_id": auto_id, "server_action_id": server_id,
             "mode": "linked-server-action"}

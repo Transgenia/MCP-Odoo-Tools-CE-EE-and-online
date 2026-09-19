@@ -65,13 +65,23 @@ odoo_add_automation {
   "model": "crm.lead",
   "name": "Tag hot leads",
   "trigger": "on_create_or_write",
-  "code": "for rec in records:\n    if rec.probability and rec.probability > 80:\n        rec.priority = '3'"
+  "code": "for rec in records:\n    if rec.probability and rec.probability > 80:\n        rec.write({'priority': '3'})"
 }
 ```
 safe_eval rules (enforced by the tool): **no** `import`/`def`/`class`/`return`/
-`with`, no underscore/dunder access. Available names include `env`, `model`,
-`record`/`records`, `datetime`, `dateutil`, `time`, `UserError`. To return an
+`with`, no underscore/dunder access, and **no attribute assignment**
+(`rec.field = value` compiles to `STORE_ATTR` and is rejected — use
+`rec.write({...})`). Available names include `env`, `model`,
+`record`/`records`, `datetime`, `dateutil`, `time`, `UserError`
+(`Warning` on Odoo 10-12 — see version table below). To return an
 action, assign `action = {...}` as the last statement (never `return`).
+
+> **Version notes.** Exception name: `UserError` on v13+, `Warning` on v10-12.
+> Automation model: `base.automation` on v11+, legacy `base.action.rule`
+> (module `base_action_rule`) on v10. Recipes that create
+> `ir.model.fields` / `ir.ui.view` / `base.automation` / `ir.actions.server`
+> require an administrator (Settings / Technical) — a least-privilege business
+> user gets `AccessError`.
 
 ## Enterprise vs Community
 - Fields/views/automations created here work on **both** editions.

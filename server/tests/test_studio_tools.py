@@ -86,6 +86,8 @@ def test_add_field_selection_serialised() -> None:
     "class C:\n    pass",
     "return 1",
     "x = obj._secret",
+    "for rec in records:\n    rec.priority = '3'",
+    "rec.priority='3'",
 ])
 def test_safe_eval_rejects_forbidden(bad: str) -> None:
     with pytest.raises(CompatError):
@@ -93,7 +95,7 @@ def test_safe_eval_rejects_forbidden(bad: str) -> None:
 
 
 def test_safe_eval_allows_plain_code() -> None:
-    validate_safe_eval("for rec in records:\n    rec.priority = '3'\naction = {'type': 'ir.actions.act_window_close'}")
+    validate_safe_eval("for rec in records:\n    rec.write({'priority': '3'})\naction = {'type': 'ir.actions.act_window_close'}")
 
 
 # --- odoo_add_automation ----------------------------------------------------
@@ -102,12 +104,12 @@ def test_automation_inline_v16plus() -> None:
     fake = FakeSession({"trigger": {}, "state": {}, "code": {}, "filter_domain": {}})
     res = odoo_add_automation(
         _ctx(fake),
-        {"model": "crm.lead", "name": "Tag", "code": "for rec in records:\n    rec.priority='3'"},
+        {"model": "crm.lead", "name": "Tag", "code": "for rec in records:\n    rec.write({'priority': '3'})"},
     )
     assert res["mode"] == "inline-server-action"
     vals = next(c for c in fake.calls if c[0] == "base.automation")[2][0]
     assert vals["state"] == "code"
-    assert "rec.priority" in vals["code"]
+    assert "rec.write" in vals["code"]
     assert vals["trigger"] == "on_create_or_write"
 
 
@@ -129,3 +131,44 @@ def test_automation_rejects_bad_code_before_rpc() -> None:
         odoo_add_automation(_ctx(fake), {"model": "crm.lead", "name": "x", "code": "import os"})
     # nothing should have been created
     assert not any(c[1] == "create" for c in fake.calls)
+
+
+# --- Codex PR5 hardening ----------------------------------------------------
+
+def test_add_field_one2many_requires_relation_field() -> None:
+    with pytest.raises(CompatError):
+        odoo_add_field(
+            _ctx(FakeSession()),
+            {"model": "res.partner", "name": "orders", "label": "Orders",
+             "field_type": "one2many", "relation": "sale.order"},
+        )
+
+
+def test_add_field_selection_entry_must_be_pair() -> None:
+    with pytest.raises(CompatError):
+        odoo_add_field(
+            _ctx(FakeSession()),
+            {"model": "res.partner", "name": "tier", "label": "Tier",
+             "field_type": "selection", "selection": [["a"]]},
+        )
+
+
+def test_add_field_monetary_accepts_currency_field() -> None:
+    fake = FakeSession()
+    res = odoo_add_field(
+        _ctx(fake),
+        {"model": "res.partner", "name": "credit", "label": "Credit",
+         "field_type": "monetary", "currency_field": "x_currency_id"},
+    )
+    assert res["field_id"] == 999
+    vals = next(c for c in fake.calls if c[0] == "ir.model.fields")[2][0]
+    assert vals["currency_field"] == "x_currency_id"
+
+
+def test_automation_linked_determines_link_before_create() -> None:
+    # No link field in the automation schema -> must fail BEFORE creating
+    # the server action (no orphan ir.actions.server record).
+    fake = FakeSession({"trigger": {}})
+    with pytest.raises(CompatError):
+        odoo_add_automation(_ctx(fake), {"model": "crm.lead", "name": "x", "code": "pass"})
+    assert not any(c[0] == "ir.actions.server" and c[1] == "create" for c in fake.calls)

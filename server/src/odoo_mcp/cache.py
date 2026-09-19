@@ -111,3 +111,26 @@ class SchemaCache:
         with self._lock:
             self.hits = 0
             self.misses = 0
+
+    def invalidate_model(self, model: str) -> None:
+        """Drop cached schema entries for ``model`` (fields/name lookups).
+
+        Keys are ``(tenant, kind, model, ...)`` tuples, so a targeted drop
+        avoids clearing unrelated tenants/models after a write.
+        """
+        with self._lock:
+            try:
+                keys = list(self._impl.keys()) if hasattr(self._impl, "keys") else []
+            except Exception:
+                keys = []
+            for key in keys:
+                try:
+                    if isinstance(key, tuple) and model in key:
+                        self._impl.pop(key, None)
+                except Exception:
+                    continue
+            # stdlib fallback stores data in _data
+            inner = getattr(self._impl, "_data", None)
+            if isinstance(inner, dict):
+                for key in [k for k in inner if isinstance(k, tuple) and model in k]:
+                    inner.pop(key, None)

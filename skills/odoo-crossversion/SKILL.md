@@ -6,16 +6,23 @@ description: How the compatibility layer resolves model/field names across Odoo 
 # Cross-version behavior (Odoo 10-19)
 
 The MCP server routes every model/field name through a compatibility layer
-before hitting the ORM. You write against the **modern** name; it resolves to
-whatever exists on the target version.
+before hitting the ORM. For **clean renames** you write the modern name and it
+resolves to whatever exists on the target version. **Accounting is a merge,
+not a rename** (see below): on Odoo 10-12 name explicitly the model you mean.
 
 ## Model name resolution
 
 | You pass | Odoo ≤ 12 | Odoo ≥ 13 |
 |----------|-----------|-----------|
-| `account.move` | → `account.invoice` | `account.move` |
-| `account.move.line` | → `account.invoice.line` | `account.move.line` |
-| `account.invoice` (historical) | `account.invoice` | → `account.move` |
+| `account.move` (journal entries) | `account.move` (unchanged — never rewritten to invoices) | `account.move` |
+| `account.move.line` (journal items) | `account.move.line` (unchanged) | `account.move.line` |
+| `account.invoice` (historical invoices) | `account.invoice` | → `account.move` (invoices were merged at v13) |
+
+> **Merge rule:** `account.move` (journal entries) already exists on v10-12 as
+> a distinct model alongside `account.invoice` (invoices). The resolver maps
+> `account.invoice` → `account.move` only on v13+ and **never** rewrites
+> `account.move` → `account.invoice` on older versions. For writes/deletes on
+> v10-12, verify with `odoo_fields_get` before writing.
 
 | You pass | Odoo ≤ 18 | Odoo ≥ 19 |
 |----------|-----------|-----------|
