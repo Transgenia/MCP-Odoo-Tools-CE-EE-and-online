@@ -185,6 +185,18 @@ def test_add_field_selection_rejects_malformed(bad_sel) -> None:
         )
 
 
+def test_add_field_selection_accepts_numeric_values() -> None:
+    # Integer JSON values are coerced to strings (Odoo stores them as char).
+    fake = FakeSession()
+    odoo_add_field(
+        _ctx(fake),
+        {"model": "res.partner", "name": "tier", "label": "Tier",
+         "field_type": "selection", "selection": [[1, "One"], [2, "Two"]]},
+    )
+    vals = next(c for c in fake.calls if c[0] == "ir.model.fields")[2][0]
+    assert vals["selection"] == repr([("1", "One"), ("2", "Two")])
+
+
 def test_add_field_monetary_accepts_currency_field() -> None:
     fake = FakeSession()
     odoo_add_field(
