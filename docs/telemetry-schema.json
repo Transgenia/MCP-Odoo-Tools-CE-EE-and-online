@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "odoo-tools opt-in telemetry payload (schema only — no real user data lives in this repo)",
+  "description": "Allowlist enforced by server/src/odoo_mcp/telemetry.py. Any key outside 'properties' is rejected by assert_no_pii. Values below are a SYNTHETIC example.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plugin_version",
+    "odoo_version_major",
+    "odoo_edition",
+    "odoo_deployment",
+    "transport",
+    "tool_calls_total",
+    "tool_calls_by_tool"
+  ],
+  "properties": {
+    "plugin_version": { "type": "string", "example": "0.1.0" },
+    "odoo_version_major": { "type": "integer", "minimum": 10, "maximum": 19, "example": 17 },
+    "odoo_edition": { "type": "string", "enum": ["community", "enterprise", "unknown"], "example": "community" },
+    "odoo_deployment": { "type": "string", "enum": ["onprem", "saas", "unknown"], "example": "onprem" },
+    "transport": { "type": "string", "example": "auto" },
+    "tool_calls_total": { "type": "integer", "minimum": 0, "example": 4 },
+    "tool_calls_by_tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(odoo_version|odoo_search|odoo_read|odoo_search_read|odoo_search_count|odoo_create|odoo_write|odoo_unlink|odoo_execute|odoo_fields_get|odoo_list_models|odoo_module_info|odoo_export_records_json|odoo_export_records_csv|odoo_translate_get|odoo_translate_set|odoo_report|odoo_connections|odoo_add_field|odoo_add_automation)$": { "type": "integer", "minimum": 0 }
+      },
+      "example": { "odoo_version": 1, "odoo_search_read": 3 }
+    }
+  },
+  "forbidden": "URL, DB name, login/email, secrets, phone, company/customer names, record contents, domains/ids/values, module lists, revenues/billing, file paths, hostnames — none of these may appear here or in any shared payload."
+}
