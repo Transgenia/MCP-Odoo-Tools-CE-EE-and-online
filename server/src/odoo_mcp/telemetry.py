@@ -19,11 +19,28 @@ Design contract (see SECURITY.md "Opt-in telemetry"):
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
-PLUGIN_VERSION = "0.1.0"
+
+def _plugin_version() -> str:
+    """Canonical version from installed package metadata, fallback for source runs."""
+    try:
+        return _pkg_version("odoo-mcp-tools")
+    except PackageNotFoundError:
+        return "1.0.0"  # fallback when running from source without install
+
+
+PLUGIN_VERSION = _plugin_version()
 
 TELEMETRY_ENV_VAR = "ODOO_TELEMETRY"
-OPT_IN_VALUES = {"1", "true", "yes", "on", "opt-in"}
+# The ONLY value that enables telemetry — docs promise exact-token consent,
+# so "1"/"true"/"yes"/"on" must NOT opt in.
+OPT_IN_VALUES = {"opt-in"}
+
+# Finite transport labels. Anything else is normalized to "unknown" so an
+# unexpected value can never smuggle hostnames or secrets into the payload.
+TRANSPORT_LABELS = {"auto", "jsonrpc", "xmlrpc", "unknown"}
 
 ALLOWED_KEYS = frozenset(
     {
@@ -60,6 +77,7 @@ KNOWN_TOOLS = frozenset(
         "odoo_connections",
         "odoo_add_field",
         "odoo_add_automation",
+        "odoo_telemetry_preview",
     }
 )
 
@@ -123,13 +141,16 @@ def build_optin_payload(
     deployment = (odoo_deployment or "unknown").strip().lower()
     if deployment not in ("onprem", "saas", "unknown"):
         deployment = "unknown"
+    transport_label = (transport or "unknown").strip().lower()
+    if transport_label not in TRANSPORT_LABELS:
+        transport_label = "unknown"
     counts = _sanitize_counts(tool_calls_by_tool)
     payload = {
         "plugin_version": PLUGIN_VERSION,
         "odoo_version_major": int(odoo_version_major),
         "odoo_edition": edition,
         "odoo_deployment": deployment,
-        "transport": str(transport),
+        "transport": transport_label,
         "tool_calls_total": sum(counts.values()),
         "tool_calls_by_tool": counts,
     }

@@ -45,8 +45,10 @@ def validate_safe_eval(code: str) -> None:
     Mirrors ``odoo/tools/safe_eval.py`` ``_BLACKLIST``: ``STORE_ATTR`` /
     ``DELETE_ATTR`` are forbidden, so direct field assignment such as
     ``rec.priority = '3'`` fails server-side. Callers must use
-    ``records.write({...})`` instead. Only a bare ``action = {...}`` Name
-    assignment is allowed as the return channel.
+    ``records.write({...})`` instead. Subscript *stores* on plain locals
+    (``vals = {}; vals['a'] = 1``) are allowed server-side (``STORE_SUBSCR``
+    is a safe opcode), but subscript *deletion* is not. Only a bare
+    ``action = {...}`` Name assignment is allowed as the return channel.
     """
     try:
         tree = ast.parse(code, mode="exec")
@@ -71,12 +73,10 @@ def validate_safe_eval(code: str) -> None:
                 remediation="use records.write({'field': value}) instead of "
                 "rec.field = value; only 'action = {...}' may be assigned",
             )
-        if isinstance(node, ast.Subscript) and isinstance(
-            node.ctx, (ast.Store, ast.AugStore, ast.Del)
-        ):
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Del):
             raise CompatError(
-                "server-action code assigns to a subscript; Odoo safe_eval forbids it",
-                remediation="use records.write({'field': value}) instead of rec['field'] = value",
+                "server-action code deletes a subscript; Odoo safe_eval forbids it",
+                remediation="restructure the code to avoid 'del'; only 'action = {...}' may be assigned",
             )
         if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
             raise CompatError(
@@ -273,9 +273,11 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
         return {"model": model, "automation_id": auto_id, "mode": "inline-server-action"}
 
     # Older: resolve the link field BEFORE creating anything so we never
-    # leave an orphan ir.actions.server behind.
-    link_field = "action_server_id" if "action_server_id" in fg else (
-        "action_server_ids" if "action_server_ids" in fg else None
+    # leave an orphan ir.actions.server behind. v10 base.action.rule links
+    # via server_action_ids; later base.automation uses action_server_id(s).
+    link_field = next(
+        (f for f in ("action_server_id", "action_server_ids", "server_action_ids") if f in fg),
+        None,
     )
     if link_field is None:
         raise CompatError(
@@ -285,17 +287,25 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     # Older: create the server action, then link it.
     server_vals = {"name": name, "model_id": model_id, "state": "code", "code": code}
     server_id = ctx.session.execute("ir.actions.server", "create", [server_vals])
-    base_vals[link_field] = server_id if link_field.endswith("_id") else [(6, 0, [server_id])]
+    base_vals[link_field] = [(6, 0, [server_id])] if link_field.endswith("_ids") else server_id
     try:
         auto_id = ctx.session.execute(automation_model, "create", [base_vals])
     except OdooFault as exc:
+        cleaned = True
         try:
             ctx.session.execute("ir.actions.server", "unlink", [[server_id]])
-        except Exception:  # noqa: S110 — best-effort orphan cleanup
-            pass
+        except Exception:
+            cleaned = False
+        if cleaned:
+            raise CompatError(
+                f"automation creation failed; orphan server action {server_id} was removed",
+                remediation="check trigger, domain and permissions, then retry",
+            ) from exc
         raise CompatError(
-            f"automation creation failed; orphan server action {server_id} was removed",
-            remediation="check trigger, domain and permissions, then retry",
+            f"automation creation failed and server action {server_id} could NOT be "
+            "removed (orphan remains — e.g. missing unlink permission)",
+            remediation=f"delete ir.actions.server id {server_id} manually, then check "
+            "trigger, domain and permissions before retrying",
         ) from exc
     return {"model": model, "automation_id": auto_id, "server_action_id": server_id,
             "mode": "linked-server-action"}

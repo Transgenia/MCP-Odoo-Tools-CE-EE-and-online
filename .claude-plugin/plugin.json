@@ -1,6 +1,6 @@
 {
   "name": "odoo-tools",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer.",
   "author": {
     "name": "Transgenia",

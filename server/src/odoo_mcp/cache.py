@@ -78,6 +78,11 @@ class SchemaCache:
         self.hits = 0
         self.misses = 0
         self._lock = threading.Lock()
+        # Per-(tenant, model) generation bumped by invalidate_fields. Callers
+        # include it in their cache key so an in-flight fill computed BEFORE
+        # an invalidation (but stored AFTER) lands under a stale generation
+        # and is never served.
+        self._generations: dict[tuple[str, str], int] = {}
         if _HAS_CACHETOOLS:
             self._impl: Any = TTLCache(maxsize=maxsize, ttl=ttl)
             self._is_cachetools = True
@@ -164,7 +169,12 @@ class SchemaCache:
 
         Called after ``odoo_add_field`` so an immediate verification
         ``odoo_fields_get`` does not serve the pre-create schema (TTL 300s).
+        Also bumps the per-model generation so concurrent fills that started
+        before this call cannot repopulate stale data afterwards.
         """
+        with self._lock:
+            gen_key = (fingerprint, model)
+            self._generations[gen_key] = self._generations.get(gen_key, 0) + 1
 
         def _match(key: Hashable) -> bool:
             return (
@@ -176,3 +186,8 @@ class SchemaCache:
             )
 
         return self.invalidate(_match)
+
+    def generation(self, fingerprint: str, model: str) -> int:
+        """Current generation for ``(fingerprint, model)`` (0 = never invalidated)."""
+        with self._lock:
+            return self._generations.get((fingerprint, model), 0)

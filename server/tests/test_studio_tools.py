@@ -94,11 +94,16 @@ def test_add_field_selection_serialised() -> None:
     "for rec in records:\n    rec.priority = '3'",
     "for rec in records:\n    rec.priority += 'x'",
     "for rec in records:\n    del rec.priority",
-    "for rec in records:\n    rec['priority'] = '3'",
+    "for rec in records:\n    del rec['priority']",
 ])
 def test_safe_eval_rejects_forbidden(bad: str) -> None:
     with pytest.raises(CompatError):
         validate_safe_eval(bad)
+
+
+def test_safe_eval_allows_subscript_store_on_locals() -> None:
+    # STORE_SUBSCR is a safe opcode server-side: building a plain dict is fine.
+    validate_safe_eval("vals = {}\nvals['priority'] = '3'\nrecords.write(vals)")
 
 
 def test_safe_eval_allows_plain_code() -> None:
@@ -217,7 +222,7 @@ def test_automation_v10_uses_legacy_model() -> None:
 
     class V10Session(FakeSession):
         def __init__(self) -> None:
-            super().__init__({"trigger": {}, "action_server_id": {}}, version=10)
+            super().__init__({"trigger": {}, "server_action_ids": {}}, version=10)
 
         def fields_get(self, model: str, attributes=None) -> dict:
             seen.append(model)
@@ -230,6 +235,8 @@ def test_automation_v10_uses_legacy_model() -> None:
     )
     assert seen == ["base.action.rule"]
     assert res["mode"] == "linked-server-action"
+    base_vals = next(c for c in fake.calls if c[0] == "base.action.rule")[2][0]
+    assert base_vals["server_action_ids"] == [(6, 0, [555])]
 
 
 def test_automation_linked_failure_cleans_orphan() -> None:
@@ -247,10 +254,33 @@ def test_automation_linked_failure_cleans_orphan() -> None:
             return None
 
     fake = FailSecond({"trigger": {}, "action_server_id": {}})
-    with pytest.raises(CompatError):
+    with pytest.raises(CompatError, match="was removed"):
         odoo_add_automation(_ctx(fake), {"model": "crm.lead", "name": "Tag", "code": "pass"})
     unlinks = [c for c in fake.calls if c[0] == "ir.actions.server" and c[1] == "unlink"]
     assert unlinks and unlinks[0][2] == [[555]]
+
+
+def test_automation_linked_failure_reports_remaining_orphan() -> None:
+    class FailBoth(FakeSession):
+        def execute(self, model, method, args=None, kwargs=None):
+            self.calls.append((model, method, args, kwargs))
+            if model == "ir.model" and method == "search":
+                return [42]
+            if model == "ir.actions.server" and method == "create":
+                return 555
+            if model == "ir.actions.server" and method == "unlink":
+                from odoo_mcp.errors import OdooFault
+
+                raise OdooFault("no unlink permission")
+            if model == "base.automation" and method == "create":
+                from odoo_mcp.errors import OdooFault
+
+                raise OdooFault("boom")
+            return None
+
+    fake = FailBoth({"trigger": {}, "action_server_id": {}})
+    with pytest.raises(CompatError, match="could NOT be removed.*555"):
+        odoo_add_automation(_ctx(fake), {"model": "crm.lead", "name": "Tag", "code": "pass"})
 
 
 def test_automation_missing_link_raises_before_create() -> None:

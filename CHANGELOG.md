@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] - 2026-09-20
+
+First public release — the **Standard** package (free, MIT, public).
+See [`docs/packaging.md`](docs/packaging.md) for the tier plan
+(Standard now; Enterprise/Teams later, in separate packages).
+
+### Added
+- `odoo_telemetry_preview` read-only tool (21 tools total): renders the exact
+  opt-in telemetry payload for human review, backed by server-side counters.
+  Telemetry stays default-off, exact-token (`ODOO_TELEMETRY=opt-in`), PII-free
+  by allowlist, with no schedules or background sends.
+- Release flow (`.github/workflows/release.yml`): tag `v*` builds and verifies
+  the Standard artifacts (PyPI sdist/wheel + plugin zip) and creates the
+  GitHub Release; the existing `publish.yml` then publishes to PyPI.
+- `docs/telemetry-schema.json` + `docs/telemetry-report-template.md`
+  (synthetic example only — real user data never lives in this repo).
+
+### Fixed (Codex review followups, PRs #6/#7)
+- v10 automations link via legacy `server_action_ids`; orphan-cleanup message
+  now reports accurately when the compensating unlink fails.
+- safe_eval guard allows subscript stores on plain locals (`STORE_SUBSCR` is
+  safe server-side) while still rejecting attribute assignment and `del`.
+- Schema-cache invalidation is race-safe via per-model generations.
+- CLI accepts `ODOO_PASSWORD` for Odoo < 14 (incl. 10-12); setup skill updated.
+- Telemetry hardening: exact `opt-in` token only, allowlisted transport labels,
+  version derived from package metadata, claims scoped vs Metrics/OTLP.
+
 ## [0.1.0] - 2026-09-17
 
 ### Added
@@ -28,4 +55,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - CI (ruff + pytest on py3.11/3.12, CLI build), opt-in live Odoo version matrix,
   PyPI publish workflow, Docker image.
 
+[1.0.0]: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/releases/tag/v1.0.0
 [0.1.0]: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/releases/tag/v0.1.0
