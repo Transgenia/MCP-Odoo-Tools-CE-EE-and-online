@@ -1,5 +1,10 @@
 # MCP-Odoo-Tools — CE, EE & online (Odoo 10-19)
 
+[![CI](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml/badge.svg)](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](server/pyproject.toml)
+[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-orange)](https://modelcontextprotocol.io)
+
 A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
 
 - **MCP server (primary)** — a clean-room, MIT-licensed Python server exposing
