@@ -78,6 +78,7 @@ KNOWN_TOOLS = frozenset(
         "odoo_add_field",
         "odoo_add_automation",
         "odoo_telemetry_preview",
+        "odoo_read_group",
     }
 )
 

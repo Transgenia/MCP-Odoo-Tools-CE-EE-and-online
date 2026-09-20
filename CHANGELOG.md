@@ -15,6 +15,10 @@ See [`docs/packaging.md`](docs/packaging.md) for the tier plan
   opt-in telemetry payload for human review, backed by server-side counters.
   Telemetry stays default-off, exact-token (`ODOO_TELEMETRY=opt-in`), PII-free
   by allowlist, with no schedules or background sends.
+- `odoo_read_group` (22 tools total): server-side GROUP BY aggregation via
+  classic `read_group` (Odoo 10-19), through the compat layer.
+- `ODOO_READONLY=1` kill-switch: refuses every non-read-only tool centrally
+  before touching Odoo (demos, safe exploration).
 - Release flow (`.github/workflows/release.yml`): tag `v*` builds and verifies
   the Standard artifacts (PyPI sdist/wheel + plugin zip) and creates the
   GitHub Release; the existing `publish.yml` then publishes to PyPI.

@@ -16,12 +16,26 @@ from mcp.server.stdio import stdio_server
 
 from . import tools as _tools  # noqa: F401  (import registers all tools)
 from .config import Settings
-from .errors import OdooMcpError
+from .errors import CompatError, OdooMcpError
 from .observability import Observability
-from .registry import ToolContext, registry
+from .registry import ToolContext, ToolDef, registry
 from .tenancy import ConnectionManager
 
 log = logging.getLogger("odoo_mcp.server")
+
+
+def check_readonly(settings: Settings, tool: ToolDef) -> None:
+    """Enforce the ODOO_READONLY kill-switch centrally (demos, safe exploration).
+
+    Read-only tools always pass; anything flagged ``read_only=False`` is
+    refused before any session or transport is touched.
+    """
+    if settings.readonly and not tool.read_only:
+        raise CompatError(
+            f"tool '{tool.name}' is disabled: the server runs with ODOO_READONLY=1",
+            remediation="unset ODOO_READONLY and restart for writes, "
+            "or use a read-only tool (search/read/fields_get/export/report/preview)",
+        )
 
 
 def build_server(settings: Settings) -> Server:
@@ -46,6 +60,7 @@ def build_server(settings: Settings) -> Server:
             tool = registry.get(name)
         except KeyError:
             raise ValueError(f"unknown tool: {name}")
+        check_readonly(settings, tool)
 
         started = time.monotonic()
         status = "ok"
