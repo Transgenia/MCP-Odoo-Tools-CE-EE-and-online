@@ -71,6 +71,15 @@
 - Use HTTPS Odoo URLs. XML-RPC and JSON-RPC both run over the URL you provide.
 - The server logs to stderr only; stdout is reserved for the MCP channel.
 
+## Read-only mode
+
+- Set `ODOO_READONLY=1` for demos or safe exploration: the server refuses every
+  non-read-only tool (`odoo_create/write/unlink/execute`, `odoo_translate_set`,
+  both Studio tools) with a clear error before touching Odoo. Reads, exports,
+  reports and `odoo_telemetry_preview` keep working. Unset + restart to re-enable
+  writes. (The CLI fallback has no equivalent gate: its `write` command always
+  attempts the RPC — use a least-privilege Odoo user there.)
+
 ## Reporting a vulnerability
 
 Email **dev@transgenia.org** with details and reproduction steps. Please do not

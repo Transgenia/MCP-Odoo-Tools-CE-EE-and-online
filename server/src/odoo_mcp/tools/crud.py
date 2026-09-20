@@ -181,3 +181,37 @@ def odoo_execute(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
     result = ctx.session.execute(model, args["method"], args.get("args", []), args.get("kwargs", {}))
     return {"model": model, "method": args["method"], "result": result}
+
+
+@registry.tool(
+    "odoo_read_group",
+    "Server-side GROUP BY aggregation (pushes grouping to the database instead "
+    "of pulling rows). Classic read_group so it works on Odoo 10-19.",
+    obj(
+        {
+            "model": {"type": "string"},
+            "domain": _DOMAIN,
+            "fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "groupby fields plus aggregates, e.g. [\"stage_id\", \"expected_revenue:sum\"]",
+            },
+            "groupby": {"type": "array", "items": {"type": "string"}},
+            "limit": {"type": "integer"},
+            "offset": {"type": "integer"},
+            "orderby": {"type": "string"},
+            "lazy": {"type": "boolean", "default": True},
+        },
+        required=["model", "fields", "groupby"],
+    ),
+)
+def odoo_read_group(ctx: ToolContext, args: dict[str, Any]) -> Any:
+    model = resolve_model(args["model"], _facts(ctx))
+    requires_edition(model, _facts(ctx))
+    kwargs: dict[str, Any] = {
+        k: args[k] for k in ("limit", "offset", "orderby", "lazy") if k in args
+    }
+    rows = ctx.session.execute(
+        model, "read_group", [args.get("domain", []), args["fields"], args["groupby"]], kwargs
+    )
+    return {"model": model, "groups": rows}

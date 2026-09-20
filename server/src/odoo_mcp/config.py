@@ -43,6 +43,9 @@ class Settings:
     metrics: bool = False
     metrics_port: int = 8085
     otel_endpoint: str = ""
+    # Read-only kill-switch for demos and least-privilege runs: when true the
+    # server refuses every non-read-only tool before touching Odoo.
+    readonly: bool = False
     # Optional bearer expected on the HTTP transport (multi-tenant deployments).
     http_bearer: str = ""
 
@@ -71,6 +74,7 @@ class Settings:
             metrics=_get_bool("ODOO_METRICS", False),
             metrics_port=_get_int("ODOO_METRICS_PORT", 8085),
             otel_endpoint=os.environ.get("ODOO_OTEL_ENDPOINT") or "",
+            readonly=_get_bool("ODOO_READONLY", False),
             http_bearer=os.environ.get("ODOO_HTTP_BEARER") or "",
         )
 
@@ -86,6 +90,7 @@ class Settings:
             "cache_ttl": self.cache_ttl,
             "metrics": self.metrics,
             "otel": bool(self.otel_endpoint),
+            "readonly": self.readonly,
             "has_secret": bool(self.secret),
         }
 

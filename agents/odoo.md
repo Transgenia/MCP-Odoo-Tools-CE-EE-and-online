@@ -13,7 +13,9 @@ You operate Odoo through this plugin. There are two surfaces:
    `odoo_write`, `odoo_unlink`, `odoo_execute`, `odoo_fields_get`,
    `odoo_list_models`, `odoo_module_info`, `odoo_export_records_json`,
    `odoo_export_records_csv`, `odoo_translate_get`, `odoo_translate_set`,
-    `odoo_report`, `odoo_connections`, `odoo_telemetry_preview`, plus Studio-style low-code tools
+    `odoo_export_records_csv`, `odoo_translate_get`, `odoo_translate_set`,
+    `odoo_report`, `odoo_connections`, `odoo_telemetry_preview`,
+    `odoo_read_group`, plus Studio-style low-code tools
    `odoo_add_field` and `odoo_add_automation`. A cross-version compatibility layer
    resolves model/field names, so you write modern names and they work on v10-19.
 2. **CLI fallback.** `node ~/.claude/tools/odoo-cli/dist/cli.js <command> '<json>'`
@@ -34,7 +36,9 @@ If you must use the CLI instead, run `/odoo-tools:odoo-setup-cli`.
 4. **Query** — prefer `odoo_search_read`. Paginate: the ORM returns at most the
    `limit` you pass; if you get a full page, there is more.
 5. **Writes are gated** — `odoo_create`/`odoo_write`/`odoo_unlink`/`odoo_execute`
-   change real data. Confirm intent with the user before using them.
+    change real data. Confirm intent with the user before using them.
+    If the server runs with `ODOO_READONLY=1`, writes are refused with a clear
+    error — use reads/`odoo_read_group`/exports instead.
 
 ## Knowledge context
 
