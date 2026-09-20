@@ -1,0 +1,87 @@
+name: Release (Standard 1.0)
+
+# Builds + verifies the Standard artifacts and creates the GitHub Release.
+# The existing publish.yml then publishes server/dist to PyPI on release.
+# Trigger: push a tag like v1.0.0, or manual dispatch (tag input, default v1.0.0).
+
+on:
+  push:
+    tags: ["v[0-9]*.[0-9]*.[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.0.0)"
+        required: false
+        default: "v1.0.0"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev,cache]"
+      - name: Ruff
+        run: ruff check src tests
+      - name: Pytest (unit)
+        run: pytest -q -m "not live"
+
+  build-standard:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist + wheel
+        run: |
+          pip install build
+          cd server && python -m build --outdir dist
+      - name: Build standard plugin zip
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          zip -r "odoo-tools-standard-${VERSION}.zip" \
+            .claude-plugin agents skills commands context hooks cli docs \
+            README.md SECURITY.md CHANGELOG.md LICENSE NOTICE \
+            -x "cli/node_modules/*" "cli/.env"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: standard-${{ github.ref_name }}
+          path: |
+            server/dist
+            odoo-tools-standard-*.zip
+
+  github-release:
+    needs: build-standard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: standard-${{ github.ref_name }}
+          path: assets
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            git fetch --tags origin
+          fi
+          ls -R assets
+          gh release create "$TAG" --title "$TAG (Standard)" \
+            --notes-file CHANGELOG.md \
+            assets/server/dist/* assets/odoo-tools-standard-*.zip

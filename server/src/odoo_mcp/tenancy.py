@@ -22,6 +22,7 @@ class ConnectionManager:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._sessions: dict[str, OdooSession] = {}
+        self._tool_calls: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def _build(self, creds: Credentials) -> OdooSession:
@@ -72,3 +73,12 @@ class ConnectionManager:
                 {"url": s.creds.url, "db": s.creds.db, "login": s.creds.login}
                 for s in self._sessions.values()
             ]
+
+    def record_tool_call(self, name: str) -> None:
+        """In-memory per-tool invocation counter (feeds the opt-in preview only)."""
+        with self._lock:
+            self._tool_calls[name] = self._tool_calls.get(name, 0) + 1
+
+    def tool_calls_snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._tool_calls)

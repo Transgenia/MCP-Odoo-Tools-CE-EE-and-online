@@ -28,3 +28,20 @@ def test_clear_resets() -> None:
     cache.get_or_compute(("k",), lambda: 1)
     cache.clear()
     assert cache.hits == 0 and cache.misses == 0
+
+
+def test_invalidate_fields_bumps_generation() -> None:
+    cache = SchemaCache(ttl=300)
+    assert cache.generation("t", "res.partner") == 0
+    cache.get_or_compute(("t", "fields", "res.partner", 17, 0, ("name",)), lambda: {"old": 1})
+    assert cache.invalidate_fields("t", "res.partner") == 1
+    assert cache.generation("t", "res.partner") == 1
+    # A fill computed under the stale generation is never served under the new one.
+    calls = {"n": 0}
+
+    def fresh() -> dict:
+        calls["n"] += 1
+        return {"new": 1}
+
+    assert cache.get_or_compute(("t", "fields", "res.partner", 17, 1, ("name",)), fresh) == {"new": 1}
+    assert calls["n"] == 1

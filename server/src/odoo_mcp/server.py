@@ -65,6 +65,10 @@ def build_server(settings: Settings) -> Server:
             raise ValueError(str(exc)) from exc
         finally:
             obs.record(name, status, time.monotonic() - started)
+            try:
+                manager.record_tool_call(name)
+            except Exception:  # noqa: S110 - counters must never fail a tool call
+                pass
 
     return server
 

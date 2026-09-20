@@ -45,9 +45,12 @@ cat > "$HOME/.claude/tools/odoo-cli/.env" << 'ENVEOF'
 ODOO_URL=<url>
 ODOO_DB=<db>
 ODOO_USER=<login-email>
-ODOO_API_KEY=<api-key>
+ODOO_API_KEY=<api-key>        # Odoo >= 14 (recommended); ignored on older lines
+# ODOO_PASSWORD=<password>    # Odoo < 14 instead (incl. Odoo 10-12): use the
+                              # account password — those versions have no API keys
 ENVEOF
 ```
+Only one credential is required: `ODOO_API_KEY` wins when both are set.
 
 ## Step 5 — Build and verify
 
@@ -69,4 +72,5 @@ node ~/.claude/tools/odoo-cli/dist/cli.js fields '{"model":"res.partner"}'
 > compat mapping. For Odoo ≤ 12 use the historical name you actually mean
 > (`account.invoice` for invoices, `account.move` for journal entries), or
 > prefer the MCP server. The MCP resolver never rewrites `account.move` →
-> `account.invoice` on older versions (merge, not a rename).
+> `account.invoice` on older versions (merge, not a rename). On Odoo ≤ 13
+> authenticate the CLI with `ODOO_PASSWORD` (account password), not an API key.

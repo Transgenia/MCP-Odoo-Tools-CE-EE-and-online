@@ -69,8 +69,9 @@ odoo_add_automation {
 }
 ```
 safe_eval rules (enforced by the tool): **no** `import`/`def`/`class`/`return`/
-`with`, no underscore/dunder access, **no attribute or subscript assignment**
-(Odoo forbids `STORE_ATTR`: `rec.field = value` fails server-side). Available names include `env`, `model`,
+`with`, no underscore/dunder access, **no attribute assignment and no
+`del`** (Odoo forbids `STORE_ATTR`/`DELETE_ATTR`: `rec.field = value` fails
+server-side; building plain dicts such as `vals['a'] = 1` is fine). Available names include `env`, `model`,
 `record`/`records`, `datetime`, `dateutil`, `time`, `UserError`. To return an
 action, assign `action = {...}` as the last statement (never `return`).
 

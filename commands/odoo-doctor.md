@@ -18,10 +18,10 @@ Report the results as a short table. Do not perform any write.
 
 ## 5. Opt-in telemetry preview (explicit, manual, no PII)
 
-Only if `ODOO_TELEMETRY=opt-in` is set in the server process environment,
-display the exact telemetry payload the operator could share — otherwise state
-`telemetry: disabled (default)` and stop. Never send anything anywhere yourself;
-render the payload block and let the human decide whether to copy it.
+Call the read-only MCP tool `odoo_telemetry_preview` and render exactly what it
+returns. If it reports `opted_in: false`, state `telemetry: disabled (default)`
+and stop. Never send anything anywhere yourself; let the human decide whether
+to copy the payload block.
 
 When opt-in is active, preface the block with this statement, in full, for
 purposes of continuous improvement of the plugin:

@@ -69,11 +69,14 @@ to disk. Two caveats worth stating plainly:
 
 ### Telemetry (opt-in, disabled by default)
 
-No data leaves your machine unless you opt in with `ODOO_TELEMETRY=opt-in`
-and manually share the payload shown by `/odoo-doctor`. When enabled, only
+No usage data leaves your machine unless you opt in with `ODOO_TELEMETRY=opt-in`
+and manually share the payload shown by `/odoo-doctor` (which calls the
+read-only `odoo_telemetry_preview` tool). When enabled, only
 `plugin_version`, `odoo_version_major`, edition/deployment labels and aggregate
 generic tool counters are included — never URL, DB, login, secrets, PII,
 modules or billing. No schedules, no boot hooks, no background sends.
+(This covers the telemetry payload only; `ODOO_METRICS`/`ODOO_OTEL_ENDPOINT`
+remain separate explicit opt-ins for local Prometheus/OTLP observability.)
 Details: [`SECURITY.md`](SECURITY.md#opt-in-telemetry-disabled-by-default).
 
 ## Support matrix

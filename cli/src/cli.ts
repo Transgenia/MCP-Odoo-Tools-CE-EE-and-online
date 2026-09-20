@@ -8,20 +8,27 @@ import { OdooClient } from "./odoo-client.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: join(__dirname, "..", ".env") });
 
-// Validate config
-const required = ["ODOO_URL", "ODOO_DB", "ODOO_USER", "ODOO_API_KEY"];
+// Validate config. Credential: API key (Odoo >= 14) or account password
+// (Odoo < 14, incl. the <= 12 lines the note below points at the CLI for).
+const required = ["ODOO_URL", "ODOO_DB", "ODOO_USER"];
 for (const key of required) {
   if (!process.env[key]) {
     console.error(JSON.stringify({ error: `Variable de entorno ${key} no configurada` }));
     process.exit(1);
   }
 }
+if (!process.env.ODOO_API_KEY && !process.env.ODOO_PASSWORD) {
+  console.error(
+    JSON.stringify({ error: "Variable de entorno ODOO_API_KEY u ODOO_PASSWORD no configurada (API key en Odoo >= 14, password en Odoo < 14)" })
+  );
+  process.exit(1);
+}
 
 const client = new OdooClient({
   url: process.env.ODOO_URL!,
   db: process.env.ODOO_DB!,
   username: process.env.ODOO_USER!,
-  password: process.env.ODOO_API_KEY!,
+  password: (process.env.ODOO_API_KEY || process.env.ODOO_PASSWORD)!,
 });
 
 // Import all commands

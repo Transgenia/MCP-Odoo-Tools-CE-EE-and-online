@@ -86,11 +86,15 @@ class OdooSession:
     def fields_get(self, model: str, attributes: list[str] | None = None) -> dict[str, Any]:
         attrs = attributes or ["string", "type", "required", "readonly", "relation"]
         version = self.facts().version
+        fingerprint = self.creds.fingerprint()
+        # The generation makes post-write invalidations race-safe: a fill that
+        # started before odoo_add_field lands under the old generation key.
+        gen = self.schema.generation(fingerprint, model)
 
         def _compute() -> dict[str, Any]:
             return self.execute(model, "fields_get", [], {"attributes": attrs})
 
-        key = (self.creds.fingerprint(), "fields", model, version, tuple(attrs))
+        key = (fingerprint, "fields", model, version, gen, tuple(attrs))
         return self.schema.get_or_compute(key, _compute)
 
     def name_get(self, model: str, ids: list[int]) -> list[list[Any]]:

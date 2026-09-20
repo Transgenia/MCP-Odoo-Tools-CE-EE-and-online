@@ -59,6 +59,12 @@
   other `ODOO_*` vars), then run `/odoo-doctor` and review the payload block.
 - **How to disable:** `unset ODOO_TELEMETRY` (or any value other than `opt-in`)
   and restart the server. Disabling is immediate; no residual timers exist.
+- **Scope note:** these guarantees cover the manually shared telemetry payload.
+  The pre-existing observability surface (`ODOO_METRICS`, `ODOO_OTEL_ENDPOINT`)
+  is a separate explicit opt-in: when enabled it runs a local Prometheus
+  endpoint and/or background OTLP span export as documented in `README.md`.
+  With both unset (the default), the server performs no background export of
+  any kind.
 
 ## Transport
 

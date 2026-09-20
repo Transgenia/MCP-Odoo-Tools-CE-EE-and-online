@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "odoo-mcp-tools"
-version = "0.1.0"
+version = "1.0.0"
 description = "Clean-room MCP server for Odoo (Community, Enterprise, online) across versions 10-19."
 readme = "README.md"
 requires-python = ">=3.11"

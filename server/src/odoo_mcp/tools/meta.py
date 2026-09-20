@@ -88,3 +88,42 @@ def odoo_module_info(ctx: ToolContext, args: dict[str, Any]) -> Any:
         {"fields": ["name", "shortdesc", "state", "installed_version", "author", "license"]},
     )
     return {"module": rows[0] if rows else None}
+
+
+@registry.tool(
+    "odoo_telemetry_preview",
+    "Show the exact opt-in telemetry payload the operator could share "
+    "(or that telemetry is disabled). Read-only: renders the payload for human "
+    "review, never transmits anything.",
+    obj({}),
+)
+def odoo_telemetry_preview(ctx: ToolContext, args: dict[str, Any]) -> Any:
+    from ..telemetry import build_optin_payload, is_opted_in
+
+    if not is_opted_in():
+        return {
+            "opted_in": False,
+            "payload": None,
+            "note": "telemetry disabled (default); set ODOO_TELEMETRY=opt-in to preview",
+        }
+    facts = ctx.session.facts()
+    counts: dict[str, int] = {}
+    snapshot = getattr(ctx.manager, "tool_calls_snapshot", None)
+    if callable(snapshot):
+        try:
+            counts = snapshot() or {}
+        except Exception:  # noqa: S110 - preview must work even without counters
+            pass
+    transport = getattr(getattr(ctx.session, "transport", None), "active", "unknown")
+    payload = build_optin_payload(
+        odoo_version_major=facts.version,
+        odoo_edition=facts.edition,
+        odoo_deployment=facts.deployment,
+        transport=transport,
+        tool_calls_by_tool=counts,
+    )
+    return {
+        "opted_in": True,
+        "payload": payload,
+        "note": "manual preview only — nothing was transmitted; copy it yourself if you choose to share",
+    }
