@@ -188,9 +188,22 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
                     remediation="pass selection as [[\"a\", \"A\"], [\"b\", \"B\"]]",
                 )
             v, lbl = item
-            if not isinstance(v, str) or not isinstance(lbl, str) or not v or not lbl:
+            # Values may be JSON numbers (e.g. [[1, "One"]]): Odoo stores them
+            # as strings, so coerce — but labels must already be non-empty text.
+            if isinstance(v, bool) or not isinstance(v, (str, int, float)):
                 raise CompatError(
-                    f"selection entry {item!r} must be two non-empty strings",
+                    f"selection value {v!r} must be a string or a number",
+                    remediation="pass selection as [[\"a\", \"A\"], [\"b\", \"B\"]]",
+                )
+            v = str(v)
+            if not v:
+                raise CompatError(
+                    f"selection entry {item!r} has an empty value",
+                    remediation="pass selection as [[\"a\", \"A\"], [\"b\", \"B\"]]",
+                )
+            if not isinstance(lbl, str) or not lbl:
+                raise CompatError(
+                    f"selection label {lbl!r} must be a non-empty string",
                     remediation="pass selection as [[\"a\", \"A\"], [\"b\", \"B\"]]",
                 )
             if v in seen:

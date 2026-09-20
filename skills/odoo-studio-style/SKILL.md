@@ -75,6 +75,13 @@ server-side; building plain dicts such as `vals['a'] = 1` is fine). Available na
 `record`/`records`, `datetime`, `dateutil`, `time`, `UserError`. To return an
 action, assign `action = {...}` as the last statement (never `return`).
 
+> **Version notes.** Exception name: `UserError` on v13+, `Warning` on v10-12.
+> Automation model: `base.automation` on v11+, legacy `base.action.rule`
+> (module `base_action_rule`) on v10. Recipes that create
+> `ir.model.fields` / `ir.ui.view` / automations / `ir.actions.server`
+> require an administrator (Settings / Technical) — a least-privilege business
+> user gets `AccessError`.
+
 ## Enterprise vs Community
 - Fields/views/automations created here work on **both** editions.
 - On **Enterprise**, they won't appear inside the Studio editor UI (they aren't
