@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](server/pyproject.toml)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-orange)](https://modelcontextprotocol.io)
+[![M8ven Score](https://m8ven.ai/badge/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)](https://m8ven.ai/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)
 
 A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
 
