@@ -17,23 +17,27 @@ _UNRESOLVED_PLACEHOLDER = re.compile(r"^\$\{[^}]*\}$")
 
 
 def _env(name: str) -> str:
-    """Read an env var, treating empty or unresolved ``${...}`` values as unset."""
-    raw = (os.environ.get(name) or "").strip()
-    if _UNRESOLVED_PLACEHOLDER.match(raw):
+    """Read an env var verbatim, treating unresolved ``${...}`` values as unset.
+
+    The value is not stripped: credentials may legitimately start or end with
+    whitespace, so only the placeholder check uses a stripped copy.
+    """
+    raw = os.environ.get(name) or ""
+    if _UNRESOLVED_PLACEHOLDER.match(raw.strip()):
         return ""
     return raw
 
 
 def _get_bool(name: str, default: bool = False) -> bool:
-    raw = _env(name) or None
-    if raw is None:
+    raw = _env(name)
+    if not raw.strip():
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _get_int(name: str, default: int) -> int:
     raw = _env(name)
-    if not raw:
+    if not raw.strip():
         return default
     try:
         return int(raw)
@@ -72,7 +76,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        pref = (_env("ODOO_TRANSPORT_PREF") or "auto").lower()
+        pref = (_env("ODOO_TRANSPORT_PREF").strip() or "auto").lower()
         if pref not in TRANSPORT_CHOICES:
             pref = "auto"
         return cls(

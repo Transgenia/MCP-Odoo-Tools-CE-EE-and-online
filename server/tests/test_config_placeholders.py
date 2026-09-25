@@ -27,3 +27,11 @@ def test_unresolved_placeholders_are_treated_as_unset(monkeypatch: pytest.Monkey
 def test_plugin_boolean_option_enables_readonly(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ODOO_READONLY", "true")
     assert Settings.from_env().readonly is True
+
+
+def test_credentials_keep_surrounding_whitespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ODOO_PASSWORD", "  pass with spaces ")
+    monkeypatch.setenv("ODOO_API_KEY", " key ")
+    s = Settings.from_env()
+    assert s.password == "  pass with spaces "
+    assert s.api_key == " key "
