@@ -13,18 +13,18 @@ tool for multiple-choice steps when available; otherwise ask in plain text.
 ## Step 0 — Detect what's already set up
 Run this and read the result before asking anything:
 ```bash
-echo "uv: $(command -v uvx || echo no)"; echo "node: $(node --version 2>/dev/null || echo no)"; \
-echo "env: url=${ODOO_URL:-unset} db=${ODOO_DB:-unset} login=${ODOO_LOGIN:-unset} \
-key=$([ -n "$ODOO_API_KEY" ] && echo set || echo unset) pass=$([ -n "$ODOO_PASSWORD" ] && echo set || echo unset)"
+echo "uv: $(command -v uv || echo no)"; echo "node: $(node --version 2>/dev/null || echo no)"
 ```
-- If `ODOO_URL` + a secret are already set and `uvx` exists → skip to **Step 5 (Verify)**.
+Then call the `odoo_version` tool once. If it succeeds, the plugin options are
+already configured → skip to **Step 5 (Verify)**. (Do not read `ODOO_*`
+variables or credential files from the user's machine to find out.)
 
 ## Step 1 — Choose the surface
 Ask the user (AskUserQuestion, single choice):
-- **MCP server (recommended)** — full tools + cross-version compat. Needs `uv`/`uvx` (or Python 3.11+).
+- **MCP server (recommended)** — full tools + cross-version compat. Needs `uv` (or Python 3.11+).
 - **CLI fallback** — lightweight, Node-only. Use if they can't run the MCP server.
 
-If MCP but `uvx` is missing, tell them to install uv
+If MCP but `uv` is missing, tell them to install uv
 (https://docs.astral.sh/uv/getting-started/installation/) or use Python 3.11+
 (`python -m odoo_mcp`). If CLI but Node missing, point to https://nodejs.org/ (18+).
 
@@ -33,24 +33,23 @@ Ask (AskUserQuestion, single choice): "Which Odoo are you connecting to?"
 - Community · Enterprise · Online (odoo.com/SaaS) · Not sure
 Reassure them the compat layer handles versions 10–19 automatically; this is just context.
 
-## Step 3 — Collect connection details (ONE at a time)
-Ask each, waiting for the answer:
+## Step 3 — Explain the connection details (ONE at a time)
+Walk through what each option means, waiting for confirmation. The user types
+the values into the plugin's options dialog, not into the chat:
 1. **Odoo URL** — e.g. `https://my-company.odoo.com` (scheme + host, no trailing path).
 2. **Database name** — Settings → Database, or visible in the login URL.
 3. **Login email** — the account you sign in with.
 4. **Credential** — ask whether they have an **API key** (Odoo 14+, recommended) or must use a **password** (Odoo <14). For an API key, walk them through:
    Preferences → Account Security → New API Key (shown once — copy it).
 
-Never echo the secret back in plain text. Do not write it to any file the repo tracks.
+Never ask for the secret in the chat, never echo it, and never write it to a file.
 
 ## Step 4 — Persist configuration
-- **MCP path:** help them export the env vars so Claude launches the server with them.
-  - macOS/Linux (append to `~/.bashrc` or `~/.zshrc`):
-    ```bash
-    export ODOO_URL="…"; export ODOO_DB="…"; export ODOO_LOGIN="…"; export ODOO_API_KEY="…"
-    ```
-  - Windows PowerShell (persist for the user): `setx ODOO_URL "…"` (repeat per var).
-  - Then have them restart Claude so the plugin's MCP server picks up the env.
+- **MCP path:** have them run `/plugin`, open **odoo-tools**, choose
+  **Configure options**, and fill URL, database, login and API key (or password
+  on Odoo < 14). The API key and password are `sensitive` options: masked on
+  input and kept in the OS secure credential store, not in `settings.json` or
+  the shell profile. Then have them restart Claude so the MCP server picks them up.
 - **CLI path:** run `/odoo-tools:odoo-setup-cli` (it installs the CLI and writes a
   local `.env` under `~/.claude/tools/odoo-cli`).
 
@@ -70,5 +69,7 @@ Confirm success and show 2–3 example prompts: "list last month's posted invoic
 "how many active subscriptions", "export products to CSV". Mention `/odoo-doctor`
 for a quick health check and `/odoo-tools:odoo-crossversion` for version notes.
 
-Security reminder to the user: credentials stay in their environment; this plugin
-never sends them to Anthropic or writes them into the repository.
+Security reminder to the user: MCP credentials stay in the OS secure credential
+store and are passed only to the local MCP server, which talks directly to their
+Odoo; Transgenia never receives them. Records they query are returned to the model
+like any tool result (see the README "Privacy" section).

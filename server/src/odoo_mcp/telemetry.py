@@ -28,7 +28,7 @@ def _plugin_version() -> str:
     try:
         return _pkg_version("odoo-mcp-tools")
     except PackageNotFoundError:
-        return "1.0.0"  # fallback when running from source without install
+        return "1.1.0"  # fallback when running from source without install
 
 
 PLUGIN_VERSION = _plugin_version()

@@ -38,16 +38,23 @@ you don't hand-branch per version.
 /odoo-tools:odoo-setup-mcp
 ```
 
-The setup skill collects credentials (via environment) and verifies the
-connection with `odoo_version`.
+Claude Code prompts for the connection options when the plugin is enabled
+(change them later in `/plugin` → **odoo-tools** → **Configure options**). The
+API key and password are `sensitive` options stored in the OS secure credential
+store — never in `settings.json` or your shell profile. The setup skill then
+verifies the connection with `odoo_version`.
 
 ### Requirements
 
-- **MCP server:** `uv`/`uvx` (ships its own Python), or Python 3.11+ to run
-  `python -m odoo_mcp` from `server/`.
+- **MCP server:** `uv` (ships its own Python). The plugin runs the bundled
+  server source with dependencies pinned by `server/uv.lock`
+  (`uv run --frozen`). Or Python 3.11+ to run `python -m odoo_mcp` from `server/`.
 - **CLI fallback (optional):** Node.js 18+.
 
-### Configuration (environment)
+### Configuration
+
+As a plugin, configure through the plugin options above. When you run the server
+standalone (Docker, `python -m odoo_mcp`), it reads these environment variables:
 
 | Variable | Required | Notes |
 |----------|----------|-------|
@@ -62,8 +69,8 @@ connection with `odoo_version`.
 
 \* one of `ODOO_API_KEY` or `ODOO_PASSWORD`.
 
-Credentials stay in your environment and the **MCP server** does not persist them
-to disk. Two caveats worth stating plainly:
+The **MCP server** does not persist credentials to disk. Two caveats worth
+stating plainly:
 
 - **The optional CLI fallback writes a local `.env`** with your credentials under
   `~/.claude/tools/odoo-cli`. See [`SECURITY.md`](SECURITY.md).
@@ -84,6 +91,21 @@ modules or billing. No schedules, no boot hooks, no background sends.
 (This covers the telemetry payload only; `ODOO_METRICS`/`ODOO_OTEL_ENDPOINT`
 remain separate explicit opt-ins for local Prometheus/OTLP observability.)
 Details: [`SECURITY.md`](SECURITY.md#opt-in-telemetry-disabled-by-default).
+
+## Privacy
+
+**[Privacy policy](PRIVACY.md)** · Transgenia receives and retains no data from
+this plugin. It reads records (which may include personal data such as names,
+emails and addresses) from your own Odoo only when asked. Services it contacts:
+
+- **Your Odoo instance** (the URL you configure) — from the MCP server, or from
+  the optional CLI fallback.
+- **Your model provider** — tool results go back to your MCP client and model,
+  as with any tool.
+- **PyPI / npm**, only to install pinned dependencies (no Odoo data sent).
+- **Optional, off by default:** your own OTLP collector (`ODOO_OTEL_ENDPOINT`).
+
+Corporate notice: <https://transgenia.org/en/legal-privacy.html>.
 
 ## Support matrix
 
