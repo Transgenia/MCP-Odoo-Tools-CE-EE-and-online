@@ -26,7 +26,7 @@ PyPI release and no unpinned resolution at install time.
 
 ```bash
 # with uv (recommended; brings its own Python)
-uvx --from ./server odoo-mcp
+uv run --project ./server odoo-mcp
 
 # or from a checkout with your own Python 3.11+
 cd server && pip install -e . && python -m odoo_mcp
