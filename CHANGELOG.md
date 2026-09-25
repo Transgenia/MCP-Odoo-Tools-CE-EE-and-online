@@ -34,6 +34,9 @@ Directory-submission hardening (Claude plugin directory lints and policy holds).
 - `marketplace.json` entry version now matches `plugin.json`.
 - The release zip now ships `server/` (the MCP server the manifest launches)
   and `PRIVACY.md`.
+- CI secret scan: replaced `gitleaks/gitleaks-action@v2` (requires a paid
+  `GITLEAKS_LICENSE` for organization repos, so the job failed before scanning)
+  with the free gitleaks CLI v8.18.4, pinned by version and SHA-256.
 
 ## [1.0.0] - 2026-09-20
 
