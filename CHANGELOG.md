@@ -4,6 +4,37 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-25
+
+Directory-submission hardening (Claude plugin directory lints and policy holds).
+
+### Changed
+- **Credentials are now plugin options (`userConfig`)** instead of shell
+  environment variables read from the user's machine. URL, database and login
+  are regular options; the API key and password are `sensitive` (masked input,
+  OS secure credential store). Set them in `/plugin` → **odoo-tools** →
+  **Configure options**. **Migration:** users who exported `ODOO_*` in their
+  shell profile must enter the values once in the plugin options; the
+  standalone server (Docker / `python -m odoo_mcp`) still reads `ODOO_*` env.
+- The MCP server now runs the bundled source with dependencies pinned by the new
+  `server/uv.lock` (`uv run --frozen`, venv under `${CLAUDE_PLUGIN_DATA}`),
+  instead of an unpinned `uvx --from` resolution.
+- SessionStart hook reads `CLAUDE_PLUGIN_OPTION_*` instead of `ODOO_*` env.
+- New optional **Read-only mode** plugin option (maps to `ODOO_READONLY`).
+
+### Added
+- `PRIVACY.md` and a README "Privacy" section listing every service contacted.
+- `.claude-plugin/icon.svg` and `displayName` ("Odoo Tools").
+- Config treats unresolved `${...}` placeholders as unset, so an empty optional
+  plugin option can never be used as a literal URL or credential.
+
+### Fixed
+- `plugin.json` no longer re-lists `hooks/hooks.json` (it is always loaded;
+  listing it caused a duplicate-hooks load error).
+- `marketplace.json` entry version now matches `plugin.json`.
+- The release zip now ships `server/` (the MCP server the manifest launches)
+  and `PRIVACY.md`.
+
 ## [1.0.0] - 2026-09-20
 
 First public release — the **Standard** package (free, MIT, public).

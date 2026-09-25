@@ -49,9 +49,10 @@ jobs:
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           zip -r "odoo-tools-standard-${VERSION}.zip" \
-            .claude-plugin agents skills commands context hooks cli docs \
-            README.md SECURITY.md CHANGELOG.md LICENSE NOTICE \
-            -x "cli/node_modules/*" "cli/.env"
+            .claude-plugin agents skills commands context hooks cli docs server \
+            README.md SECURITY.md PRIVACY.md CHANGELOG.md LICENSE NOTICE \
+            -x "cli/node_modules/*" "cli/.env" "server/dist/*" "server/.venv/*" \
+               "*/__pycache__/*" "server/.pytest_cache/*" "server/.ruff_cache/*"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

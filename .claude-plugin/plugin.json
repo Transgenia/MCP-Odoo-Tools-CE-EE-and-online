@@ -1,6 +1,7 @@
 {
   "name": "odoo-tools",
-  "version": "1.0.0",
+  "displayName": "Odoo Tools",
+  "version": "1.1.0",
   "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer.",
   "author": {
     "name": "Transgenia",
@@ -11,19 +12,64 @@
   "repository": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online",
   "license": "MIT",
   "keywords": ["odoo", "erp", "mcp", "xml-rpc", "json-rpc", "community", "enterprise", "saas"],
-  "mcpServers": {
-    "odoo": {
-      "command": "uvx",
-      "args": ["--from", "${CLAUDE_PLUGIN_ROOT}/server", "odoo-mcp"],
-      "env": {
-        "ODOO_URL": "${ODOO_URL}",
-        "ODOO_DB": "${ODOO_DB}",
-        "ODOO_LOGIN": "${ODOO_LOGIN}",
-        "ODOO_API_KEY": "${ODOO_API_KEY}",
-        "ODOO_PASSWORD": "${ODOO_PASSWORD}",
-        "ODOO_TRANSPORT_PREF": "${ODOO_TRANSPORT_PREF}"
-      }
+  "userConfig": {
+    "odoo_url": {
+      "type": "string",
+      "title": "Odoo URL",
+      "description": "Scheme and host of your Odoo instance, e.g. https://my-company.odoo.com (no trailing path).",
+      "required": true
+    },
+    "odoo_db": {
+      "type": "string",
+      "title": "Odoo database",
+      "description": "Database name (Settings, or visible in the login URL).",
+      "required": true
+    },
+    "odoo_login": {
+      "type": "string",
+      "title": "Odoo login",
+      "description": "The login (usually an email) of the Odoo user the server acts as. Prefer a least-privilege user.",
+      "required": true
+    },
+    "odoo_api_key": {
+      "type": "string",
+      "title": "Odoo API key",
+      "description": "Odoo 14+: Preferences > Account Security > New API Key. Leave empty on Odoo < 14 and fill the password instead.",
+      "sensitive": true
+    },
+    "odoo_password": {
+      "type": "string",
+      "title": "Odoo password (Odoo < 14 only)",
+      "description": "Only for Odoo 10-13, which have no API keys. Leave empty when you set an API key.",
+      "sensitive": true
+    },
+    "odoo_transport_pref": {
+      "type": "string",
+      "title": "Transport preference",
+      "description": "auto (default), jsonrpc or xmlrpc.",
+      "default": "auto"
+    },
+    "odoo_readonly": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "When on, the server refuses every write/delete/Studio tool before touching Odoo.",
+      "default": false
     }
   },
-  "hooks": "./hooks/hooks.json"
+  "mcpServers": {
+    "odoo": {
+      "command": "uv",
+      "args": ["run", "--frozen", "--quiet", "--project", "${CLAUDE_PLUGIN_ROOT}/server", "odoo-mcp"],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/server-venv",
+        "ODOO_URL": "${user_config.odoo_url}",
+        "ODOO_DB": "${user_config.odoo_db}",
+        "ODOO_LOGIN": "${user_config.odoo_login}",
+        "ODOO_API_KEY": "${user_config.odoo_api_key}",
+        "ODOO_PASSWORD": "${user_config.odoo_password}",
+        "ODOO_TRANSPORT_PREF": "${user_config.odoo_transport_pref}",
+        "ODOO_READONLY": "${user_config.odoo_readonly}"
+      }
+    }
+  }
 }

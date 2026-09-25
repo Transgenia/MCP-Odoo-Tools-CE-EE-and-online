@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -n \"$ODOO_URL\" ] && { [ -n \"$ODOO_API_KEY\" ] || [ -n \"$ODOO_PASSWORD\" ]; }; then echo 'odoo-tools (MCP): env configured'; elif [ -f \"$HOME/.claude/tools/odoo-cli/dist/cli.js\" ]; then echo 'odoo-tools (CLI fallback): ready'; else echo 'odoo-tools: NOT CONFIGURED - run /odoo-tools:odoo-setup-mcp (or odoo-setup-cli)'; fi"
+            "command": "if [ -n \"$CLAUDE_PLUGIN_OPTION_ODOO_URL\" ] && { [ -n \"$CLAUDE_PLUGIN_OPTION_ODOO_API_KEY\" ] || [ -n \"$CLAUDE_PLUGIN_OPTION_ODOO_PASSWORD\" ]; }; then echo 'odoo-tools (MCP): plugin options configured'; elif [ -f \"$HOME/.claude/tools/odoo-cli/dist/cli.js\" ]; then echo 'odoo-tools (CLI fallback): ready'; else echo 'odoo-tools: NOT CONFIGURED - run /odoo-tools:odoo-setup-mcp (or odoo-setup-cli)'; fi"
           }
         ]
       }

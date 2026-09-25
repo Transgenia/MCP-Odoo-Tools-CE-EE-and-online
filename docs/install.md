@@ -8,13 +8,19 @@
 /odoo-tools:odoo-setup-mcp
 ```
 
+Claude Code prompts for the connection options when the plugin is enabled
+(`/plugin` → **odoo-tools** → **Configure options** to change them). The API key
+and password are `sensitive` options, kept in the OS secure credential store.
+
 The `mcpServers` entry launches the server with:
 
 ```
-uvx --from ${CLAUDE_PLUGIN_ROOT}/server odoo-mcp
+uv run --frozen --quiet --project ${CLAUDE_PLUGIN_ROOT}/server odoo-mcp
 ```
 
-so `uv` builds and runs the bundled server from source — no PyPI release needed.
+so `uv` runs the bundled server source with the exact dependency versions pinned
+in `server/uv.lock` (virtualenv under `${CLAUDE_PLUGIN_DATA}/server-venv`) — no
+PyPI release and no unpinned resolution at install time.
 
 ## Run the MCP server directly
 
@@ -26,8 +32,9 @@ uvx --from ./server odoo-mcp
 cd server && pip install -e . && python -m odoo_mcp
 ```
 
-Environment (see the root README for the full table): `ODOO_URL`, `ODOO_DB`,
-`ODOO_LOGIN`, `ODOO_API_KEY` (or `ODOO_PASSWORD`).
+Environment when running the server outside the plugin (see the root README for
+the full table): `ODOO_URL`, `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY` (or
+`ODOO_PASSWORD`). Inside the plugin these are filled from the plugin options.
 
 Optional extras:
 

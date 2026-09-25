@@ -5,21 +5,35 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 TRANSPORT_CHOICES = ("auto", "jsonrpc", "xmlrpc")
 
+# A plugin host that leaves a manifest reference unresolved (e.g. an unset
+# optional ``${user_config.odoo_password}``) would otherwise hand the literal
+# placeholder to the server, which would then be used as a URL or credential.
+_UNRESOLVED_PLACEHOLDER = re.compile(r"^\$\{[^}]*\}$")
+
+
+def _env(name: str) -> str:
+    """Read an env var, treating empty or unresolved ``${...}`` values as unset."""
+    raw = (os.environ.get(name) or "").strip()
+    if _UNRESOLVED_PLACEHOLDER.match(raw):
+        return ""
+    return raw
+
 
 def _get_bool(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
+    raw = _env(name) or None
     if raw is None:
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _get_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
+    raw = _env(name)
+    if not raw:
         return default
     try:
         return int(raw)
@@ -58,24 +72,24 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        pref = (os.environ.get("ODOO_TRANSPORT_PREF") or "auto").strip().lower()
+        pref = (_env("ODOO_TRANSPORT_PREF") or "auto").lower()
         if pref not in TRANSPORT_CHOICES:
             pref = "auto"
         return cls(
-            url=(os.environ.get("ODOO_URL") or "").rstrip("/"),
-            db=os.environ.get("ODOO_DB") or "",
-            login=os.environ.get("ODOO_LOGIN") or os.environ.get("ODOO_USER") or "",
-            password=os.environ.get("ODOO_PASSWORD") or "",
-            api_key=os.environ.get("ODOO_API_KEY") or "",
+            url=_env("ODOO_URL").rstrip("/"),
+            db=_env("ODOO_DB"),
+            login=_env("ODOO_LOGIN") or _env("ODOO_USER"),
+            password=_env("ODOO_PASSWORD"),
+            api_key=_env("ODOO_API_KEY"),
             transport_pref=pref,
             timeout=_get_int("ODOO_TIMEOUT", 30),
             multitenant=_get_bool("ODOO_MULTITENANT", False),
             cache_ttl=_get_int("ODOO_CACHE_TTL", 300),
             metrics=_get_bool("ODOO_METRICS", False),
             metrics_port=_get_int("ODOO_METRICS_PORT", 8085),
-            otel_endpoint=os.environ.get("ODOO_OTEL_ENDPOINT") or "",
+            otel_endpoint=_env("ODOO_OTEL_ENDPOINT"),
             readonly=_get_bool("ODOO_READONLY", False),
-            http_bearer=os.environ.get("ODOO_HTTP_BEARER") or "",
+            http_bearer=_env("ODOO_HTTP_BEARER"),
         )
 
     def redacted(self) -> dict:
