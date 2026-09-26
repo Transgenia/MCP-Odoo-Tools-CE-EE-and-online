@@ -12,6 +12,33 @@ import xmlrpc.client
 from typing import Any
 
 from ..errors import AuthError, OdooFault, TransportError
+from .base import tls_context
+
+
+class _TimeoutTransport(xmlrpc.client.Transport):
+    """Plain-HTTP transport whose connections honour the configured timeout."""
+
+    def __init__(self, timeout: float) -> None:
+        super().__init__()
+        self._timeout = timeout
+
+    def make_connection(self, host: Any) -> Any:
+        conn = super().make_connection(host)
+        conn.timeout = self._timeout
+        return conn
+
+
+class _TimeoutSafeTransport(xmlrpc.client.SafeTransport):
+    """HTTPS transport: certificate-verifying context plus the timeout."""
+
+    def __init__(self, timeout: float) -> None:
+        super().__init__(context=tls_context())
+        self._timeout = timeout
+
+    def make_connection(self, host: Any) -> Any:
+        conn = super().make_connection(host)
+        conn.timeout = self._timeout
+        return conn
 
 
 class XmlRpcTransport:
@@ -22,11 +49,16 @@ class XmlRpcTransport:
         self.timeout = timeout
         # allow_none so Odoo methods returning None do not blow up marshalling
         self._common = xmlrpc.client.ServerProxy(
-            f"{self.base_url}/xmlrpc/2/common", allow_none=True
+            f"{self.base_url}/xmlrpc/2/common", transport=self._transport(), allow_none=True
         )
         self._object = xmlrpc.client.ServerProxy(
-            f"{self.base_url}/xmlrpc/2/object", allow_none=True
+            f"{self.base_url}/xmlrpc/2/object", transport=self._transport(), allow_none=True
         )
+
+    def _transport(self) -> xmlrpc.client.Transport:
+        if self.base_url.lower().startswith("https://"):
+            return _TimeoutSafeTransport(self.timeout)
+        return _TimeoutTransport(self.timeout)
 
     def version(self) -> dict[str, Any]:
         try:

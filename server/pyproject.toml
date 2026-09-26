@@ -4,19 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "odoo-mcp-tools"
-version = "1.1.0"
+version = "1.2.0"
 description = "Clean-room MCP server for Odoo (Community, Enterprise, online) across versions 10-19."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Transgenia", email = "dev@transgenia.org" }]
 keywords = ["odoo", "erp", "mcp", "model-context-protocol", "xml-rpc", "json-rpc"]
-dependencies = [
-    # Pinned to the stable 1.x low-level Server API (decorators + Tool.inputSchema).
-    # mcp 2.x reworked the low-level API; 2.x support is tracked separately.
-    "mcp>=1.2,<2",
-    "httpx>=0.27",
-]
+# No runtime dependencies: the MCP stdio protocol and both Odoo transports are
+# implemented on the standard library, so the plugin runs the shipped source
+# directly with python3 and installs nothing. Extras below are optional.
+dependencies = []
 
 [project.optional-dependencies]
 cache = ["cachetools>=5.3"]
@@ -27,6 +25,8 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.24",
 ]
 dev = [
+    # Interop check only: tests drive our server with the official MCP client.
+    "mcp>=1.2,<2; python_version >= '3.10'",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
@@ -45,7 +45,7 @@ packages = ["src/odoo_mcp"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py39"
 
 [tool.ruff.lint]
 # Optional-dependency loaders intentionally catch broad exceptions to degrade

@@ -4,7 +4,28 @@
 
 from __future__ import annotations
 
+import ssl
 from typing import Any, Protocol, runtime_checkable
+
+
+def tls_context() -> ssl.SSLContext:
+    """Certificate-verifying TLS context shared by both transports.
+
+    Always trusts the system store (and honours ``SSL_CERT_FILE``). When the
+    optional ``certifi`` package happens to be installed its CA bundle is added
+    too, which helps Python builds that ship without a usable trust store.
+    Nothing is installed or downloaded for this.
+    """
+    ctx = ssl.create_default_context()
+    try:
+        import certifi  # type: ignore[import-not-found]
+    except ImportError:
+        return ctx
+    try:
+        ctx.load_verify_locations(cafile=certifi.where())
+    except (OSError, ssl.SSLError):  # pragma: no cover - broken certifi install
+        pass
+    return ctx
 
 
 @runtime_checkable
@@ -12,8 +33,8 @@ class Transport(Protocol):
     """A transport talks to a single Odoo base URL.
 
     Implementations wrap either XML-RPC (`/xmlrpc/2/*`) or JSON-RPC
-    (`/jsonrpc`). All methods are synchronous; the MCP layer runs them in a
-    worker thread so the event loop stays responsive.
+    (`/jsonrpc`). All methods are synchronous; the MCP layer runs them on a
+    worker thread so the stdio reader stays responsive.
     """
 
     name: str

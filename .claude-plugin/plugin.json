@@ -1,7 +1,7 @@
 {
   "name": "odoo-tools",
   "displayName": "Odoo Tools",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer.",
   "author": {
     "name": "Transgenia",
@@ -58,10 +58,9 @@
   },
   "mcpServers": {
     "odoo": {
-      "command": "uv",
-      "args": ["run", "--frozen", "--quiet", "--project", "${CLAUDE_PLUGIN_ROOT}/server", "odoo-mcp"],
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py"],
       "env": {
-        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/server-venv",
         "ODOO_URL": "${user_config.odoo_url}",
         "ODOO_DB": "${user_config.odoo_db}",
         "ODOO_LOGIN": "${user_config.odoo_login}",

@@ -14,18 +14,17 @@ jobs:
         with:
           fetch-depth: 0
       # gitleaks/gitleaks-action@v2 requires a paid GITLEAKS_LICENSE for
-      # organization-owned repos; the upstream CLI is free (MIT) and scans the
-      # same full git history. Pinned by version and checksum.
-      - name: gitleaks (CLI)
-        env:
-          GITLEAKS_VERSION: "8.18.4"
-          GITLEAKS_SHA256: "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d"
+      # organization-owned repos. Build the MIT-licensed CLI from source instead:
+      # `go install` fetches exactly this tag and verifies every module against
+      # the Go checksum database. setup-go puts GOPATH/bin on PATH.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: gitleaks
         run: |
-          curl -sSfL -o gitleaks.tar.gz \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf gitleaks.tar.gz gitleaks
-          ./gitleaks detect --source . --redact --verbose --exit-code 1
+          go install github.com/zricethezav/gitleaks/v8@v8.18.4
+          gitleaks detect --source . --redact --verbose --exit-code 1
 
   leak-guard:
     name: no-internal-data guard

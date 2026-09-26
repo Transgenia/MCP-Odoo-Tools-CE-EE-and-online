@@ -1,27 +1,50 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
-"""MCP server wiring (stdio). Exposes the shared registry as MCP tools."""
+"""MCP server wiring (stdio), built on the Python standard library only.
+
+The plugin runs ``python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`` directly:
+no package launcher, no install step and no third-party runtime dependency, so
+the code that runs is exactly the readable code shipped in the plugin folder.
+
+The MCP surface this server needs is small, and implemented here: newline-
+delimited JSON-RPC 2.0 over stdin/stdout with ``initialize``, ``ping``,
+``tools/list`` and ``tools/call`` (plus the ``initialized`` and ``cancelled``
+notifications). Tool calls run on one worker thread, in arrival order, so the
+reader keeps answering ``ping`` and honouring cancellations while Odoo works,
+and sessions/transports never see concurrent use.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import sys
+import threading
 import time
-from typing import Any
-
-import anyio
-from mcp import types
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, BinaryIO
 
 from . import tools as _tools  # noqa: F401  (import registers all tools)
 from .config import Settings
 from .errors import CompatError, OdooMcpError
 from .observability import Observability
 from .registry import ToolContext, ToolDef, registry
+from .telemetry import PLUGIN_VERSION
 from .tenancy import ConnectionManager
 
 log = logging.getLogger("odoo_mcp.server")
+
+SERVER_NAME = "odoo-mcp-tools"
+
+# Newest first. A client's version is echoed back when it is supported;
+# otherwise the newest one is offered, as the MCP lifecycle spec requires.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+# JSON-RPC 2.0 error codes.
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
 
 
 def check_readonly(settings: Settings, tool: ToolDef) -> None:
@@ -38,63 +61,230 @@ def check_readonly(settings: Settings, tool: ToolDef) -> None:
         )
 
 
-def build_server(settings: Settings) -> Server:
-    manager = ConnectionManager(settings)
-    obs = Observability(
-        metrics=settings.metrics,
-        metrics_port=settings.metrics_port,
-        otel_endpoint=settings.otel_endpoint,
-    )
-    server: Server = Server("odoo-mcp-tools")
+class _RpcError(Exception):
+    """A request that must be answered with a JSON-RPC ``error`` object."""
 
-    @server.list_tools()
-    async def list_tools() -> list[types.Tool]:
-        return [
-            types.Tool(name=t.name, description=t.description, inputSchema=t.input_schema)
-            for t in registry.all()
-        ]
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
+
+def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+
+
+def _tool_result(text: str, *, is_error: bool) -> dict[str, Any]:
+    return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+class McpServer:
+    """MCP request handling plus the stdio read/write loop."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        manager: ConnectionManager | None = None,
+        obs: Observability | None = None,
+    ) -> None:
+        self.settings = settings
+        self.manager = manager or ConnectionManager(settings)
+        self.obs = obs or Observability(
+            metrics=settings.metrics,
+            metrics_port=settings.metrics_port,
+            otel_endpoint=settings.otel_endpoint,
+        )
+        self._out: BinaryIO | None = None
+        self._write_lock = threading.Lock()
+        self._cancelled: set[Any] = set()
+        self._cancel_lock = threading.Lock()
+
+    # ------------------------------------------------------------------ MCP
+
+    def initialize(self, params: dict[str, Any]) -> dict[str, Any]:
+        requested = params.get("protocolVersion")
+        version = (
+            requested
+            if requested in SUPPORTED_PROTOCOL_VERSIONS
+            else SUPPORTED_PROTOCOL_VERSIONS[0]
+        )
+        return {
+            "protocolVersion": version,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": SERVER_NAME, "version": PLUGIN_VERSION},
+        }
+
+    def list_tools(self) -> dict[str, Any]:
+        return {
+            "tools": [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": t.input_schema,
+                    "annotations": {"readOnlyHint": t.read_only},
+                }
+                for t in registry.all()
+            ]
+        }
+
+    def call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
+        name = params.get("name")
+        arguments = params.get("arguments")
+        if not isinstance(name, str) or not name:
+            raise _RpcError(INVALID_PARAMS, "tools/call requires a tool name")
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            raise _RpcError(INVALID_PARAMS, "tools/call arguments must be an object")
         try:
             tool = registry.get(name)
         except KeyError:
-            raise ValueError(f"unknown tool: {name}")
-        check_readonly(settings, tool)
+            raise _RpcError(INVALID_PARAMS, f"unknown tool: {name}") from None
+
+        try:
+            check_readonly(self.settings, tool)
+        except OdooMcpError as exc:
+            return _tool_result(str(exc), is_error=True)
 
         started = time.monotonic()
         status = "ok"
         try:
-            def _run() -> Any:
-                session = manager.default()  # stdio = single-tenant from env
-                ctx = ToolContext(session=session, manager=manager)
-                with obs.span(name):
-                    return tool.handler(ctx, arguments or {})
-
-            result = await anyio.to_thread.run_sync(_run)
+            session = self.manager.default()  # stdio = single-tenant from env
+            ctx = ToolContext(session=session, manager=self.manager)
+            with self.obs.span(name):
+                result = tool.handler(ctx, arguments)
             text = json.dumps(result, default=str, ensure_ascii=False)
-            return [types.TextContent(type="text", text=text)]
+            return _tool_result(text, is_error=False)
         except OdooMcpError as exc:
             status = "error"
-            # Clean, actionable message; SDK marks the result as isError.
-            raise ValueError(str(exc)) from exc
+            # Clean, actionable message; the client shows it as a tool error.
+            return _tool_result(str(exc), is_error=True)
+        except Exception as exc:
+            status = "error"
+            log.exception("tool %s failed unexpectedly", name)
+            return _tool_result(f"internal error in {name}: {exc}", is_error=True)
         finally:
-            obs.record(name, status, time.monotonic() - started)
+            self.obs.record(name, status, time.monotonic() - started)
             try:
-                manager.record_tool_call(name)
+                self.manager.record_tool_call(name)
             except Exception:  # noqa: S110 - counters must never fail a tool call
                 pass
 
-    return server
+    # ------------------------------------------------------------- dispatch
+
+    def handle(self, msg: Any) -> dict[str, Any] | None:
+        """Answer one JSON-RPC message; ``None`` for notifications and responses."""
+        if not isinstance(msg, dict):
+            return _error(None, INVALID_REQUEST, "a JSON-RPC message must be an object")
+        method = msg.get("method")
+        if method is None:
+            return None  # a response to a request we never send: ignore
+        is_request = "id" in msg
+        msg_id = msg.get("id")
+        if msg.get("jsonrpc") != "2.0" or not isinstance(method, str):
+            if is_request:
+                return _error(msg_id, INVALID_REQUEST, "invalid JSON-RPC 2.0 message")
+            return None
+        params = msg.get("params")
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            if is_request:
+                return _error(msg_id, INVALID_PARAMS, "params must be an object")
+            return None
+
+        if not is_request:
+            self._notification(method, params)
+            return None
+        try:
+            result = self._request(method, params)
+        except _RpcError as exc:
+            return _error(msg_id, exc.code, exc.message)
+        return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+    def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "initialize":
+            return self.initialize(params)
+        if method == "ping":
+            return {}
+        if method == "tools/list":
+            return self.list_tools()
+        if method == "tools/call":
+            return self.call_tool(params)
+        raise _RpcError(METHOD_NOT_FOUND, f"method not found: {method}")
+
+    def _notification(self, method: str, params: dict[str, Any]) -> None:
+        if method == "notifications/cancelled":
+            with self._cancel_lock:
+                self._cancelled.add(params.get("requestId"))
+        # notifications/initialized and anything else need no action.
+
+    # ---------------------------------------------------------------- stdio
+
+    def _write(self, obj: Any) -> None:
+        data = json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
+        with self._write_lock:
+            assert self._out is not None
+            self._out.write(data.encode("utf-8") + b"\n")
+            self._out.flush()
+
+    def _was_cancelled(self, msg_id: Any) -> bool:
+        with self._cancel_lock:
+            if msg_id in self._cancelled:
+                self._cancelled.discard(msg_id)
+                return True
+            return False
+
+    def _run_tool_call(self, msg: dict[str, Any]) -> None:
+        msg_id = msg.get("id")
+        if self._was_cancelled(msg_id):
+            return  # cancelled while queued: skip the work entirely
+        response = self.handle(msg)
+        if response is not None and not self._was_cancelled(msg_id):
+            self._write(response)
+
+    def run(self, inp: BinaryIO, out: BinaryIO) -> None:
+        """Serve newline-delimited JSON-RPC from ``inp`` to ``out`` until EOF."""
+        self._out = out
+        worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="odoo-tool")
+        try:
+            for raw in inp:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line.decode("utf-8"))
+                except ValueError as exc:  # includes UnicodeDecodeError
+                    self._write(_error(None, PARSE_ERROR, f"parse error: {exc}"))
+                    continue
+                if isinstance(msg, list):  # JSON-RPC batch (MCP 2025-03-26)
+                    if not msg:
+                        self._write(_error(None, INVALID_REQUEST, "empty batch"))
+                        continue
+                    replies = [r for r in (self.handle(m) for m in msg) if r is not None]
+                    if replies:
+                        self._write(replies)
+                elif isinstance(msg, dict) and msg.get("method") == "tools/call" and "id" in msg:
+                    worker.submit(self._run_tool_call, msg)
+                else:
+                    response = self.handle(msg)
+                    if response is not None:
+                        self._write(response)
+        finally:
+            # Answer every request already received before exiting.
+            worker.shutdown(wait=True)
 
 
-async def run_stdio(settings: Settings) -> None:
-    server = build_server(settings)
-    async with stdio_server() as (read, write):
-        await server.run(read, write, server.create_initialization_options())
-
-
-def serve(settings: Settings | None = None) -> None:
+def serve(
+    settings: Settings | None = None,
+    stdin: BinaryIO | None = None,
+    stdout: BinaryIO | None = None,
+) -> None:
     settings = settings or Settings.from_env()
-    log.info("odoo-mcp-tools starting: %s", settings.redacted())
-    anyio.run(run_stdio, settings)
+    log.info("odoo-mcp-tools %s starting: %s", PLUGIN_VERSION, settings.redacted())
+    inp = stdin if stdin is not None else sys.stdin.buffer
+    out = stdout if stdout is not None else sys.stdout.buffer
+    if stdout is None:
+        # stdout is the MCP channel: send any stray print() to stderr instead.
+        sys.stdout = sys.stderr
+    McpServer(settings).run(inp, out)

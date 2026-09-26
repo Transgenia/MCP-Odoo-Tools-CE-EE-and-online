@@ -11,11 +11,13 @@ that and transparently retries over XML-RPC.
 from __future__ import annotations
 
 import itertools
+import json
+import urllib.error
+import urllib.request
 from typing import Any
 
-import httpx
-
 from ..errors import AuthError, OdooFault, TransportError
+from .base import tls_context
 
 # Raised so FallbackTransport knows this specific failure is recoverable by
 # switching transports rather than a genuine application error.
@@ -38,7 +40,7 @@ class JsonRpcTransport:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._ids = itertools.count(1)
-        self._client = httpx.Client(timeout=timeout)
+        self._tls = tls_context()
 
     def _call(self, service: str, method: str, args: list[Any]) -> Any:
         payload = {
@@ -47,12 +49,22 @@ class JsonRpcTransport:
             "params": {"service": service, "method": method, "args": args},
             "id": next(self._ids),
         }
+        request = urllib.request.Request(
+            f"{self.base_url}/jsonrpc",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
         try:
-            resp = self._client.post(f"{self.base_url}/jsonrpc", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError as exc:  # pragma: no cover - network
+            # HTTP errors (4xx/5xx) raise HTTPError, a URLError subclass.
+            with urllib.request.urlopen(  # URL is the configured Odoo base URL
+                request, timeout=self.timeout, context=self._tls
+            ) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
             raise TransportError(f"jsonrpc transport error: {exc}") from exc
+        if not isinstance(data, dict):
+            raise TransportError("jsonrpc transport error: response is not a JSON object")
 
         if "error" in data:
             err = data["error"]
@@ -89,7 +101,7 @@ class JsonRpcTransport:
         )
 
     def close(self) -> None:
-        self._client.close()
+        """Nothing to release: each call opens and closes its own connection."""
 
 
 def _flatten_error(err: Any) -> str:
