@@ -5,8 +5,11 @@ name: Release
 #   build-standard: sdist/wheel + plugin zip
 #   container: ghcr.io/transgenia/odoo-mcp-tools:{X.Y.Z, X.Y, latest} (amd64 + arm64)
 #   github-release: Release with this version's CHANGELOG section + artifacts
-# publish.yml then uploads server/dist to PyPI; mirror-images.yml refreshes the
-# Odoo/PostgreSQL mirrors used by /odoo-tools:deploy-local.
+#   mirror: refreshes the Odoo/PostgreSQL mirrors used by /odoo-tools:deploy-local
+#   pypi: uploads server/dist to PyPI (trusted publishing, last so a missing PyPI
+#         setup never blocks the Release or the image)
+# A release created with GITHUB_TOKEN triggers no other workflow, so these run
+# here instead of on `release: published`.
 
 on:
   push:
@@ -167,3 +170,27 @@ jobs:
           gh release create "$TAG" --verify-tag --title "odoo-tools $TAG" \
             --notes-file assets/release-notes.md \
             assets/server/dist/* assets/odoo-tools-standard-*.zip
+
+  mirror:
+    needs: github-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/mirror-images.yml
+
+  pypi:
+    needs: github-release
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing (OIDC), no API token stored
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: standard-${{ env.TAG }}
+          path: assets
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: assets/server/dist

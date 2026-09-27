@@ -46,6 +46,10 @@ and the first published Release and package.
   built from the default branch); uses only this version's CHANGELOG section as
   release notes (it used the whole file); the plugin zip now includes
   `scripts/`, `docker/` and `SUPPORT.md`.
+- PyPI publishing and the image mirror now run inside `release.yml`
+  (`publish.yml` removed): a Release created with `GITHUB_TOKEN` triggers no
+  other workflow, so `publish.yml` would never have run. The PyPI trusted
+  publisher must name workflow `release.yml` and environment `pypi`.
 - CI lints `scripts/` too.
 
 ## [1.2.0] - 2026-09-27
