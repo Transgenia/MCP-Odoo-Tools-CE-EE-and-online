@@ -91,13 +91,16 @@ verifies the connection with `odoo_version`.
 
 Provided by Transgenia, started only when you run the command (Docker required):
 
-- **Sandbox** — PostgreSQL + Odoo 16, 17, 18 or 19 on your machine, bound to
+- **Sandbox** — PostgreSQL + **Odoo Community** 16, 17, 18 or 19 on your machine, bound to
   `127.0.0.1`, with a database (demo data optional) ready for the plugin. Images
   come from `ghcr.io/transgenia` (mirrors of the official `odoo` and `postgres`
   images) with automatic fallback to Docker Hub. Passwords are generated locally
   into `~/.odoo-tools/sandbox/.env` (owner-only) and never printed. Script:
   [`scripts/deploy_local.py`](scripts/deploy_local.py) (standard library only).
   `status`, `down`, `logs` and `destroy --yes` manage it afterwards.
+  **Community (CE) only**: Transgenia cannot provide Odoo Enterprise (licensed by
+  Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances — connect your own
+  subscription to use them; the plugin supports all three.
 - **MCP server as a container** — `ghcr.io/transgenia/odoo-mcp-tools`, for
   machines without Python 3.9+, connected to an existing Odoo.
 

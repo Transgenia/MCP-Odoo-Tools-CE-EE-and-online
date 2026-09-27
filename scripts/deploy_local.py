@@ -8,6 +8,9 @@ Run by ``/odoo-tools:deploy-local`` as
 It starts PostgreSQL + Odoo with Docker Compose, bound to 127.0.0.1 only,
 creates a database and prints how to connect the plugin to it.
 
+The sandbox is Odoo Community (CE) only: Transgenia cannot provide Odoo
+Enterprise (licensed by Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances.
+
 Images come from Transgenia's registry (``ghcr.io/transgenia``, mirrors of the
 official ``odoo`` and ``postgres`` images); if that registry cannot be reached
 the official Docker Hub images are used instead. Passwords are generated here,
@@ -375,6 +378,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     summary = {
         "status": "ready",
         "odoo_version": info.get("server_version", env["ODOO_VERSION"]),
+        "edition": "Community (CE)",
         "url": url,
         "database": db,
         "login": env["ODOO_ADMIN_LOGIN"],
@@ -383,6 +387,8 @@ def cmd_up(args: argparse.Namespace) -> int:
         "directory": str(box.dir),
     }
     _say("\nSandbox ready:\n" + json.dumps(summary, indent=2))
+    _say("\nThis sandbox is Odoo Community. Transgenia cannot provide Odoo Enterprise or "
+         "Odoo Online instances; connect your own subscription to use them.")
     _say("\n" + SUPPORT)
     return 0
 

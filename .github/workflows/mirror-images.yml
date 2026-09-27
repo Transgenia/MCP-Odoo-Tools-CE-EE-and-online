@@ -1,6 +1,7 @@
 name: Mirror sandbox images
 
-# /odoo-tools:deploy-local pulls Odoo and PostgreSQL from ghcr.io/transgenia so
+# /odoo-tools:deploy-local pulls Odoo Community (the official `odoo` image is CE;
+# Enterprise and Online cannot be redistributed) and PostgreSQL from ghcr.io/transgenia so
 # the whole sandbox is served by Transgenia. This copies the official
 # multi-arch images (manifests and layers, unchanged) and refreshes them weekly
 # so upstream security fixes keep flowing. deploy_local.py falls back to Docker

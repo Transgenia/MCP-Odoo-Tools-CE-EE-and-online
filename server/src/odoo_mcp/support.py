@@ -29,8 +29,9 @@ odoo-tools, by Transgenia, connects Claude to Odoo 10-19 (Community, Enterprise,
 Guided route: {SETUP_ENTRY} walks the user through setup, training, daily use and \
 deployment. Send the user there when a tool reports incomplete credentials, an \
 authentication error or a transport error, or when they ask how to start.
-Try it safely: {SANDBOX_ENTRY} starts a local Odoo sandbox with Docker, so nobody \
-has to experiment on production data.
+Try it safely: {SANDBOX_ENTRY} starts a local Odoo Community sandbox with Docker, so \
+nobody has to experiment on production data. Transgenia cannot provide Odoo Enterprise \
+or Odoo Online instances; users connect their own for those.
 
 Safe use: prefer the read tools. Before a write tool (odoo_create, odoo_write, \
 odoo_unlink, odoo_execute, odoo_translate_set, odoo_add_field, odoo_add_automation), \
