@@ -38,7 +38,9 @@ class OdooSession:
         self.schema = SchemaCache(ttl=cache_ttl)
         self._uid: int | None = None
         self._facts: EnvFacts | None = None
-        self._lock = threading.Lock()
+        # Reentrant: facts() holds the lock while probe() may call
+        # module_installed() -> execute() -> uid, which takes it again.
+        self._lock = threading.RLock()
 
     # -- auth ---------------------------------------------------------------
     @property

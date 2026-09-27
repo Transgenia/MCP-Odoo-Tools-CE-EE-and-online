@@ -15,21 +15,36 @@ and password are `sensitive` options, kept in the OS secure credential store.
 The `mcpServers` entry launches the server with:
 
 ```
-uv run --frozen --quiet --project ${CLAUDE_PLUGIN_ROOT}/server odoo-mcp
+python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py
 ```
 
-so `uv` runs the bundled server source with the exact dependency versions pinned
-in `server/uv.lock` (virtualenv under `${CLAUDE_PLUGIN_DATA}/server-venv`) — no
-PyPI release and no unpinned resolution at install time.
+The server has no third-party runtime dependencies (standard library only), so
+this runs the bundled source as shipped: no virtualenv, no install step and no
+download, at install time or at start-up.
+
+**Requirement:** Python 3.9+ reachable as `python3` on `PATH`. Check with
+`python3 --version`.
+
+- Linux and macOS usually already have it (on macOS, from Apple's Command Line
+  Tools).
+- **Windows:** the Microsoft Store Python provides `python3.exe`; the python.org
+  installer provides only `python.exe` and `py.exe`. Install Python from the
+  Store, or put a `python3.exe` on `PATH` (e.g. a copy of or hard link to
+  `python.exe` in the same folder). A PowerShell or `doskey` alias does not
+  work, because Claude Code starts the command directly. If `python3` opens the
+  Microsoft Store instead of printing a version, that is the Windows "App
+  execution alias" stub: install the Store Python, or turn off the
+  `python3.exe` entry under **App execution aliases** in Windows Settings so
+  your own `python3.exe` is found.
 
 ## Run the MCP server directly
 
 ```bash
-# with uv (recommended; brings its own Python)
-uv run --project ./server odoo-mcp
+# from a checkout, nothing to install
+python3 server/run_stdio.py
 
-# or from a checkout with your own Python 3.11+
-cd server && pip install -e . && python -m odoo_mcp
+# or install the package (a venv is recommended) and use the entry point
+pip install ./server && odoo-mcp
 ```
 
 Environment when running the server outside the plugin (see the root README for
@@ -51,10 +66,13 @@ pip install -e "./server[otel]"     # OpenTelemetry OTLP tracing
 ```
 Requires Node.js 18+. Installs the CLI to `~/.claude/tools/odoo-cli`.
 
-## Docker (HTTP transport, optional)
+## Docker (optional)
 
-See [`../docker/`](../docker/). Useful for a shared/multi-tenant deployment
-where clients pass `X-Odoo-Url/Db/Login` + `Bearer` headers.
+See [`../docker/`](../docker/). The image runs the same stdio server (attach
+with `docker run -i --env-file ./odoo.env`, a file you create with the `ODOO_*`
+variables and keep out of version control). A multi-tenant HTTP
+transport, where clients pass `X-Odoo-Url/Db/Login` + `Bearer` headers, is on
+the roadmap.
 
 ## Verify
 

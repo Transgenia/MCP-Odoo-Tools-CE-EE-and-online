@@ -1,6 +1,6 @@
 ---
 name: odoo-setup-cli
-description: Configure the TypeScript CLI fallback (XML-RPC). Use when you cannot run the MCP server (no uv/Python) or want a lightweight scriptable surface. Odoo 17/18/SaaS tested.
+description: Configure the TypeScript CLI fallback (XML-RPC). Use when you cannot run the MCP server (no python3 3.9+) or want a lightweight scriptable surface. Odoo 17/18/SaaS tested.
 ---
 
 # Setup — Odoo CLI (fallback)
@@ -40,8 +40,13 @@ cp "$PLUGIN_CLI/src/commands/"*.ts "$CLI_DIR/src/commands/"
 
 ## Step 4 — Credentials (.env)
 
+Create the file with placeholders only, readable by the current user alone
+(`umask 077` in a subshell, so it does not leak into the rest of the session).
+Fill in the URL, database and login with the user; **do not ask for the API key
+or password in the chat and never write the secret yourself**:
+
 ```bash
-cat > "$HOME/.claude/tools/odoo-cli/.env" << 'ENVEOF'
+( umask 077; cat > "$HOME/.claude/tools/odoo-cli/.env" << 'ENVEOF'
 ODOO_URL=<url>
 ODOO_DB=<db>
 ODOO_USER=<login-email>
@@ -49,8 +54,13 @@ ODOO_API_KEY=<api-key>        # Odoo >= 14 (recommended); ignored on older lines
 # ODOO_PASSWORD=<password>    # Odoo < 14 instead (incl. Odoo 10-12): use the
                               # account password — those versions have no API keys
 ENVEOF
+)
 ```
-Only one credential is required: `ODOO_API_KEY` wins when both are set.
+
+Then tell the user to open `~/.claude/tools/odoo-cli/.env` in their own editor
+and replace `<api-key>` (or uncomment the password line) themselves. Only one
+credential is required: `ODOO_API_KEY` wins when both are set. The file stays
+on their machine; delete it when they stop using the CLI.
 
 ## Step 5 — Build and verify
 

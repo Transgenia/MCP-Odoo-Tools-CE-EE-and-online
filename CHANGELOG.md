@@ -4,6 +4,105 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-09-27
+
+Directory-submission follow-up: fixes the findings the Claude plugin directory
+reported on v1.1.0.
+
+- **Package registry redirected** (blocking) — `UV_PROJECT_ENVIRONMENT` is gone
+  from the MCP server environment.
+- **Runs a pinned npx or uvx package** — no package launcher: the server runs
+  from the source bundled in the plugin.
+- **MCP server command wasn't read** — the command is now `python3` plus a file
+  under `${CLAUDE_PLUGIN_ROOT}`.
+- **Uses a credential from the user's machine** (2 findings) — the SessionStart
+  hook no longer reads the API key option.
+- **Contains a download-and-run command** (`security.yml`) — gitleaks is built
+  with `go install` instead of downloaded with `curl` and executed.
+
+### Changed
+- **The MCP server runs with `python3` (3.9+) instead of `uv`.** `plugin.json`
+  starts `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`; nothing is
+  installed or downloaded when the plugin starts. **Migration:** `uv` is no
+  longer needed, but a Python 3.9+ `python3` must be on `PATH`. On Windows that
+  means the Microsoft Store Python, or a `python3.exe` added next to a
+  python.org `python.exe` (see the README "Requirements").
+- MCP stdio protocol implemented on the Python standard library (was the `mcp`
+  SDK + `anyio`): `initialize` with version negotiation (2025-06-18,
+  2025-03-26, 2024-11-05), `ping`, `tools/list` (with `readOnlyHint`
+  annotations), `tools/call` (tool failures as `isError` results; unknown tool
+  → JSON-RPC `-32602`), `notifications/cancelled` and batches. Tool calls run
+  in arrival order on one worker thread; stray `print()` output goes to stderr.
+- JSON-RPC transport uses `urllib` instead of `httpx`. Both transports share a
+  certificate-verifying TLS context (system trust store and `SSL_CERT_FILE`,
+  plus `certifi` when it happens to be installed).
+- No runtime dependencies (`mcp` and `httpx` dropped); `requires-python` is now
+  `>=3.9` (was `>=3.11`). The `dev` extra adds `mcp` (Python 3.10+) only for an
+  interop test.
+- SessionStart hook reads no plugin option at all: it runs `python3 --version`
+  and prints a warning only when `python3` is not runnable.
+- Default `ODOO_TIMEOUT` raised from 30 to 120 s (Odoo's default
+  `limit_time_real`), and exposed as the **Request timeout** plugin option.
+- In `auto` transport mode a write (`create`, `write`, any non-read
+  `execute_kw`) is replayed over XML-RPC only when the JSON-RPC request certainly
+  never reached Odoo (connection/TLS failure, HTTP 3xx/4xx). After a timeout,
+  HTTP 5xx or a garbled 2xx reply the error is raised instead ("may or may not
+  have been applied"), because the call may already have committed.
+  `version`, `authenticate` and read methods (`search_read`, `read`, ...) still
+  fall back; once JSON-RPC fails where XML-RPC works, XML-RPC is pinned for the
+  session. A forced `jsonrpc` preference is never switched to XML-RPC.
+- JSON-RPC no longer follows HTTP redirects (a redirected POST used to become a
+  body-less GET whose reply was taken as the result), asks for gzip, and maps
+  `http.client` protocol errors to transport errors.
+- `odoo-setup-cli` creates the `.env` owner-only with placeholders and tells the
+  user to paste the secret themselves; Claude never handles it. Docker examples
+  use `--env-file` / `env_file:` instead of host environment variables.
+- The leak-guard's organisation-specific markers moved to the
+  `LEAK_GUARD_PATTERNS` repository secret (the plugin folder is the repository
+  root, so the workflow file ships to every installer).
+- CI secret scan: gitleaks v8.18.4 built with `go install` at a fixed tag
+  (modules verified against the Go checksum database) instead of a `curl`
+  download of the release binary.
+- CI tests Python 3.9, 3.11, 3.12 and 3.13.
+
+### Added
+- `server/run_stdio.py` entry point (standard library only): puts the bundled
+  `src` first on `sys.path`, so another installed `odoo_mcp` cannot shadow the
+  shipped code, and exits with a clear message on Python < 3.9.
+- Tests for the stdio protocol, argument validation, hostile input, the entry
+  point under `python -S`, the `urllib` transport (basic auth, redirects, gzip,
+  cut replies), fallback replay rules, the Community deadlock, TLS bundle
+  fallback, the XML-RPC timeout, and interop with the official MCP client
+  (dev-only, skipped when `mcp` is not installed).
+
+### Fixed
+- **Five of the six skills never loaded**: `skills/SKILL.md` sat directly in
+  `skills/`, so Claude Code treated the folder as one skill and ignored its
+  subfolders (`/odoo-tools:odoo-setup-mcp` and others did not exist). Moved to
+  `skills/odoo-mcp-tools/SKILL.md`; all 9 skills and commands now load.
+- **Deadlock on Community instances**: `OdooSession.facts()` held a
+  non-reentrant lock while the edition probe authenticated through the same
+  lock, hanging `odoo_version` (and every tool after it) on a cold session
+  whenever the version string has no `+e`. The lock is now reentrant.
+- Tool arguments are validated against each tool's input schema again (the MCP
+  SDK used to do it): wrong types, missing required or misnamed properties are
+  refused with `Input validation error: ...` before anything reaches Odoo.
+- A malformed message (invalid id, unhashable `requestId`, deeply nested JSON,
+  lone surrogates) can no longer stop the server; unexpected failures answer
+  JSON-RPC `-32603` instead of leaving the request unanswered. Batched tool
+  calls now run on the worker thread like single ones.
+- `ODOO_URL` with `user:pass@` (HTTP basic auth in front of Odoo): JSON-RPC now
+  sends it as an `Authorization` header, and neither transport's errors nor the
+  startup log echo the password.
+- HTTPS on Python builds without a CA file of their own (python.org macOS
+  installers before "Install Certificates"): the OS CA bundle is loaded.
+- The XML-RPC transport now honours `ODOO_TIMEOUT`; before, an unresponsive
+  Odoo could block an XML-RPC call indefinitely. XML-RPC protocol errors
+  (HTTP 5xx from a proxy, malformed replies) are reported as transport errors.
+
+### Removed
+- `server/uv.lock` (nothing to lock without runtime dependencies).
+
 ## [1.1.0] - 2026-09-25
 
 Directory-submission hardening (Claude plugin directory lints and policy holds).
@@ -93,5 +192,7 @@ See [`docs/packaging.md`](docs/packaging.md) for the tier plan
 - CI (ruff + pytest on py3.11/3.12, CLI build), opt-in live Odoo version matrix,
   PyPI publish workflow, Docker image.
 
+[1.2.0]: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/releases/tag/v1.2.0
+[1.1.0]: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/releases/tag/v1.0.0
 [0.1.0]: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/releases/tag/v0.1.0

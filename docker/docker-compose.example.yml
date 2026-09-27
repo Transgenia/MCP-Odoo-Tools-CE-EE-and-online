@@ -7,11 +7,10 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     image: odoo-mcp-tools:local
-    environment:
-      ODOO_URL: ${ODOO_URL}
-      ODOO_DB: ${ODOO_DB}
-      ODOO_LOGIN: ${ODOO_LOGIN}
-      ODOO_API_KEY: ${ODOO_API_KEY}
-      ODOO_TRANSPORT_PREF: ${ODOO_TRANSPORT_PREF:-auto}
+    # odoo.env holds ODOO_URL, ODOO_DB, ODOO_LOGIN, ODOO_API_KEY (and optionally
+    # ODOO_TRANSPORT_PREF, ODOO_TIMEOUT). Create it yourself, chmod 600, and keep
+    # it out of version control (.gitignore already ignores *.env).
+    env_file:
+      - odoo.env
     stdin_open: true
     tty: false

@@ -2,9 +2,10 @@
 
 ## Credentials
 
-- Odoo credentials are read from the environment (`ODOO_URL`, `ODOO_DB`,
-  `ODOO_LOGIN`, `ODOO_API_KEY`/`ODOO_PASSWORD`) or, in multi-tenant HTTP mode,
-  from per-request headers (`X-Odoo-Url/Db/Login` + `Bearer`).
+- Odoo credentials are read from the server's environment (`ODOO_URL`,
+  `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY`/`ODOO_PASSWORD`), which Claude Code
+  fills from the plugin options, or, in multi-tenant HTTP mode, from
+  per-request headers (`X-Odoo-Url/Db/Login` + `Bearer`).
 - The **MCP server** does not persist secrets to disk and never writes them to
   logs. The tenant cache key is `url|db|login` — the secret is not part of it.
 - **Exception — CLI fallback:** `/odoo-tools:odoo-setup-cli` writes a local `.env`
@@ -20,14 +21,37 @@
   logging cannot leak them (enforced by `tests/test_security_redaction.py`).
 - Prefer **API keys** (Odoo ≥ 14) over passwords. Use least-privilege Odoo users.
 
+## Supply chain
+
+- **Zero runtime dependencies.** The MCP stdio protocol and both Odoo
+  transports are implemented on the Python standard library.
+- **Nothing is installed or downloaded when the plugin starts.** Claude Code
+  runs `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: no package launcher,
+  no lockfile install, no code fetched at run time.
+- **Readable source only.** What runs is the plain Python under `server/` as
+  shipped in the plugin; nothing compiled, packed or minified. `run_stdio.py`
+  puts the bundled `server/src` first on `sys.path`, so another `odoo_mcp`
+  package installed on the machine cannot shadow it.
+- The optional extras (`cachetools`, `prometheus-client`, OpenTelemetry) are
+  used only if you install them yourself; the server degrades gracefully
+  without them and the plugin never installs them.
+- The optional CLI fallback is the one exception: `/odoo-tools:odoo-setup-cli`
+  runs `npm install` against the npm registry, only when you invoke it.
+
 ## Automated checks (CI)
 
 - **`.github/workflows/security.yml`** runs on every push/PR:
-  - **gitleaks** — scans history and diffs for committed secrets.
+  - **gitleaks** — scans history and diffs for committed secrets. The CLI is
+    built with `go install` at a fixed tag (v8.18.4), with modules verified
+    against the Go checksum database; no binary is downloaded and executed.
   - **leak-guard** — greps the tree for forbidden internal/tenant markers
     (client data, infra hosts, fiscal IDs, hardcoded credentials) and fails the
     build if any appear. This repo is vendor-neutral: it must contain only the
-    generic tooling plus the public author/brand and services offer.
+    generic tooling plus the public author/brand and services offer. The
+    organisation-specific markers are read from the `LEAK_GUARD_PATTERNS`
+    repository secret rather than written in the workflow, because the plugin
+    folder is the repository root and ships to every installer; matches on
+    those markers are reported by file name only.
 - **`.gitignore`** excludes `.env`, `*.env`, virtualenvs and build output so
   local credentials cannot be committed by accident.
 
@@ -68,8 +92,24 @@
 
 ## Transport
 
-- Use HTTPS Odoo URLs. XML-RPC and JSON-RPC both run over the URL you provide.
-- The server logs to stderr only; stdout is reserved for the MCP channel.
+- Use HTTPS Odoo URLs. XML-RPC and JSON-RPC both run over the URL you provide;
+  a plain `http://` URL is sent unencrypted.
+- **TLS is always verified.** Both transports share one certificate-verifying
+  context (hostname checked) built from the system trust store, honouring
+  `SSL_CERT_FILE`, plus the `certifi` bundle when that package is already
+  installed. There is no option to turn verification off. If your Python has no
+  usable trust store, point `SSL_CERT_FILE` at a CA bundle.
+- **Basic auth in front of Odoo.** `ODOO_URL` may carry `user:pass@`; JSON-RPC
+  sends it as an `Authorization` header (never on a redirect, which is refused
+  anyway) and no error or log line echoes the password. Note that **Odoo URL**
+  is not a `sensitive` plugin option: a password embedded there is stored in the
+  plugin settings, not in the OS credential store.
+- **Timeouts.** Every JSON-RPC and XML-RPC request is bounded by `ODOO_TIMEOUT`
+  (seconds, default 120, Odoo's own default request limit; plugin option
+  **Request timeout**), so an unresponsive Odoo cannot hang the server
+  (XML-RPC ignored the timeout before 1.2.0).
+- The server logs to stderr only; stdout is reserved for the MCP channel, and
+  stray `print()` output is redirected to stderr.
 
 ## Read-only mode
 

@@ -1,21 +1,33 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
-"""JSON-RPC transport (``/jsonrpc``).
+"""JSON-RPC transport (``/jsonrpc``), on the standard library (``urllib``).
 
 Faster and friendlier to modern tooling, but note the well-known caveat this
 server guards against: on Odoo 17+ the ``/jsonrpc`` endpoint rejects API keys
 for ``execute_kw`` (only passwords work there). The FallbackTransport detects
 that and transparently retries over XML-RPC.
+
+Failures are split in two so a retry can never run a write twice:
+:class:`JsonRpcUnavailable` means the request certainly never reached an Odoo
+JSON-RPC handler (connection or TLS failure, HTTP 3xx/4xx), while a plain
+:class:`TransportError` (HTTP 5xx, a timeout while waiting, a cut connection,
+a 2xx reply that is not JSON-RPC) means Odoo may already have run the call.
 """
 
 from __future__ import annotations
 
+import base64
+import gzip
+import http.client
 import itertools
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any
 
-import httpx
-
 from ..errors import AuthError, OdooFault, TransportError
+from .base import tls_context
 
 # Raised so FallbackTransport knows this specific failure is recoverable by
 # switching transports rather than a genuine application error.
@@ -31,14 +43,49 @@ class ApiKeyRejected(TransportError):
     """`/jsonrpc` refused an API key; caller should fall back to XML-RPC."""
 
 
+class JsonRpcUnavailable(TransportError):
+    """The request never reached an Odoo JSON-RPC handler: safe to retry elsewhere."""
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirected POST would be replayed as a body-less GET, possibly to another
+    host, and whatever it returned taken as the RPC result: refuse instead."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+def split_userinfo(url: str) -> tuple[str, str | None]:
+    """Return ``(url_without_userinfo, basic_auth_header_or_None)``.
+
+    ``https://user:pass@host`` is valid in ODOO_URL (HTTP basic auth in front of
+    Odoo); urllib cannot use it directly and would echo it in errors.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+        has_userinfo = parts.username is not None or parts.password is not None
+    except ValueError:  # malformed URL: the request below reports it cleanly
+        return url, None
+    if not has_userinfo:
+        return url, None
+    user = urllib.parse.unquote(parts.username or "")
+    password = urllib.parse.unquote(parts.password or "")
+    token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+    netloc = parts.netloc.rpartition("@")[2]
+    return urllib.parse.urlunsplit(parts._replace(netloc=netloc)), f"Basic {token}"
+
+
 class JsonRpcTransport:
     name = "jsonrpc"
 
     def __init__(self, base_url: str, timeout: int = 30) -> None:
-        self.base_url = base_url.rstrip("/")
+        url, self._auth = split_userinfo(base_url.rstrip("/"))
+        self.base_url = url  # never contains credentials
         self.timeout = timeout
         self._ids = itertools.count(1)
-        self._client = httpx.Client(timeout=timeout)
+        self._opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=tls_context()), _NoRedirect()
+        )
 
     def _call(self, service: str, method: str, args: list[Any]) -> Any:
         payload = {
@@ -48,11 +95,42 @@ class JsonRpcTransport:
             "id": next(self._ids),
         }
         try:
-            resp = self._client.post(f"{self.base_url}/jsonrpc", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError as exc:  # pragma: no cover - network
-            raise TransportError(f"jsonrpc transport error: {exc}") from exc
+            request = urllib.request.Request(
+                f"{self.base_url}/jsonrpc",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip",
+                },
+                method="POST",
+            )
+            if self._auth:
+                request.add_unredirected_header("Authorization", self._auth)
+            with self._opener.open(request, timeout=self.timeout) as resp:
+                body = resp.read()
+                if resp.headers.get("Content-Encoding", "").lower() == "gzip":
+                    body = gzip.decompress(body)
+        except urllib.error.HTTPError as exc:
+            if 300 <= exc.code < 500:  # redirect or rejected before Odoo ran anything
+                raise JsonRpcUnavailable(f"jsonrpc: HTTP {exc.code} {exc.reason}") from None
+            raise TransportError(f"jsonrpc: HTTP {exc.code} {exc.reason}") from None
+        except urllib.error.URLError as exc:  # connect/TLS/send failed: nothing ran
+            raise JsonRpcUnavailable(f"jsonrpc transport error: {exc.reason}") from None
+        except (http.client.HTTPException, OSError, EOFError) as exc:
+            # Sent, then the reply was cut or timed out: the call may have run.
+            raise TransportError(f"jsonrpc transport error: {type(exc).__name__}: {exc}") from None
+        except ValueError as exc:  # malformed URL
+            raise JsonRpcUnavailable(f"jsonrpc transport error: {exc}") from None
+
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            # The request was sent and something answered 2xx: Odoo may have run
+            # the call (a proxy can replace a good reply), so this is uncertain.
+            raise TransportError("jsonrpc: the reply is not a JSON-RPC object")
 
         if "error" in data:
             err = data["error"]
@@ -89,7 +167,7 @@ class JsonRpcTransport:
         )
 
     def close(self) -> None:
-        self._client.close()
+        """Nothing to release: each call opens and closes its own connection."""
 
 
 def _flatten_error(err: Any) -> str:

@@ -1,7 +1,7 @@
 {
   "name": "odoo-tools",
   "displayName": "Odoo Tools",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer.",
   "author": {
     "name": "Transgenia",
@@ -49,6 +49,14 @@
       "description": "auto (default), jsonrpc or xmlrpc.",
       "default": "auto"
     },
+    "odoo_timeout": {
+      "type": "number",
+      "title": "Request timeout (seconds)",
+      "description": "Maximum time to wait for one Odoo call before reporting an error. Default 120, Odoo's own default request limit.",
+      "default": 120,
+      "min": 5,
+      "max": 3600
+    },
     "odoo_readonly": {
       "type": "boolean",
       "title": "Read-only mode",
@@ -58,16 +66,16 @@
   },
   "mcpServers": {
     "odoo": {
-      "command": "uv",
-      "args": ["run", "--frozen", "--quiet", "--project", "${CLAUDE_PLUGIN_ROOT}/server", "odoo-mcp"],
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py"],
       "env": {
-        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/server-venv",
         "ODOO_URL": "${user_config.odoo_url}",
         "ODOO_DB": "${user_config.odoo_db}",
         "ODOO_LOGIN": "${user_config.odoo_login}",
         "ODOO_API_KEY": "${user_config.odoo_api_key}",
         "ODOO_PASSWORD": "${user_config.odoo_password}",
         "ODOO_TRANSPORT_PREF": "${user_config.odoo_transport_pref}",
+        "ODOO_TIMEOUT": "${user_config.odoo_timeout}",
         "ODOO_READONLY": "${user_config.odoo_readonly}"
       }
     }

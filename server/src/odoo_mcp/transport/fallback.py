@@ -4,13 +4,21 @@
 
 Preference:
   * ``auto``    -> try JSON-RPC first, fall back to XML-RPC on api-key rejection
-                   or transport error.
+                   or when JSON-RPC is unusable.
   * ``jsonrpc`` -> JSON-RPC only.
   * ``xmlrpc``  -> XML-RPC only.
 
 The api-key-on-/jsonrpc caveat (Odoo 17+) is the primary reason auto mode
 exists; when it triggers we log a single warning and pin XML-RPC for the rest
 of the transport's life so we don't pay the failed round-trip repeatedly.
+
+A call is replayed over XML-RPC only when that cannot run it twice: always for
+``version``/``authenticate`` and for ``execute_kw`` of read methods (see
+``READ_METHODS``), but for any other ``execute_kw`` only when the JSON-RPC
+request certainly never reached Odoo (:class:`JsonRpcUnavailable`). After a
+timeout, HTTP 5xx or a garbled reply a write may already have committed, so
+the error is raised instead of risking a duplicate create/write. When JSON-RPC
+fails and XML-RPC then answers, XML-RPC is pinned for the rest of the session.
 """
 
 from __future__ import annotations
@@ -19,10 +27,19 @@ import logging
 from typing import Any
 
 from ..errors import TransportError
-from .jsonrpc import ApiKeyRejected, JsonRpcTransport
+from .jsonrpc import ApiKeyRejected, JsonRpcTransport, JsonRpcUnavailable
 from .xmlrpc import XmlRpcTransport
 
 log = logging.getLogger("odoo_mcp.transport")
+
+# ORM methods that only read, so replaying them over XML-RPC is always safe.
+READ_METHODS = frozenset(
+    {
+        "search", "search_read", "search_count", "read", "read_group", "fields_get",
+        "name_search", "name_get", "default_get", "check_access_rights", "has_group",
+        "web_search_read", "web_read", "get_views", "fields_view_get", "export_data",
+    }
+)
 
 
 class FallbackTransport:
@@ -61,32 +78,42 @@ class FallbackTransport:
 
     def _run(self, op: str, fn_name: str, *fn_args: Any) -> Any:
         last_exc: Exception | None = None
+        # execute_kw args: (db, uid, secret, model, method, ...)
+        replayable = op != "execute_kw" or (len(fn_args) > 4 and fn_args[4] in READ_METHODS)
         for kind in self._order():
             transport = self._jsonrpc() if kind == "jsonrpc" else self._xmlrpc()
             try:
                 result = getattr(transport, fn_name)(*fn_args)
-                if self._pinned is None and kind == "jsonrpc":
-                    # success on preferred transport; keep auto behavior
-                    pass
+                if kind == "xmlrpc" and last_exc is not None:
+                    # JSON-RPC just failed where XML-RPC works: stop retrying it.
+                    self._pin_xmlrpc(reason=f"JSON-RPC failed ({last_exc})")
                 return result
             except ApiKeyRejected as exc:
                 last_exc = exc
-                self._pin_xmlrpc(reason=str(exc))
+                self._pin_xmlrpc(reason=f"JSON-RPC rejected the API key ({exc})")
+                continue
+            except JsonRpcUnavailable as exc:
+                last_exc = exc
+                # nothing reached Odoo: safe to retry, and JSON-RPC is not usable here
+                self._pin_xmlrpc(reason=f"JSON-RPC unavailable ({exc})")
                 continue
             except TransportError as exc:
                 last_exc = exc
-                # transport-level problem; try the next candidate if any
-                continue
+                if not replayable:
+                    # A write with an unknown outcome (timeout, 5xx, cut reply): never replay.
+                    raise TransportError(
+                        f"{exc} - the call may or may not have been applied in Odoo; "
+                        "check before retrying"
+                    ) from exc
+                continue  # idempotent (version/authenticate/reads): try the next one
         assert last_exc is not None
         raise last_exc
 
     def _pin_xmlrpc(self, reason: str) -> None:
+        if self.pref == "jsonrpc":
+            return  # the operator forced JSON-RPC: report errors, never switch
         if not self._warned_fallback:
-            log.warning(
-                "JSON-RPC rejected API key on %s; falling back to XML-RPC (%s)",
-                self.base_url,
-                reason,
-            )
+            log.warning("falling back to XML-RPC: %s", reason)
             self._warned_fallback = True
         self._pinned = "xmlrpc"
 
