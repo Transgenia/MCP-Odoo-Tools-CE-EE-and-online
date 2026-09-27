@@ -29,14 +29,16 @@ docker --version && docker compose version && docker info --format '{{.ServerVer
 ## Step 1 — Choose the mode
 
 Ask (single choice):
-- **Local sandbox (recommended to learn and test)** — PostgreSQL + Odoo on this
-  machine, bound to `127.0.0.1` only, with demo data. Nothing touches production.
+- **Local sandbox (recommended to learn and test)** — PostgreSQL + Odoo **Community**
+  on this machine, bound to `127.0.0.1` only, with demo data. Nothing touches production.
   Needs `python3` 3.9+ (the plugin already requires it) and ~2 GB of disk.
 - **MCP server in a container, for an existing Odoo** — for machines without
   `python3` 3.9+: the same MCP server, packaged by Transgenia as
   `ghcr.io/transgenia/odoo-mcp-tools`, connected to the user's own Odoo.
 
 ## Mode A — Local sandbox
+
+> The sandbox is **Odoo Community (CE)** only. Transgenia cannot provide **Odoo Enterprise** or **Odoo Online** (odoo.com) instances: Enterprise is licensed by Odoo S.A. per subscription and Online is Odoo S.A.'s own SaaS. To work with them, use the user's own Enterprise subscription or Online database (or Odoo's free trial); the plugin connects to them in the same way.
 
 1. Ask, one at a time: **Odoo version** (19.0 · 18.0 recommended · 17.0 · 16.0),
    **demo data** (yes, recommended for training · no), **language** (e.g.

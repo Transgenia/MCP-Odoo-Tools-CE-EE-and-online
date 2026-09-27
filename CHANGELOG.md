@@ -18,11 +18,13 @@ and the first published Release and package.
   backups, updates). `/setup-odoo-tools` now opens the same route.
 - **`/odoo-tools:deploy-local`** — local infrastructure, only when the user runs
   it and confirms (Docker required):
-  - *Sandbox*: PostgreSQL 16 + Odoo 16.0, 17.0, 18.0 or 19.0 bound to
+  - *Sandbox*: PostgreSQL 16 + Odoo **Community** 16.0, 17.0, 18.0 or 19.0 bound to
     `127.0.0.1`, with a database (demo data optional) ready for the plugin.
     `scripts/deploy_local.py` (standard library only) generates the passwords
     locally into `~/.odoo-tools/sandbox/.env` (owner-only), never prints them,
-    and offers `status`, `down`, `logs` and `destroy --yes`.
+    and offers `status`, `down`, `logs` and `destroy --yes`. Transgenia cannot
+    provide Odoo Enterprise or Odoo Online instances (Enterprise is licensed by
+    Odoo S.A., Online is its SaaS); the plugin connects to the user's own.
   - *Container*: the MCP server as `ghcr.io/transgenia/odoo-mcp-tools`, for
     machines without Python 3.9+, connected to an existing Odoo.
 - **Images served by Transgenia.** The release publishes the MCP server image to

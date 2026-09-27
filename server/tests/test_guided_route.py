@@ -265,3 +265,11 @@ def test_generated_compose_file_is_valid(tmp_path: Path) -> None:
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_sandbox_is_community_only_and_says_so() -> None:
+    assert "Community" in INSTRUCTIONS and "Enterprise" in INSTRUCTIONS
+    for rel in ("commands/deploy-local.md", "skills/odoo-setup-mcp/SKILL.md",
+                "scripts/deploy_local.py", "README.md"):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert "cannot provide" in text and "Odoo Online" in text, rel
