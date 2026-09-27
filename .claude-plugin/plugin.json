@@ -11,7 +11,24 @@
   "homepage": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online",
   "repository": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online",
   "license": "MIT",
-  "keywords": ["odoo", "erp", "mcp", "xml-rpc", "json-rpc", "community", "enterprise", "saas"],
+  "keywords": [
+    "odoo",
+    "erp",
+    "mcp",
+    "xml-rpc",
+    "json-rpc",
+    "community",
+    "enterprise",
+    "saas",
+    "claude",
+    "claude-ai",
+    "claude-code",
+    "odoo-erp",
+    "odoo-community",
+    "odoo-enterprise",
+    "odoo-online",
+    "ai-agents"
+  ],
   "userConfig": {
     "odoo_url": {
       "type": "string",
@@ -67,7 +84,9 @@
   "mcpServers": {
     "odoo": {
       "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py"],
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py"
+      ],
       "env": {
         "ODOO_URL": "${user_config.odoo_url}",
         "ODOO_DB": "${user_config.odoo_db}",

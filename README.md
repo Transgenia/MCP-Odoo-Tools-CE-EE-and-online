@@ -4,6 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](server/pyproject.toml)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-orange)](https://modelcontextprotocol.io)
+[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
+[![Claude AI](https://img.shields.io/badge/Claude-AI-D97757?logo=claude&logoColor=white)](https://claude.ai)
+[![Odoo ERP 10-19](https://img.shields.io/badge/Odoo_ERP-10--19-714B67?logo=odoo&logoColor=white)](https://www.odoo.com)
+[![Odoo CE | EE | Online](https://img.shields.io/badge/Odoo-CE_%7C_EE_%7C_Online-714B67?logo=odoo&logoColor=white)](docs/compat-matrix.md)
 [![M8ven Score](https://m8ven.ai/badge/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)](https://m8ven.ai/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)
 
 A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
