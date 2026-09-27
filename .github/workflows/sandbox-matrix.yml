@@ -1,0 +1,55 @@
+name: Sandbox matrix
+
+# Starts every Odoo Community series offered by /odoo-tools:deploy-local and
+# checks it end to end through the plugin's own MCP server, so a broken image,
+# PostgreSQL pairing or RPC change shows up here and not on a user's machine.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/deploy_local.py"
+      - "scripts/sandbox_smoke.py"
+      - "server/src/**"
+      - ".github/workflows/sandbox-matrix.yml"
+  schedule:
+    - cron: "17 8 * * 1"   # Mondays 08:17 UTC, after the weekly image mirror
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read  # pull the ghcr.io/transgenia mirrors this repository publishes
+
+jobs:
+  sandbox:
+    name: odoo ${{ matrix.odoo }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        odoo: ["10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Log in to GHCR (mirrors; the script falls back to Docker Hub)
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: sandbox up
+        run: python3 scripts/deploy_local.py sandbox up --odoo "${{ matrix.odoo }}" --no-demo --dir "$RUNNER_TEMP/sandbox" --timeout 600
+      - name: MCP smoke test (odoo_version + odoo_search_read)
+        run: |
+          V="${{ matrix.odoo }}"
+          python3 scripts/sandbox_smoke.py --dir "$RUNNER_TEMP/sandbox" --expect "${V%%.*}"
+      - name: Odoo logs (on failure)
+        if: failure()
+        run: python3 scripts/deploy_local.py sandbox logs --dir "$RUNNER_TEMP/sandbox" --tail 200 || true
+      - name: sandbox destroy
+        if: always()
+        run: python3 scripts/deploy_local.py sandbox destroy --dir "$RUNNER_TEMP/sandbox" --yes || true

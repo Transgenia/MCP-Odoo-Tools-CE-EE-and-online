@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Sandbox for Odoo Community 10.0 to 15.0** (was 16.0-19.0), for testing and
+  migrations. Each series gets a PostgreSQL major it supports (10 for 10.0/11.0,
+  12 for 12.0/13.0, 13 for 14.0/15.0, 16 for 16.0+); series up to 15.0 run as
+  linux/amd64 (their official images are amd64-only; emulated on ARM hosts).
+  The script warns that 10.0-15.0 no longer receive fixes from Odoo S.A.
+- **Sandbox matrix workflow** (`sandbox-matrix.yml`): starts every series from
+  10.0 to 19.0 with `deploy_local.py` and checks it through the plugin's own MCP
+  server (`scripts/sandbox_smoke.py`: `odoo_version` + `odoo_search_read`). Runs
+  on changes to the sandbox or the server, weekly, and on demand.
+- The image mirror also copies `odoo:10.0`-`15.0` and `postgres:10`, `12`, `13`.
+
+### Fixed
+- The sandbox talks to Odoo over XML-RPC (`/xmlrpc/2/common`, `/xmlrpc/2/db`)
+  instead of `/jsonrpc`, which does not exist before Odoo 12.0.
+
 ## [1.3.0] - 2026-09-27
 
 Plug and play: one guided route, local infrastructure provided by Transgenia,

@@ -287,3 +287,79 @@ def test_release_version_check_script() -> None:
     usage = subprocess.run([sys.executable, str(script), "1.3"],
                            capture_output=True, text=True, check=False)
     assert usage.returncode == 2
+
+
+# --------------------------------------------- sandbox: Odoo 10.0-19.0 + XML-RPC
+
+
+@pytest.mark.parametrize("version,postgres,platform_", [
+    ("10.0", "10", "linux/amd64"), ("11.0", "10", "linux/amd64"),
+    ("12.0", "12", "linux/amd64"), ("13.0", "12", "linux/amd64"),
+    ("14.0", "13", "linux/amd64"), ("15.0", "13", "linux/amd64"),
+    ("16.0", "16", ""), ("17.0", "16", ""), ("18.0", "16", ""), ("19.0", "16", ""),
+])
+def test_each_series_gets_its_postgres_and_platform(tmp_path: Path, version: str,
+                                                    postgres: str, platform_: str) -> None:
+    env = dl.Sandbox(tmp_path / version).prepare(version, None, None, None, None, "dockerhub")
+    assert env["ODOO_IMAGE"] == f"odoo:{version}"
+    assert env["POSTGRES_IMAGE"] == f"postgres:{postgres}"
+    assert env["ODOO_PLATFORM"] == platform_
+
+
+def test_every_offered_series_is_mapped_and_mirrored() -> None:
+    assert dl.ODOO_VERSIONS == tuple(f"{v}.0" for v in range(10, 20))
+    assert set(dl.POSTGRES_FOR) == set(dl.ODOO_VERSIONS)
+    assert dl.UNSUPPORTED <= set(dl.ODOO_VERSIONS)
+    mirror = (ROOT / ".github/workflows/mirror-images.yml").read_text()
+    for version in dl.ODOO_VERSIONS:
+        assert f'"odoo:{version}"' in mirror, version
+    for pg in set(dl.POSTGRES_FOR.values()):
+        assert f'"postgres:{pg}"' in mirror, pg
+    matrix = (ROOT / ".github/workflows/sandbox-matrix.yml").read_text()
+    for version in dl.ODOO_VERSIONS:
+        assert f'"{version}"' in matrix, version
+
+
+def _xmlrpc_server() -> Any:
+    import threading
+    from xmlrpc.server import SimpleXMLRPCRequestHandler, SimpleXMLRPCServer
+
+    class Handler(SimpleXMLRPCRequestHandler):
+        rpc_paths = ("/xmlrpc/2/common", "/xmlrpc/2/db")
+
+    server = SimpleXMLRPCServer(("127.0.0.1", 0), requestHandler=Handler,
+                                logRequests=False, allow_none=True)
+
+    def version() -> dict[str, Any]:
+        return {"server_version": "10.0-20231201", "server_serie": "10.0"}
+
+    def create_database(*args: Any) -> bool:
+        raise Exception("Access Denied: wrong master password")  # noqa: TRY002
+
+    server.register_function(version, "version")
+    server.register_function(create_database, "create_database")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_rpc_speaks_xmlrpc_on_every_series() -> None:
+    server = _xmlrpc_server()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        assert dl.rpc(url, "common", "version", [])["server_serie"] == "10.0"
+        assert dl.wait_for_odoo(url, 5)["server_version"].startswith("10.0")
+        with pytest.raises(dl.SandboxError, match="Odoo refused db.create_database"):
+            dl.rpc(url, "db", "create_database", ["bad", "x", False, "en_US", "pw", "admin"])
+    finally:
+        server.shutdown()
+
+
+def test_wait_for_odoo_keeps_waiting_while_not_answering(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket as _socket
+    with _socket.socket() as sock:  # a free port nobody listens on
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    with pytest.raises(dl.SandboxError, match="did not answer"):
+        dl.wait_for_odoo(f"http://127.0.0.1:{port}", 0.5)

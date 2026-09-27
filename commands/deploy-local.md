@@ -1,5 +1,5 @@
 ---
-description: Deploy local Odoo infrastructure provided by Transgenia — a Docker sandbox (PostgreSQL + Odoo 16-19) to train and test safely, or the odoo-tools MCP server as a container for an existing Odoo. Guided, one question at a time.
+description: Deploy local Odoo infrastructure provided by Transgenia — a Docker sandbox (PostgreSQL + Odoo Community 10-19) to train and test safely, or the odoo-tools MCP server as a container for an existing Odoo. Guided, one question at a time.
 argument-hint: (optional) sandbox | container | status | stop | destroy
 ---
 
@@ -38,9 +38,16 @@ Ask (single choice):
 
 ## Mode A — Local sandbox
 
+> Odoo **10.0 to 15.0** are available for testing and migrations: Odoo S.A. no
+> longer maintains them (no security fixes), their images are amd64-only (they
+> run emulated, slower, on Apple Silicon/ARM), and each series gets a PostgreSQL
+> version it supports (10 for 10.0/11.0, 12 for 12.0/13.0, 13 for 14.0/15.0,
+> 16 for 16.0+). Say so to the user before creating one.
+>
 > The sandbox is **Odoo Community (CE)** only. Transgenia cannot provide **Odoo Enterprise** or **Odoo Online** (odoo.com) instances: Enterprise is licensed by Odoo S.A. per subscription and Online is Odoo S.A.'s own SaaS. To work with them, connect the user's own Enterprise instance or Online database. On Odoo Online the plan must include external API access; without it the connection fails even with correct credentials.
 
-1. Ask, one at a time: **Odoo version** (19.0 · 18.0 recommended · 17.0 · 16.0),
+1. Ask, one at a time: **Odoo version** (19.0 · 18.0 recommended · 17.0 · 16.0 ·
+   or an older series 15.0 … 10.0 for testing and migrations),
    **demo data** (yes, recommended for training · no), **language** (e.g.
    `es_MX`, `en_US`) and whether port **8069** is fine (otherwise another, e.g. 8070).
 2. Tell the user what will happen: images come from Transgenia's registry

@@ -11,6 +11,11 @@ creates a database and prints how to connect the plugin to it.
 The sandbox is Odoo Community (CE) only: Transgenia cannot provide Odoo
 Enterprise (licensed by Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances.
 
+Odoo 10.0 to 19.0 are available. Each series gets a PostgreSQL version it
+supports, and series up to 15.0 (published for amd64 only) run as linux/amd64,
+emulated on ARM hosts. Odoo 10.0-15.0 no longer receive fixes from Odoo S.A.:
+use them to test and migrate, never for real data.
+
 Images come from Transgenia's registry (``ghcr.io/transgenia``, mirrors of the
 official ``odoo`` and ``postgres`` images); if that registry cannot be reached
 the official Docker Hub images are used instead. Passwords are generated here,
@@ -21,16 +26,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
+import platform
 import secrets
 import shutil
 import socket
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
+import xmlrpc.client
 from pathlib import Path
 from typing import Any
 
@@ -38,9 +44,20 @@ PROJECT = "odoo-tools-sandbox"
 DEFAULT_PORT = 8069
 DEFAULT_DB = "sandbox"
 DEFAULT_LANG = "en_US"
-ODOO_VERSIONS = ("16.0", "17.0", "18.0", "19.0")
+ODOO_VERSIONS = (
+    "10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
+)
 DEFAULT_VERSION = "18.0"
-POSTGRES_TAG = "16"
+# A PostgreSQL major each Odoo series works with. Odoo 10.0/11.0 predate
+# PostgreSQL 12 (pg_attrdef.adsrc was dropped there), so they get 10.
+POSTGRES_FOR = {
+    "10.0": "10", "11.0": "10", "12.0": "12", "13.0": "12", "14.0": "13", "15.0": "13",
+    "16.0": "16", "17.0": "16", "18.0": "16", "19.0": "16",
+}
+# Official odoo images up to 15.0 are published for amd64 only.
+AMD64_ONLY = {"10.0", "11.0", "12.0", "13.0", "14.0", "15.0"}
+# Series Odoo S.A. no longer maintains (no security fixes).
+UNSUPPORTED = {"10.0", "11.0", "12.0", "13.0", "14.0", "15.0"}
 REGISTRIES = {
     "transgenia": ("ghcr.io/transgenia/odoo", "ghcr.io/transgenia/postgres"),
     "dockerhub": ("odoo", "postgres"),
@@ -73,6 +90,7 @@ services:
     restart: unless-stopped
   odoo:
     image: ${ODOO_IMAGE:?}
+    platform: ${ODOO_PLATFORM:-}
     depends_on:
       db:
         condition: service_healthy
@@ -186,22 +204,36 @@ def port_is_free(port: int) -> bool:
     return True
 
 
+class _TimeoutTransport(xmlrpc.client.Transport):
+    def __init__(self, timeout: float) -> None:
+        super().__init__()
+        self._timeout = timeout
+
+    def make_connection(self, host: Any) -> Any:
+        conn = super().make_connection(host)
+        conn.timeout = self._timeout
+        return conn
+
+
+# Not answering yet (refused, reset, 502 while Odoo boots): keep waiting.
+NOT_READY = (OSError, xmlrpc.client.ProtocolError, http.client.HTTPException, ValueError)
+
+
 def rpc(url: str, service: str, method: str, args: list[Any], timeout: float = 30) -> Any:
-    """One Odoo ``/jsonrpc`` call. Raises SandboxError on an Odoo fault."""
-    body = json.dumps(
-        {"jsonrpc": "2.0", "method": "call", "id": 1,
-         "params": {"service": service, "method": method, "args": args}}
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        f"{url}/jsonrpc", data=body, headers={"Content-Type": "application/json"}
+    """One Odoo XML-RPC call (``/xmlrpc/2/<service>``). Raises SandboxError on a fault.
+
+    XML-RPC is used because it exists on every series from 10.0 to 19.0;
+    ``/jsonrpc`` only appeared in 12.0.
+    """
+    proxy = xmlrpc.client.ServerProxy(
+        f"{url}/xmlrpc/2/{service}", transport=_TimeoutTransport(timeout), allow_none=True
     )
-    with urllib.request.urlopen(request, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    if "error" in data:
-        err = data["error"]
-        detail = (err.get("data") or {}).get("message") or err.get("message") or str(err)
-        raise SandboxError(f"Odoo refused {service}.{method}: {detail}")
-    return data.get("result")
+    try:
+        return getattr(proxy, method)(*args)
+    except xmlrpc.client.Fault as exc:
+        lines = str(exc.faultString or exc).strip().splitlines()
+        raise SandboxError(f"Odoo refused {service}.{method}: {lines[-1] if lines else exc}") \
+            from None
 
 
 def wait_for_odoo(url: str, timeout: float) -> dict[str, Any]:
@@ -210,7 +242,7 @@ def wait_for_odoo(url: str, timeout: float) -> dict[str, Any]:
     while time.monotonic() < deadline:
         try:
             return dict(rpc(url, "common", "version", [], timeout=10))
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except NOT_READY as exc:
             last = str(exc)
         time.sleep(3)
     raise SandboxError(f"Odoo did not answer on {url} within {int(timeout)}s ({last}). "
@@ -260,7 +292,8 @@ class Sandbox:
             "ODOO_DEMO": fixed.get("ODOO_DEMO") or demo_flag or existing.get("ODOO_DEMO")
             or "1",
             "ODOO_IMAGE": f"{odoo_repo}:{version}",
-            "POSTGRES_IMAGE": f"{pg_repo}:{POSTGRES_TAG}",
+            "POSTGRES_IMAGE": f"{pg_repo}:{POSTGRES_FOR[version]}",
+            "ODOO_PLATFORM": "linux/amd64" if version in AMD64_ONLY else "",
             "ODOO_ADMIN_LOGIN": existing.get("ODOO_ADMIN_LOGIN", "admin"),
             "ODOO_ADMIN_PASSWORD": existing.get("ODOO_ADMIN_PASSWORD")
             or secrets.token_urlsafe(18),
@@ -319,7 +352,7 @@ class Sandbox:
         _say("Transgenia's registry was not reachable; using the official Docker Hub images.")
         odoo_repo, pg_repo = REGISTRIES["dockerhub"]
         env["ODOO_IMAGE"] = f"{odoo_repo}:{env['ODOO_VERSION']}"
-        env["POSTGRES_IMAGE"] = f"{pg_repo}:{POSTGRES_TAG}"
+        env["POSTGRES_IMAGE"] = f"{pg_repo}:{POSTGRES_FOR[env['ODOO_VERSION']]}"
         self.write_env(env)
         if self.compose("pull", check=False).returncode == 0:
             return env
@@ -352,6 +385,13 @@ def cmd_up(args: argparse.Namespace) -> int:
     if not was_running and not port_is_free(port):
         raise SandboxError(f"Port {port} on 127.0.0.1 is already in use. "
                            f"Pick another one with --port (e.g. --port 8070).")
+    version = env["ODOO_VERSION"]
+    if version in UNSUPPORTED:
+        _say(f"Note: Odoo {version} no longer receives fixes from Odoo S.A. Use this sandbox to "
+             "test and migrate, never for real data.")
+    if version in AMD64_ONLY and platform.machine().lower() in ("arm64", "aarch64"):
+        _say(f"Note: the Odoo {version} image is amd64-only; it runs emulated on this ARM "
+             "machine (slower, first start can take several minutes).")
     _say(f"[1/4] Downloading images (first run: ~1-2 GB) — {env['ODOO_IMAGE']}")
     env = box.pull(env, args.registry)
     _say("[2/4] Starting PostgreSQL + Odoo")
@@ -411,7 +451,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         try:
             summary["server_version"] = rpc(summary["url"], "common", "version", [],
                                             timeout=10).get("server_version")
-        except (urllib.error.URLError, OSError, ValueError, SandboxError):
+        except (*NOT_READY, SandboxError):
             summary["status"] = "starting"
     _say(json.dumps(summary, indent=2))
     return 0
