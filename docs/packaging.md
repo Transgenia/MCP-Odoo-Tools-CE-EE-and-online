@@ -16,7 +16,9 @@ nothing in this repo is gated, stubbed, or phone-home licensed.
 
 Release procedure: bump `plugin.json`, `marketplace.json`, `server/pyproject.toml`
 and the telemetry fallback, add the `## [<ver>]` CHANGELOG section, merge, then
-push the tag `v<ver>`. `release.yml` refuses a tag that does not match.
+push the tag `v<ver>` — or, without a local clone, run **Actions → Release → Run workflow**
+on `main` with tag `v<ver>`: the workflow creates the tag itself. `release.yml` refuses a tag
+that does not match the versions.
 
 Install: `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
 then `/plugin install odoo-tools` (see `docs/install.md`).

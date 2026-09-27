@@ -273,3 +273,17 @@ def test_sandbox_is_community_only_and_says_so() -> None:
                 "scripts/deploy_local.py", "README.md"):
         text = (ROOT / rel).read_text(encoding="utf-8")
         assert "cannot provide" in text and "Odoo Online" in text, rel
+
+
+def test_release_version_check_script() -> None:
+    script = ROOT / "scripts" / "check_release_version.py"
+    version = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["version"]
+    ok = subprocess.run([sys.executable, str(script), f"v{version}"],
+                        capture_output=True, text=True, check=False)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    bad = subprocess.run([sys.executable, str(script), "9.9.9"],
+                         capture_output=True, text=True, check=False)
+    assert bad.returncode == 1 and "::error::" in bad.stdout
+    usage = subprocess.run([sys.executable, str(script), "1.3"],
+                           capture_output=True, text=True, check=False)
+    assert usage.returncode == 2
