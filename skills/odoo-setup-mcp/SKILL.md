@@ -43,7 +43,8 @@ Ask which situation fits (single choice):
    on Docker provided by Transgenia. It connects the plugin at the end; then
    Phase 2. Transgenia cannot provide Odoo Enterprise or Odoo Online instances
    (Enterprise is licensed by Odoo S.A.; Online is Odoo S.A.'s SaaS): for those,
-   the user connects their own subscription or Odoo's free trial via option 1.
+   the user connects their own instance via option 1 (on Odoo Online, only
+   plans with external API access can connect).
 3. **I can't install Python 3.9+ on this machine** → `/odoo-tools:deploy-local` in
    **container** mode (the MCP server packaged by Transgenia as a Docker image),
    or the Node-only CLI fallback `/odoo-tools:odoo-setup-cli`.

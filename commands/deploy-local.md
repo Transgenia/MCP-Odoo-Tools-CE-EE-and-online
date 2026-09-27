@@ -38,7 +38,7 @@ Ask (single choice):
 
 ## Mode A — Local sandbox
 
-> The sandbox is **Odoo Community (CE)** only. Transgenia cannot provide **Odoo Enterprise** or **Odoo Online** (odoo.com) instances: Enterprise is licensed by Odoo S.A. per subscription and Online is Odoo S.A.'s own SaaS. To work with them, use the user's own Enterprise subscription or Online database (or Odoo's free trial); the plugin connects to them in the same way.
+> The sandbox is **Odoo Community (CE)** only. Transgenia cannot provide **Odoo Enterprise** or **Odoo Online** (odoo.com) instances: Enterprise is licensed by Odoo S.A. per subscription and Online is Odoo S.A.'s own SaaS. To work with them, connect the user's own Enterprise instance or Online database. On Odoo Online the plan must include external API access; without it the connection fails even with correct credentials.
 
 1. Ask, one at a time: **Odoo version** (19.0 · 18.0 recommended · 17.0 · 16.0),
    **demo data** (yes, recommended for training · no), **language** (e.g.
