@@ -37,18 +37,39 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Create the tag on main if missing
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Decide whether a new tag is needed
+        id: need
         run: |
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::tag must look like vX.Y.Z, got '$TAG'"; exit 1
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
             echo "Tag $TAG already exists; releasing it as it is."
+            echo "create=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::new tags are created from main only (this run is on $GITHUB_REF)"; exit 1
           fi
+          echo "create=true" >> "$GITHUB_OUTPUT"
+      # Everything `verify` checks runs here first: a tag is permanent, so a
+      # wrong version or a failing test must stop the run before it exists.
+      - name: Versions match the tag
+        if: steps.need.outputs.create == 'true'
+        run: python3 scripts/check_release_version.py "$TAG"
+      - name: Lint and unit tests
+        if: steps.need.outputs.create == 'true'
+        working-directory: server
+        run: |
+          pip install -e ".[dev,cache]"
+          ruff check src tests ../scripts
+          pytest -q -m "not live"
+      - name: Create the tag on main
+        if: steps.need.outputs.create == 'true'
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "odoo-tools $TAG"
@@ -68,23 +89,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Versions match the tag
-        run: |
-          V="${TAG#v}"
-          python3 - "$V" <<'PY'
-          import json, re, sys, pathlib
-          v = sys.argv[1]
-          found = {
-              "plugin.json": json.load(open(".claude-plugin/plugin.json"))["version"],
-              "marketplace.json": json.load(open(".claude-plugin/marketplace.json"))["plugins"][0]["version"],
-              "pyproject.toml": re.search(r'^version = "([^"]+)"', pathlib.Path("server/pyproject.toml").read_text(), re.M).group(1),
-          }
-          bad = {k: x for k, x in found.items() if x != v}
-          if bad:
-              sys.exit(f"tag v{v} does not match: {bad}")
-          if f"## [{v}]" not in pathlib.Path("CHANGELOG.md").read_text():
-              sys.exit(f"CHANGELOG.md has no '## [{v}]' section")
-          print("versions OK:", found)
-          PY
+        run: python3 scripts/check_release_version.py "$TAG"
       - name: Install
         working-directory: server
         run: pip install -e ".[dev,cache]"
