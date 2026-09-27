@@ -101,18 +101,19 @@ def test_versions_agree_everywhere() -> None:
         r'^version = "([^"]+)"', (ROOT / "server/pyproject.toml").read_text(), re.MULTILINE
     )
     assert pyproject
-    telemetry_fallback = re.search(
-        r'return "([0-9.]+)"  # fallback', (ROOT / "server/src/odoo_mcp/telemetry.py").read_text()
+    runtime = re.search(
+        r'^__version__ = "([0-9.]+)"', (ROOT / "server/src/odoo_mcp/__init__.py").read_text(),
+        re.MULTILINE,
     )
-    assert telemetry_fallback
+    assert runtime
     image_tags = set(re.findall(
         r"ghcr\.io/transgenia/odoo-mcp-tools:([0-9.]+)",
         (ROOT / "commands/deploy-local.md").read_text(),
     ))
     assert {plugin, market["plugins"][0]["version"], pyproject.group(1),
-            telemetry_fallback.group(1)} | image_tags == {plugin}
+            runtime.group(1)} | image_tags == {plugin}
     assert f"## [{plugin}]" in (ROOT / "CHANGELOG.md").read_text()
-    assert PLUGIN_VERSION  # importable either way
+    assert PLUGIN_VERSION == plugin  # what serverInfo reports
 
 
 def test_entry_points_route_to_the_guided_skill() -> None:

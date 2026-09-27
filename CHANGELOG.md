@@ -17,12 +17,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - **Sandbox matrix workflow** (`sandbox-matrix.yml`): starts every series from
   10.0 to 19.0 with `deploy_local.py` and checks it through the plugin's own MCP
   server (`scripts/sandbox_smoke.py`: `odoo_version` + `odoo_search_read`). Runs
-  on changes to the sandbox or the server, weekly, and on demand.
+  on changes to the sandbox or the server, weekly, and on demand. The smoke test
+  also checks the field entries of the cross-version table against the live
+  instance, for every model it has.
 - The image mirror also copies `odoo:10.0`-`15.0` and `postgres:10`, `12`, `13`.
+- **Odoo Online series.** Version detection keeps the minor of a `saas~N.M`
+  line (e.g. saas~18.1), which sits between two stable series
+  (18.0 < saas~18.1 < … < 19.0). Field removals can now start on a saas line.
 
 ### Fixed
 - The sandbox talks to Odoo over XML-RPC (`/xmlrpc/2/common`, `/xmlrpc/2/db`)
   instead of `/jsonrpc`, which does not exist before Odoo 12.0.
+- **`product.template.uom_po_id` was dropped from reads and exports on Odoo 17
+  and 18**, where the field exists. It is gone only from saas~18.1 (Odoo
+  Online) and 19.0.
+- **`res.partner.company_type` was dropped on self-hosted Odoo 19.0**, where
+  the field exists. It is gone only from saas~19.1 (Odoo Online). Both
+  boundaries were checked against the public Odoo source of every stable and
+  saas branch from 16.0 to saas-19.4, and `uom_po_id` on a live Odoo 18.0.
+- `OdooSession.name_get` failed on Odoo 18+, where the `name_get` method no
+  longer exists; it now reads `display_name`, which works on 10-19.
+- The server reported the version of any older `odoo-mcp-tools` installed in
+  the same Python instead of its own (seen as 1.1.0 while running 1.3.0).
+  `odoo_mcp.__version__` is now the single runtime version and the release
+  check keeps it equal to the manifests.
+- Docs, skill and agent no longer claim that `/jsonrpc` rejects API keys on
+  Odoo 17+: Odoo handles both endpoints with the same `dispatch_rpc` (14-19)
+  and a live Odoo 18.0 accepts an API key on both. The `auto` transport keeps
+  its XML-RPC fallback for proxies that block or alter `/jsonrpc`.
+
+### Notes
+- Odoo 19 deprecates `/xmlrpc`, `/xmlrpc/2` and `/jsonrpc` and schedules their
+  removal for Odoo 22 (they now live in the auto-installed `rpc` module). They
+  work on every version this plugin supports; the compat matrix and the
+  cross-version skill say so.
 
 ## [1.3.0] - 2026-09-27
 

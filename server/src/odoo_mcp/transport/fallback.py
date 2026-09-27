@@ -8,9 +8,11 @@ Preference:
   * ``jsonrpc`` -> JSON-RPC only.
   * ``xmlrpc``  -> XML-RPC only.
 
-The api-key-on-/jsonrpc caveat (Odoo 17+) is the primary reason auto mode
-exists; when it triggers we log a single warning and pin XML-RPC for the rest
-of the transport's life so we don't pay the failed round-trip repeatedly.
+Auto mode exists for deployments where ``/jsonrpc`` is blocked, altered or
+refuses the credentials (typically a proxy in front of Odoo; Odoo itself treats
+API keys the same on both endpoints). When it triggers we log a single warning
+and pin XML-RPC for the rest of the transport's life so we don't pay the failed
+round-trip repeatedly.
 
 A call is replayed over XML-RPC only when that cannot run it twice: always for
 ``version``/``authenticate`` and for ``execute_kw`` of read methods (see

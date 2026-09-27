@@ -11,6 +11,10 @@ Conventions:
   * ``changed_in`` = the first major version where the NEW name/behavior applies.
   * ``since`` = feature/model available from this major version onward.
   * ``until`` = feature/model available up to and including this major version.
+  * ``removed_in`` + ``removed_in_minor`` = the first series without the field.
+    Odoo Online runs saas~<major>.N lines between two stable series
+    (18.0 < saas~18.1 < ... < saas~18.4 < 19.0), and a removal often lands on a
+    saas line first: ``(18, 1)`` means gone from saas~18.1 and from 19.0 on.
 """
 
 from __future__ import annotations
@@ -53,6 +57,11 @@ class FieldRemoved:
     removed_in: int
     use_instead: str = ""
     note: str = ""
+    removed_in_minor: int = 0
+
+    @property
+    def removed_in_series(self) -> tuple[int, int]:
+        return (self.removed_in, self.removed_in_minor)
 
 
 @dataclass(frozen=True)
@@ -79,7 +88,7 @@ MODEL_RENAMES: tuple[ModelRename, ...] = (
     ),
     # True rename: stock.package did not exist before v19.
     ModelRename(
-        "stock.quant.package", "stock.package", 19, "Package model renamed (best-effort; saas~19.3)"
+        "stock.quant.package", "stock.package", 19, "Package model renamed in 19.0"
     ),
 )
 
@@ -96,30 +105,29 @@ FIELD_RENAMES: tuple[FieldRename, ...] = (
 
 # --- Field removals ----------------------------------------------------------
 FIELD_REMOVED: tuple[FieldRemoved, ...] = (
+    # Boundaries checked against the public odoo/odoo source of every stable
+    # and saas branch from 16.0 to saas-19.4.
     FieldRemoved(
         "product.template",
         "uom_po_id",
-        17,
+        18,
         use_instead="uom_id",
-        note="Purchase UoM unified into uom_id (best-effort boundary)",
+        note="Purchase UoM unified into uom_id (saas~18.1 on Odoo Online, 19.0 on-premise)",
+        removed_in_minor=1,
     ),
     FieldRemoved(
         "res.partner",
         "company_type",
         19,
         use_instead="is_company",
-        note="company_type dropped; use is_company boolean (best-effort; saas~19.3)",
+        note="company_type dropped; use the is_company boolean (saas~19.1; still in 19.0)",
+        removed_in_minor=1,
     ),
 )
 
 # --- Capabilities ------------------------------------------------------------
 CAPABILITIES: tuple[Capability, ...] = (
     Capability("api_key_auth", since=14, note="API keys introduced in v14; older needs password"),
-    Capability(
-        "jsonrpc_api_key",
-        until=16,
-        note="/jsonrpc execute_kw rejects API keys on v17+; use XML-RPC (auto-fallback handles it)",
-    ),
     Capability(
         "update_field_translations",
         since=16,

@@ -18,8 +18,9 @@ from odoo_mcp.compat import (
 from odoo_mcp.errors import CompatError
 
 
-def facts(version: int, edition: str = "community", deployment: str = "onprem") -> EnvFacts:
-    return EnvFacts(version=version, edition=edition, deployment=deployment)
+def facts(version: int, edition: str = "community", deployment: str = "onprem",
+          minor: int = 0) -> EnvFacts:
+    return EnvFacts(version=version, edition=edition, deployment=deployment, minor=minor)
 
 
 @pytest.mark.parametrize(
@@ -52,25 +53,31 @@ def test_resolve_model(requested: str, version: int, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "model,field,version,expected",
+    "model,field,version,minor,expected",
     [
         # analytic distribution rename at v16
-        ("account.move.line", "analytic_distribution", 15, "analytic_account_id"),
-        ("account.move.line", "analytic_distribution", 16, "analytic_distribution"),
-        ("account.move.line", "analytic_account_id", 16, "analytic_distribution"),
-        # removed fields become None on the version where they're gone
-        ("product.template", "uom_po_id", 16, "uom_po_id"),
-        ("product.template", "uom_po_id", 17, None),
-        ("res.partner", "company_type", 18, "company_type"),
-        ("res.partner", "company_type", 19, None),
+        ("account.move.line", "analytic_distribution", 15, 0, "analytic_account_id"),
+        ("account.move.line", "analytic_distribution", 16, 0, "analytic_distribution"),
+        ("account.move.line", "analytic_account_id", 16, 0, "analytic_distribution"),
+        # removed fields become None from the first series without them: the
+        # boundaries come from the odoo/odoo source of 16.0 ... saas-19.4
+        ("product.template", "uom_po_id", 16, 0, "uom_po_id"),
+        ("product.template", "uom_po_id", 17, 0, "uom_po_id"),
+        ("product.template", "uom_po_id", 17, 4, "uom_po_id"),  # saas~17.4
+        ("product.template", "uom_po_id", 18, 0, "uom_po_id"),  # checked live on 18.0
+        ("product.template", "uom_po_id", 18, 1, None),  # saas~18.1 (Online)
+        ("product.template", "uom_po_id", 19, 0, None),
+        ("res.partner", "company_type", 18, 4, "company_type"),
+        ("res.partner", "company_type", 19, 0, "company_type"),  # still in 19.0
+        ("res.partner", "company_type", 19, 1, None),  # saas~19.1 (Online)
     ],
 )
-def test_resolve_field(model: str, field: str, version: int, expected) -> None:
-    assert resolve_field(model, field, facts(version)) == expected
+def test_resolve_field(model: str, field: str, version: int, minor: int, expected) -> None:
+    assert resolve_field(model, field, facts(version, minor=minor)) == expected
 
 
 def test_resolve_fields_drops_unavailable() -> None:
-    res = resolve_fields("res.partner", ["name", "company_type"], facts(19))
+    res = resolve_fields("res.partner", ["name", "company_type"], facts(19, minor=1))
     assert res.mapping == {"name": "name"}
     assert "company_type" in res.dropped
 
@@ -78,9 +85,8 @@ def test_resolve_fields_drops_unavailable() -> None:
 def test_capabilities() -> None:
     assert has_capability("api_key_auth", facts(14)) is True
     assert has_capability("api_key_auth", facts(13)) is False
-    # jsonrpc api key works up to 16, not on 17+
-    assert has_capability("jsonrpc_api_key", facts(16)) is True
-    assert has_capability("jsonrpc_api_key", facts(17)) is False
+    # API keys work on /jsonrpc on every version (no such limit in the table)
+    assert has_capability("jsonrpc_api_key", facts(17)) is True
     with pytest.raises(CompatError):
         assert_capability("api_key_auth", facts(12))
 

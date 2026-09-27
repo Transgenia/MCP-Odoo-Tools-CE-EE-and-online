@@ -100,8 +100,14 @@ class OdooSession:
         return self.schema.get_or_compute(key, _compute)
 
     def name_get(self, model: str, ids: list[int]) -> list[list[Any]]:
-        # name_get has no useful caching across arbitrary id sets; call directly
-        return self.execute(model, "name_get", [ids])
+        """``[[id, display name], ...]`` on every version.
+
+        The ``name_get`` method is gone in Odoo 18 (deprecated in 17), while the
+        ``display_name`` field reads the same name on 10-19. No caching: the id
+        sets are arbitrary.
+        """
+        rows = self.execute(model, "read", [ids], {"fields": ["display_name"]})
+        return [[row["id"], row["display_name"]] for row in rows]
 
     def invalidate_fields(self, model: str) -> None:
         """Drop cached ``fields_get`` entries for ``model`` (best-effort)."""

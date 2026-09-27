@@ -2,10 +2,12 @@
 # Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
 """JSON-RPC transport (``/jsonrpc``), on the standard library (``urllib``).
 
-Faster and friendlier to modern tooling, but note the well-known caveat this
-server guards against: on Odoo 17+ the ``/jsonrpc`` endpoint rejects API keys
-for ``execute_kw`` (only passwords work there). The FallbackTransport detects
-that and transparently retries over XML-RPC.
+Faster and friendlier to modern tooling. Odoo accepts API keys on ``/jsonrpc``
+exactly as on ``/xmlrpc/2`` (both go through ``dispatch_rpc``, 14-19; checked
+live on 18.0), but a reverse proxy or gateway in front of Odoo can block or
+alter ``/jsonrpc``. When it refuses the credentials the FallbackTransport
+retries over XML-RPC. Both endpoints are deprecated in Odoo 19 and scheduled
+for removal in Odoo 22.
 
 Failures are split in two so a retry can never run a write twice:
 :class:`JsonRpcUnavailable` means the request certainly never reached an Odoo

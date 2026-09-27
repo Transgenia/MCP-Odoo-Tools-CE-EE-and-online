@@ -28,6 +28,13 @@ def problems(version: str) -> list[str]:
         r'^version = "([^"]+)"', (ROOT / "server/pyproject.toml").read_text(), re.MULTILINE
     )
     found["pyproject.toml"] = pyproject.group(1) if pyproject else "<missing>"
+    # the version the MCP server reports (serverInfo, telemetry)
+    runtime = re.search(
+        r'^__version__ = "([^"]+)"',
+        (ROOT / "server/src/odoo_mcp/__init__.py").read_text(),
+        re.MULTILINE,
+    )
+    found["odoo_mcp/__init__.py"] = runtime.group(1) if runtime else "<missing>"
     issues = [f"{name} has {value}" for name, value in found.items() if value != version]
     if f"## [{version}]" not in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"):
         issues.append(f"CHANGELOG.md has no '## [{version}]' section")
