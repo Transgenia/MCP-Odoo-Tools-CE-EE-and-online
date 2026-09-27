@@ -130,7 +130,7 @@ def test_gzip_replies_are_decoded(http_odoo: str) -> None:
 
 @pytest.mark.parametrize(
     ("status", "body", "unavailable"),
-    [(404, b"no", True), (403, b"waf", True), (200, b"<html>", True),
+    [(404, b"no", True), (403, b"waf", True), (200, b"<html>", False),
      (502, b"bad gateway", False), (500, b"{}", False)],
 )
 def test_failure_classification(http_odoo: str, status: int, body: bytes,
@@ -216,11 +216,29 @@ def test_unavailable_jsonrpc_falls_back_and_pins_xmlrpc() -> None:
     assert (js.calls, xs.calls, fb.active) == (1, 2, "xmlrpc")
 
 
-def test_idempotent_calls_still_fall_back_after_uncertain_errors() -> None:
-    fb, _js, xs = _fallback(TransportError("timed out"))
-    assert fb.version() == "ok"
+def test_idempotent_calls_fall_back_after_uncertain_errors_and_pin_xmlrpc() -> None:
+    fb, js, xs = _fallback(TransportError("timed out"))
     assert fb.authenticate("db", "me", "k") == "ok"
-    assert xs.calls == 2 and fb.active == "jsonrpc(auto)"  # not pinned
+    assert fb.active == "xmlrpc"  # JSON-RPC failed where XML-RPC works
+    assert fb.execute_kw("db", 2, "k", "res.partner", "create", [{}]) == "ok"
+    assert (js.calls, xs.calls) == (1, 2)
+
+
+@pytest.mark.parametrize("method", ["search_read", "read", "fields_get", "search_count"])
+def test_reads_fall_back_after_uncertain_errors(method: str) -> None:
+    fb, js, xs = _fallback(TransportError("jsonrpc: HTTP 502 Bad Gateway"))
+    assert fb.execute_kw("db", 2, "k", "res.partner", method, [[]]) == "ok"
+    assert (js.calls, xs.calls) == (1, 1)
+
+
+def test_garbled_2xx_reply_is_uncertain_so_a_write_is_not_replayed(http_odoo: str) -> None:
+    _script(200, b"<html>proxy page</html>")
+    fb = FallbackTransport(f"http://{http_odoo}", timeout=5)
+    xs = _Stub()
+    fb._xml = xs  # type: ignore[assignment]
+    with pytest.raises(TransportError, match="may or may not have been applied"):
+        fb.execute_kw("db", 2, "k", "res.partner", "create", [{}])
+    assert xs.calls == 0
 
 
 def test_forced_jsonrpc_is_never_switched_to_xmlrpc() -> None:
@@ -253,3 +271,13 @@ def test_timeout_defaults_to_120_and_accepts_plugin_numbers(monkeypatch: pytest.
     assert Settings.from_env().timeout == 90
     monkeypatch.setenv("ODOO_TIMEOUT", "${user_config.odoo_timeout}")
     assert Settings.from_env().timeout == 120
+
+
+def test_malformed_urls_and_numbers_never_crash_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert "<unparseable ODOO_URL>" in repr(Settings(url="http://["))
+    assert split_userinfo("http://[") == ("http://[", None)
+    with pytest.raises(JsonRpcUnavailable):
+        JsonRpcTransport("http://[", timeout=2).version()
+    for raw in ("inf", "-inf", "nan", "1e9999"):
+        monkeypatch.setenv("ODOO_TIMEOUT", raw)
+        assert Settings.from_env().timeout == 120

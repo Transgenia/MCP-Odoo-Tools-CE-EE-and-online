@@ -97,8 +97,9 @@ standalone (`python3 server/run_stdio.py` from a checkout, `odoo-mcp` after
 The **MCP server** does not persist credentials to disk. Two caveats worth
 stating plainly:
 
-- **The optional CLI fallback writes a local `.env`** with your credentials under
-  `~/.claude/tools/odoo-cli`. See [`SECURITY.md`](SECURITY.md).
+- **The optional CLI fallback keeps your credentials in a local `.env`** under
+  `~/.claude/tools/odoo-cli` (owner-only; you type the secret in yourself). See
+  [`SECURITY.md`](SECURITY.md).
 - **When you drive Odoo through an AI agent**, the tool *results* (the Odoo records
   you query) are returned to your MCP client and sent to your model provider (e.g.
   Anthropic, for Claude) to be processed, exactly like any other tool an agent

@@ -43,12 +43,14 @@ reported on v1.1.0.
   and prints a warning only when `python3` is not runnable.
 - Default `ODOO_TIMEOUT` raised from 30 to 120 s (Odoo's default
   `limit_time_real`), and exposed as the **Request timeout** plugin option.
-- In `auto` transport mode a `create`/`write`/any `execute_kw` is replayed over
-  XML-RPC only when the JSON-RPC request certainly never reached Odoo
-  (connection/TLS failure, HTTP 3xx/4xx, non-JSON-RPC reply). After a timeout or
-  HTTP 5xx the error is raised instead ("may or may not have been applied"),
-  because the call may already have committed; `version`/`authenticate` still
-  fall back. A forced `jsonrpc` preference is never switched to XML-RPC.
+- In `auto` transport mode a write (`create`, `write`, any non-read
+  `execute_kw`) is replayed over XML-RPC only when the JSON-RPC request certainly
+  never reached Odoo (connection/TLS failure, HTTP 3xx/4xx). After a timeout,
+  HTTP 5xx or a garbled 2xx reply the error is raised instead ("may or may not
+  have been applied"), because the call may already have committed.
+  `version`, `authenticate` and read methods (`search_read`, `read`, ...) still
+  fall back; once JSON-RPC fails where XML-RPC works, XML-RPC is pinned for the
+  session. A forced `jsonrpc` preference is never switched to XML-RPC.
 - JSON-RPC no longer follows HTTP redirects (a redirected POST used to become a
   body-less GET whose reply was taken as the result), asks for gzip, and maps
   `http.client` protocol errors to transport errors.

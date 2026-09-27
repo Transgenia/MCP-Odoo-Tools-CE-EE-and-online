@@ -9,9 +9,9 @@ that and transparently retries over XML-RPC.
 
 Failures are split in two so a retry can never run a write twice:
 :class:`JsonRpcUnavailable` means the request certainly never reached an Odoo
-JSON-RPC handler (connection or TLS failure, HTTP 3xx/4xx, a reply that is not
-JSON-RPC), while a plain :class:`TransportError` (HTTP 5xx, a timeout while
-waiting, a cut connection) means Odoo may already have run the call.
+JSON-RPC handler (connection or TLS failure, HTTP 3xx/4xx), while a plain
+:class:`TransportError` (HTTP 5xx, a timeout while waiting, a cut connection,
+a 2xx reply that is not JSON-RPC) means Odoo may already have run the call.
 """
 
 from __future__ import annotations
@@ -61,8 +61,12 @@ def split_userinfo(url: str) -> tuple[str, str | None]:
     ``https://user:pass@host`` is valid in ODOO_URL (HTTP basic auth in front of
     Odoo); urllib cannot use it directly and would echo it in errors.
     """
-    parts = urllib.parse.urlsplit(url)
-    if parts.username is None and parts.password is None:
+    try:
+        parts = urllib.parse.urlsplit(url)
+        has_userinfo = parts.username is not None or parts.password is not None
+    except ValueError:  # malformed URL: the request below reports it cleanly
+        return url, None
+    if not has_userinfo:
         return url, None
     user = urllib.parse.unquote(parts.username or "")
     password = urllib.parse.unquote(parts.password or "")
@@ -124,7 +128,9 @@ class JsonRpcTransport:
         except ValueError:
             data = None
         if not isinstance(data, dict):
-            raise JsonRpcUnavailable("jsonrpc: the reply is not a JSON-RPC object")
+            # The request was sent and something answered 2xx: Odoo may have run
+            # the call (a proxy can replace a good reply), so this is uncertain.
+            raise TransportError("jsonrpc: the reply is not a JSON-RPC object")
 
         if "error" in data:
             err = data["error"]

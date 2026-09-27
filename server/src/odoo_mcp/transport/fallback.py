@@ -13,10 +13,12 @@ exists; when it triggers we log a single warning and pin XML-RPC for the rest
 of the transport's life so we don't pay the failed round-trip repeatedly.
 
 A call is replayed over XML-RPC only when that cannot run it twice: always for
-``version``/``authenticate`` (idempotent), but for ``execute_kw`` only when the
-JSON-RPC request certainly never reached Odoo (:class:`JsonRpcUnavailable`).
-After a timeout or HTTP 5xx the call may already have committed, so the error
-is raised instead of risking a duplicate create/write.
+``version``/``authenticate`` and for ``execute_kw`` of read methods (see
+``READ_METHODS``), but for any other ``execute_kw`` only when the JSON-RPC
+request certainly never reached Odoo (:class:`JsonRpcUnavailable`). After a
+timeout, HTTP 5xx or a garbled reply a write may already have committed, so
+the error is raised instead of risking a duplicate create/write. When JSON-RPC
+fails and XML-RPC then answers, XML-RPC is pinned for the rest of the session.
 """
 
 from __future__ import annotations
@@ -29,6 +31,15 @@ from .jsonrpc import ApiKeyRejected, JsonRpcTransport, JsonRpcUnavailable
 from .xmlrpc import XmlRpcTransport
 
 log = logging.getLogger("odoo_mcp.transport")
+
+# ORM methods that only read, so replaying them over XML-RPC is always safe.
+READ_METHODS = frozenset(
+    {
+        "search", "search_read", "search_count", "read", "read_group", "fields_get",
+        "name_search", "name_get", "default_get", "check_access_rights", "has_group",
+        "web_search_read", "web_read", "get_views", "fields_view_get", "export_data",
+    }
+)
 
 
 class FallbackTransport:
@@ -67,13 +78,15 @@ class FallbackTransport:
 
     def _run(self, op: str, fn_name: str, *fn_args: Any) -> Any:
         last_exc: Exception | None = None
+        # execute_kw args: (db, uid, secret, model, method, ...)
+        replayable = op != "execute_kw" or (len(fn_args) > 4 and fn_args[4] in READ_METHODS)
         for kind in self._order():
             transport = self._jsonrpc() if kind == "jsonrpc" else self._xmlrpc()
             try:
                 result = getattr(transport, fn_name)(*fn_args)
-                if self._pinned is None and kind == "jsonrpc":
-                    # success on preferred transport; keep auto behavior
-                    pass
+                if kind == "xmlrpc" and last_exc is not None:
+                    # JSON-RPC just failed where XML-RPC works: stop retrying it.
+                    self._pin_xmlrpc(reason=f"JSON-RPC failed ({last_exc})")
                 return result
             except ApiKeyRejected as exc:
                 last_exc = exc
@@ -86,13 +99,13 @@ class FallbackTransport:
                 continue
             except TransportError as exc:
                 last_exc = exc
-                if op == "execute_kw":
-                    # Outcome unknown (timeout, 5xx, cut reply): never replay.
+                if not replayable:
+                    # A write with an unknown outcome (timeout, 5xx, cut reply): never replay.
                     raise TransportError(
                         f"{exc} - the call may or may not have been applied in Odoo; "
                         "check before retrying"
                     ) from exc
-                continue  # version/authenticate are idempotent: try the next one
+                continue  # idempotent (version/authenticate/reads): try the next one
         assert last_exc is not None
         raise last_exc
 

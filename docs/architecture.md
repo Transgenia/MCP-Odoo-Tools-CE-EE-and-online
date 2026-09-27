@@ -24,7 +24,10 @@ tenancy.ConnectionManager ──▶ session.OdooSession ──▶ transport/
 - **transport/** — `XmlRpcTransport` (`xmlrpc.client`), `JsonRpcTransport`
   (`urllib`), and `FallbackTransport` (auto: JSON-RPC first, transparent
   XML-RPC fallback on API-key rejection or transport error; pins XML-RPC after
-  the first fallback and warns once). Both share a certificate-verifying TLS
+  the first fallback and warns once). A write (any `execute_kw` that is not a
+  read method) is replayed over XML-RPC only when the JSON-RPC request certainly
+  never reached Odoo; after a timeout, HTTP 5xx or garbled reply the error is
+  raised instead. Both share a certificate-verifying TLS
   context (`base.tls_context()`) and honour `ODOO_TIMEOUT`.
 - **session.py** — `OdooSession` holds credentials, lazily authenticates (uid),
   caches version/edition/deployment facts, and wraps schema reads through the

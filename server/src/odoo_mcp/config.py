@@ -30,11 +30,14 @@ def _env(name: str) -> str:
 
 
 def _without_userinfo(url: str) -> str:
-    """``https://user:pass@host`` -> ``https://host`` for logs."""
-    parts = urllib.parse.urlsplit(url)
-    if parts.username is None and parts.password is None:
-        return url
-    return urllib.parse.urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
+    """``https://user:pass@host`` -> ``https://host`` for logs; never raises."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        if parts.username is None and parts.password is None:
+            return url
+        return urllib.parse.urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
+    except ValueError:  # e.g. "http://[" - log a placeholder, never the raw value
+        return "<unparseable ODOO_URL>"
 
 
 def _get_bool(name: str, default: bool = False) -> bool:
@@ -50,7 +53,7 @@ def _get_int(name: str, default: int) -> int:
         return default
     try:
         return int(float(raw))  # plugin "number" options may arrive as "90.0"
-    except ValueError:
+    except (ValueError, OverflowError):  # also "inf", "nan", "1e9999"
         return default
 
 

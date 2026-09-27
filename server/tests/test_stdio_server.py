@@ -344,3 +344,8 @@ def test_batched_tool_calls_run_on_the_worker_thread(typed_tool: list[str]) -> N
     ])
     assert [r["id"] for r in replies[0]] == [1, 2]
     assert typed_tool and all(name.startswith("odoo-tool") for name in typed_tool)
+
+
+def test_request_with_null_method_is_rejected_not_ignored() -> None:
+    reply = _server().handle({"jsonrpc": "2.0", "id": 1, "method": None})
+    assert reply["error"]["code"] == INVALID_REQUEST and reply["id"] == 1

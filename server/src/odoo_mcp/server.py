@@ -189,9 +189,9 @@ class McpServer:
         """Answer one JSON-RPC message; ``None`` for notifications and responses."""
         if not isinstance(msg, dict):
             return _error(None, INVALID_REQUEST, "a JSON-RPC message must be an object")
-        method = msg.get("method")
-        if method is None:
+        if "method" not in msg:
             return None  # a response to a request we never send: ignore
+        method = msg["method"]
         is_request = "id" in msg
         msg_id = msg.get("id")
         if is_request and not _valid_id(msg_id):
