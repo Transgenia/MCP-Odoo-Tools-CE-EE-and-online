@@ -84,3 +84,8 @@ node ~/.claude/tools/odoo-cli/dist/cli.js fields '{"model":"res.partner"}'
 > prefer the MCP server. The MCP resolver never rewrites `account.move` →
 > `account.invoice` on older versions (merge, not a rename). On Odoo ≤ 13
 > authenticate the CLI with `ODOO_PASSWORD` (account password), not an API key.
+
+## Help
+
+Blocked, or need maintenance, support, training or an assisted deployment?
+Transgenia provides it through its official channels: **dev@transgenia.org** · WhatsApp **+52 55 8034 0405** (https://wa.me/525580340405).

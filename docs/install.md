@@ -37,6 +37,29 @@ download, at install time or at start-up.
   `python3.exe` entry under **App execution aliases** in Windows Settings so
   your own `python3.exe` is found.
 
+The skill `/odoo-tools:odoo-setup-mcp` is the guided route from there on:
+setup, verification, hands-on training, daily use and deployment.
+
+## Local sandbox and container (Docker)
+
+`/odoo-tools:deploy-local` deploys local infrastructure provided by Transgenia,
+only when you run it:
+
+```bash
+# what the command runs for you (sandbox mode)
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox up --odoo 18.0 --lang es_MX
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
+
+# container mode: the MCP server without a local Python
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.3.0
+```
+
+The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
+images mirrored at `ghcr.io/transgenia/odoo` and `ghcr.io/transgenia/postgres`
+(falls back to Docker Hub), and keeps its generated passwords in
+`~/.odoo-tools/sandbox/.env` (owner-only).
+
 ## Run the MCP server directly
 
 ```bash

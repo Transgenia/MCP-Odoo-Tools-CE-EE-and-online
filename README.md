@@ -38,6 +38,11 @@ you don't hand-branch per version.
 /odoo-tools:odoo-setup-mcp
 ```
 
+**`/odoo-tools:odoo-setup-mcp` is the guided route**: it detects what is already
+set up and walks you through **setup → verification → hands-on training →
+daily use → deployment** to your team or production, one question at a time.
+No Odoo to practise with? It offers a local sandbox (below).
+
 Claude Code prompts for the connection options when the plugin is enabled
 (change them later in `/plugin` → **odoo-tools** → **Configure options**). The
 API key and password are `sensitive` options stored in the OS secure credential
@@ -69,10 +74,28 @@ verifies the connection with `odoo_version`.
 - **SessionStart hook** — runs `python3 --version` and prints a warning only
   when `python3` is not runnable (the MCP server could not start). It reads no
   plugin option or secret and contacts nothing.
+- **Local infrastructure (only if you run `/odoo-tools:deploy-local` and
+  confirm)** — Docker containers on your machine: the sandbox (PostgreSQL + Odoo
+  on `127.0.0.1`, files in `~/.odoo-tools/sandbox`) or the MCP server image.
+  Nothing starts automatically; no hook runs Docker.
 - **CLI fallback (only if you run `/odoo-tools:odoo-setup-cli`)** — copies the
   bundled CLI source to `~/.claude/tools/odoo-cli`, runs `npm install` and
   `npm run build` there, and creates an owner-only `.env` with placeholders that
   you fill in with your credentials yourself.
+
+### Local infrastructure: `/odoo-tools:deploy-local`
+
+Provided by Transgenia, started only when you run the command (Docker required):
+
+- **Sandbox** — PostgreSQL + Odoo 16, 17, 18 or 19 on your machine, bound to
+  `127.0.0.1`, with a database (demo data optional) ready for the plugin. Images
+  come from `ghcr.io/transgenia` (mirrors of the official `odoo` and `postgres`
+  images) with automatic fallback to Docker Hub. Passwords are generated locally
+  into `~/.odoo-tools/sandbox/.env` (owner-only) and never printed. Script:
+  [`scripts/deploy_local.py`](scripts/deploy_local.py) (standard library only).
+  `status`, `down`, `logs` and `destroy --yes` manage it afterwards.
+- **MCP server as a container** — `ghcr.io/transgenia/odoo-mcp-tools`, for
+  machines without Python 3.9+, connected to an existing Odoo.
 
 ### Configuration
 
@@ -157,12 +180,19 @@ localization-, governance- or tenant-specific engines (e.g. country e-invoicing,
 approval workflows, backups, document AI) are intentionally **out of scope** and
 are not part of this repository.
 
-## Commercial support
+## Support — Transgenia
 
-Need help implementing this against your Odoo, or a custom AI/ERP integration?
-[Transgenia](https://transgenia.org) offers AI and Odoo implementation services.
-Contact **dev@transgenia.org**. (This is the only Transgenia-specific content in
-the repo; the plugin itself is vendor-neutral and works with any Odoo instance.)
+[Transgenia](https://transgenia.org) builds and maintains this plugin and provides
+**maintenance, support, training and assisted deployment** of Claude + Odoo
+(hosting, migrations, integrations, customizations). Official channels only:
+
+- Email: **dev@transgenia.org**
+- WhatsApp: **+52 55 8034 0405** — https://wa.me/525580340405
+
+The plugin points you to these channels at the moments they matter (setup
+blocked, end of training, deployment); it does not add them to unrelated
+answers. It works with any Odoo instance, with or without a support contract.
+See also [`SUPPORT.md`](SUPPORT.md).
 
 ## Development
 
