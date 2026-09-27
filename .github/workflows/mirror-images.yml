@@ -24,6 +24,9 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
+      # The four Odoo tags upload to the same GHCR package; running them all at
+      # once hit GHCR's upload rate limit (HTTP 429) on the v1.3.0 release.
+      max-parallel: 2
       matrix:
         image:
           - { src: "odoo:16.0", dst: "odoo:16.0" }
@@ -41,5 +44,15 @@ jobs:
       - name: Copy docker.io/library/${{ matrix.image.src }}
         run: |
           DST="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image.dst }}"
-          docker buildx imagetools create --tag "$DST" "docker.io/library/${{ matrix.image.src }}"
+          # Registry rate limits (GHCR or Docker Hub HTTP 429) are transient:
+          # retry with backoff instead of failing the release.
+          for attempt in 1 2 3 4; do
+            if docker buildx imagetools create --tag "$DST" "docker.io/library/${{ matrix.image.src }}"; then
+              break
+            fi
+            if [ "$attempt" = 4 ]; then
+              echo "::error::could not copy ${{ matrix.image.src }} after $attempt attempts"; exit 1
+            fi
+            sleep $((attempt * 30))
+          done
           docker buildx imagetools inspect "$DST" | head -20
