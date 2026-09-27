@@ -41,6 +41,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   the same Python instead of its own (seen as 1.1.0 while running 1.3.0).
   `odoo_mcp.__version__` is now the single runtime version and the release
   check keeps it equal to the manifests.
+- **`odoo_version` reported success with a wrong API key or password** (edition
+  "unknown" on Community; always on Enterprise, whose `+e` version string skips
+  the module probe). The guided route and `/odoo-doctor` use it as the
+  connection check, so a broken connection read as "already connected". It now
+  signs in first, and the edition probe no longer swallows `AuthError`.
+- `Credentials.secret` is left out of `repr()`, so a traceback, log line or
+  debugger cannot show the API key or password.
 - Docs, skill and agent no longer claim that `/jsonrpc` rejects API keys on
   Odoo 17+: Odoo handles both endpoints with the same `dispatch_rpc` (14-19)
   and a live Odoo 18.0 accepts an API key on both. The `auto` transport keeps

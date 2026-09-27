@@ -12,11 +12,15 @@ from ..registry import ToolContext, obj, registry
 
 @registry.tool(
     "odoo_version",
-    "Return the target Odoo version, edition (community/enterprise) and "
-    "deployment (onprem/saas), plus the active transport.",
+    "Check the connection end to end (signs in with the configured credentials) "
+    "and return the target Odoo version, edition (community/enterprise), "
+    "deployment (onprem/saas) and the active transport.",
     obj({}),
 )
 def odoo_version(ctx: ToolContext, args: dict[str, Any]) -> Any:
+    # The version itself needs no credentials; signing in first makes this the
+    # connection check the guided route and /odoo-doctor rely on.
+    _ = ctx.session.uid
     facts = ctx.session.facts()
     return {
         "version": facts.version,

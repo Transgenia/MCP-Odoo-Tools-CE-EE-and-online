@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
-"""Stable vs Odoo Online (saas~N.M) series, name_get, and the runtime version."""
+"""Stable vs Odoo Online (saas~N.M) series, name_get, the runtime version, auth checks."""
 
 from __future__ import annotations
 
@@ -15,8 +15,11 @@ import pytest
 import odoo_mcp
 from odoo_mcp.compat import EnvFacts, probe, resolve_field
 from odoo_mcp.compat.detect import parse_major, parse_version
+from odoo_mcp.errors import AuthError
+from odoo_mcp.registry import ToolContext
 from odoo_mcp.session import Credentials, OdooSession
 from odoo_mcp.telemetry import PLUGIN_VERSION
+from odoo_mcp.tools.meta import odoo_version
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -124,3 +127,46 @@ def test_smoke_reports_a_table_that_disagrees_with_the_live_model(monkeypatch) -
     assert report["mismatches"] and "lacks 'company_type'" in report["mismatches"][0]
     live["res.partner"].add("company_type")
     assert smoke.check_deltas(None, 3, {"raw_version": "18.0"})["mismatches"] == []
+
+
+# --- a wrong password must never look like a working connection -------------
+
+
+class _BadAuthTransport(_NameTransport):
+    def __init__(self, version_string: str) -> None:
+        super().__init__()
+        self.version_string = version_string
+
+    def version(self) -> dict[str, Any]:
+        return {"server_version": self.version_string}
+
+    def authenticate(self, db: str, login: str, secret: str) -> int:
+        raise AuthError("xmlrpc authenticate returned no uid (bad credentials/db)")
+
+
+@pytest.mark.parametrize("version_string", ["18.0", "18.0+e"])
+def test_odoo_version_signs_in_first(version_string: str) -> None:
+    # "18.0+e" never reaches the module probe, so only signing in catches it
+    session = OdooSession(Credentials("https://odoo.example", "db", "me", "wrong"), timeout=5)
+    session.transport = _BadAuthTransport(version_string)  # type: ignore[assignment]
+    with pytest.raises(AuthError):
+        odoo_version(ToolContext(session=session, manager=None), {})
+
+
+def test_probe_does_not_hide_bad_credentials() -> None:
+    def module_installed(name: str) -> bool:
+        raise AuthError("bad credentials")
+
+    with pytest.raises(AuthError):
+        probe("https://odoo.example", {"server_version": "17.0"}, module_installed)
+
+    def flaky(name: str) -> bool:
+        raise TimeoutError("probe timed out")
+
+    assert probe("https://odoo.example", {"server_version": "17.0"}, flaky).edition == "unknown"
+
+
+def test_credentials_repr_hides_the_secret() -> None:
+    creds = Credentials("https://odoo.example", "db", "me", "S3CRET-VALUE")
+    assert "S3CRET-VALUE" not in repr(creds)
+    assert creds.secret == "S3CRET-VALUE"

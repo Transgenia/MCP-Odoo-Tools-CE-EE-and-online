@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..errors import AuthError
 from .deltas import MAX_VERSION, MIN_VERSION
 
 Edition = str  # "community" | "enterprise" | "unknown"
@@ -98,6 +99,8 @@ def probe(
     if edition == "unknown" and module_installed is not None:
         try:
             edition = "enterprise" if module_installed("web_enterprise") else "community"
+        except AuthError:
+            raise  # bad credentials must fail here, not pass as "edition unknown"
         except Exception:
             edition = "unknown"
     deployment = detect_deployment(base_url)

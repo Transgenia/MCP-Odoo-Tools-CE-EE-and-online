@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .cache import SchemaCache
@@ -19,7 +19,8 @@ class Credentials:
     url: str
     db: str
     login: str
-    secret: str
+    # kept out of repr() so a traceback, log line or debugger never shows it
+    secret: str = field(repr=False)
 
     def fingerprint(self) -> str:
         # login+db+url identify the tenant; the secret is never part of the key
