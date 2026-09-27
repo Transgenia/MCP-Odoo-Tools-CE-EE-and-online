@@ -1,6 +1,7 @@
 name: Release
 
-# Tag vX.Y.Z (or manual dispatch with a tag) →
+# Tag vX.Y.Z, or Actions → Release → Run workflow on main with tag vX.Y.Z
+# (the `tag` job creates the tag there when it does not exist yet) →
 #   verify: versions agree with the tag + lint + tests
 #   build-standard: sdist/wheel + plugin zip
 #   container: ghcr.io/transgenia/odoo-mcp-tools:{X.Y.Z, X.Y, latest} (amd64 + arm64)
@@ -17,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v1.3.0)"
+        description: "Tag to release (e.g. v1.3.0). Created on main if it does not exist yet."
         required: true
 
 permissions:
@@ -27,7 +28,37 @@ env:
   TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
+  tag:
+    # Manual runs only: lets a maintainer without a local clone cut a release.
+    # A tag pushed with GITHUB_TOKEN starts no second run of this workflow.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the tag on main if missing
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must look like vX.Y.Z, got '$TAG'"; exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists; releasing it as it is."
+            exit 0
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::new tags are created from main only (this run is on $GITHUB_REF)"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "odoo-tools $TAG"
+          git push origin "refs/tags/$TAG"
+          echo "Created $TAG at $(git rev-parse HEAD)"
+
   verify:
+    needs: tag
+    # Runs after `tag` on manual runs; on tag pushes `tag` is skipped.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

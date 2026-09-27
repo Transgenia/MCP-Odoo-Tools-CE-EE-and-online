@@ -53,6 +53,7 @@ and the first published Release and package.
   other workflow, so `publish.yml` would never have run. The PyPI trusted
   publisher must name workflow `release.yml` and environment `pypi`.
 - CI lints `scripts/` too.
+- `release.yml` can be started from Actions → Run workflow on `main`: it creates the tag when missing.
 - README badges for Claude Code / Claude AI and Odoo ERP (10-19, CE/EE/Online); `claude*` and `odoo-*` keywords in the plugin and marketplace manifests.
 
 ## [1.2.0] - 2026-09-27
