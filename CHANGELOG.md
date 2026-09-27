@@ -10,8 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - **Sandbox for Odoo Community 10.0 to 15.0** (was 16.0-19.0), for testing and
   migrations. Each series gets a PostgreSQL major it supports (10 for 10.0/11.0,
   12 for 12.0/13.0, 13 for 14.0/15.0, 16 for 16.0+); series up to 15.0 run as
-  linux/amd64 (their official images are amd64-only; emulated on ARM hosts).
-  The script warns that 10.0-15.0 no longer receive fixes from Odoo S.A.
+  linux/amd64 (their official images are amd64-only; Docker Desktop emulates
+  them, Docker Engine on ARM Linux needs binfmt/QEMU, which the script explains).
+  The script warns that 10.0-16.0 no longer receive fixes from Odoo S.A. (it
+  maintains the three latest series: 17.0, 18.0, 19.0).
 - **Sandbox matrix workflow** (`sandbox-matrix.yml`): starts every series from
   10.0 to 19.0 with `deploy_local.py` and checks it through the plugin's own MCP
   server (`scripts/sandbox_smoke.py`: `odoo_version` + `odoo_search_read`). Runs

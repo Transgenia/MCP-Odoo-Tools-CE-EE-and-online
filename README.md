@@ -98,8 +98,9 @@ Provided by Transgenia, started only when you run the command (Docker required):
   into `~/.odoo-tools/sandbox/.env` (owner-only) and never printed. Script:
   [`scripts/deploy_local.py`](scripts/deploy_local.py) (standard library only).
   `status`, `down`, `logs` and `destroy --yes` manage it afterwards. Odoo
-  10.0-15.0 are for testing and migrations only (no longer maintained by Odoo
-  S.A., amd64-only images); each series gets a PostgreSQL it supports.
+  10.0-16.0 are for testing and migrations only (Odoo S.A. maintains the three
+  latest series); images up to 15.0 are amd64-only (ARM Linux needs binfmt/QEMU
+  emulation). Each series gets a PostgreSQL it supports.
   **Community (CE) only**: Transgenia cannot provide Odoo Enterprise (licensed by
   Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances — connect your own
   instance to use them (on Odoo Online, the plan must include external API access).

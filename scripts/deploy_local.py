@@ -13,8 +13,10 @@ Enterprise (licensed by Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances.
 
 Odoo 10.0 to 19.0 are available. Each series gets a PostgreSQL version it
 supports, and series up to 15.0 (published for amd64 only) run as linux/amd64,
-emulated on ARM hosts. Odoo 10.0-15.0 no longer receive fixes from Odoo S.A.:
-use them to test and migrate, never for real data.
+emulated on ARM hosts (Docker Desktop emulates amd64; Docker Engine on ARM Linux
+needs binfmt/QEMU registered first). Odoo S.A. maintains the three latest major
+series; older ones (10.0-16.0 as of 19.0) no longer receive fixes: use them to
+test and migrate, never for real data.
 
 Images come from Transgenia's registry (``ghcr.io/transgenia``, mirrors of the
 official ``odoo`` and ``postgres`` images); if that registry cannot be reached
@@ -56,8 +58,9 @@ POSTGRES_FOR = {
 }
 # Official odoo images up to 15.0 are published for amd64 only.
 AMD64_ONLY = {"10.0", "11.0", "12.0", "13.0", "14.0", "15.0"}
-# Series Odoo S.A. no longer maintains (no security fixes).
-UNSUPPORTED = {"10.0", "11.0", "12.0", "13.0", "14.0", "15.0"}
+# Series Odoo S.A. no longer maintains: it supports the three latest majors
+# (17.0, 18.0 and 19.0 since 19.0 was released).
+UNSUPPORTED = {"10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0"}
 REGISTRIES = {
     "transgenia": ("ghcr.io/transgenia/odoo", "ghcr.io/transgenia/postgres"),
     "dockerhub": ("odoo", "postgres"),
@@ -392,6 +395,11 @@ def cmd_up(args: argparse.Namespace) -> int:
     if version in AMD64_ONLY and platform.machine().lower() in ("arm64", "aarch64"):
         _say(f"Note: the Odoo {version} image is amd64-only; it runs emulated on this ARM "
              "machine (slower, first start can take several minutes).")
+        if platform.system() == "Linux":
+            _say("On Linux, Docker Engine only runs amd64 images once amd64 emulation "
+                 "(binfmt/QEMU) is registered, e.g. `docker run --privileged --rm "
+                 "tonistiigi/binfmt --install amd64`; without it the container stops with "
+                 "'exec format error'. Docker Desktop includes it.")
     _say(f"[1/4] Downloading images (first run: ~1-2 GB) — {env['ODOO_IMAGE']}")
     env = box.pull(env, args.registry)
     _say("[2/4] Starting PostgreSQL + Odoo")

@@ -38,9 +38,12 @@ Ask (single choice):
 
 ## Mode A — Local sandbox
 
-> Odoo **10.0 to 15.0** are available for testing and migrations: Odoo S.A. no
-> longer maintains them (no security fixes), their images are amd64-only (they
-> run emulated, slower, on Apple Silicon/ARM), and each series gets a PostgreSQL
+> Odoo S.A. maintains only the three latest series (17.0, 18.0, 19.0): **10.0 to
+> 16.0** are available for testing and migrations, without security fixes.
+> Images up to 15.0 are amd64-only: Docker Desktop (Apple Silicon, Windows ARM)
+> emulates them, slower; Docker Engine on ARM Linux first needs amd64 emulation
+> (binfmt/QEMU) registered or the container fails with "exec format error". Each
+> series gets a PostgreSQL
 > version it supports (10 for 10.0/11.0, 12 for 12.0/13.0, 13 for 14.0/15.0,
 > 16 for 16.0+). Say so to the user before creating one.
 >

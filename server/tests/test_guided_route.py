@@ -310,6 +310,8 @@ def test_every_offered_series_is_mapped_and_mirrored() -> None:
     assert dl.ODOO_VERSIONS == tuple(f"{v}.0" for v in range(10, 20))
     assert set(dl.POSTGRES_FOR) == set(dl.ODOO_VERSIONS)
     assert dl.UNSUPPORTED <= set(dl.ODOO_VERSIONS)
+    # Odoo S.A. maintains the three latest majors only.
+    assert set(dl.ODOO_VERSIONS) - dl.UNSUPPORTED == {"17.0", "18.0", "19.0"}
     mirror = (ROOT / ".github/workflows/mirror-images.yml").read_text()
     for version in dl.ODOO_VERSIONS:
         assert f'"odoo:{version}"' in mirror, version
