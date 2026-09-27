@@ -38,6 +38,7 @@ import socket
 import subprocess
 import sys
 import time
+import xml.parsers.expat
 import xmlrpc.client
 from pathlib import Path
 from typing import Any
@@ -197,6 +198,23 @@ def images_present(env: dict[str, str]) -> bool:
     return True
 
 
+def amd64_emulation_missing() -> bool:
+    """True on ARM Linux when no binfmt handler for x86-64 is registered.
+
+    Docker Engine there runs amd64 images only through QEMU registered in the
+    kernel's binfmt_misc; Docker Desktop ships it. Unknown means "not missing".
+    """
+    if platform.system() != "Linux" or platform.machine().lower() not in ("arm64", "aarch64"):
+        return False
+    binfmt = Path("/proc/sys/fs/binfmt_misc")
+    try:
+        entries = [p for p in binfmt.iterdir() if p.name not in ("register", "status")]
+        return not any("x86_64" in p.name or "x86-64" in p.name
+                       or "x86_64" in p.read_text(errors="ignore") for p in entries)
+    except OSError:
+        return False
+
+
 def port_is_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -218,8 +236,10 @@ class _TimeoutTransport(xmlrpc.client.Transport):
         return conn
 
 
-# Not answering yet (refused, reset, 502 while Odoo boots): keep waiting.
-NOT_READY = (OSError, xmlrpc.client.ProtocolError, http.client.HTTPException, ValueError)
+# Not answering yet (refused, reset, 502 or a half-written reply while Odoo
+# boots): keep waiting.
+NOT_READY = (OSError, xmlrpc.client.ProtocolError, xmlrpc.client.ResponseError,
+             xml.parsers.expat.ExpatError, http.client.HTTPException, ValueError)
 
 
 def rpc(url: str, service: str, method: str, args: list[Any], timeout: float = 30) -> Any:
@@ -284,6 +304,15 @@ class Sandbox:
             )
         fixed = existing if ready else {}
         version = version or existing.get("ODOO_VERSION") or DEFAULT_VERSION
+        previous = existing.get("ODOO_VERSION")
+        if previous in POSTGRES_FOR and POSTGRES_FOR[previous] != POSTGRES_FOR.get(version):
+            # Even a failed first attempt may have initialised the PostgreSQL
+            # volume, and another major refuses that data directory.
+            raise SandboxError(
+                f"Odoo {version} needs PostgreSQL {POSTGRES_FOR[version]}, but this sandbox "
+                f"was prepared for Odoo {previous} (PostgreSQL {POSTGRES_FOR[previous]}). "
+                f"Run `sandbox destroy --yes` first, or use another --dir."
+            )
         demo_flag = None if demo is None else ("1" if demo else "0")
         odoo_repo, pg_repo = REGISTRIES[registry]
         env = {
@@ -392,14 +421,16 @@ def cmd_up(args: argparse.Namespace) -> int:
     if version in UNSUPPORTED:
         _say(f"Note: Odoo {version} no longer receives fixes from Odoo S.A. Use this sandbox to "
              "test and migrate, never for real data.")
+    if version in AMD64_ONLY and amd64_emulation_missing():
+        raise SandboxError(
+            f"The Odoo {version} image is amd64-only and this ARM Linux host has no amd64 "
+            "emulation registered, so the container would stop with 'exec format error'. "
+            "Register it first (e.g. `docker run --privileged --rm tonistiigi/binfmt "
+            "--install amd64`) or pick Odoo 16.0 or newer."
+        )
     if version in AMD64_ONLY and platform.machine().lower() in ("arm64", "aarch64"):
         _say(f"Note: the Odoo {version} image is amd64-only; it runs emulated on this ARM "
              "machine (slower, first start can take several minutes).")
-        if platform.system() == "Linux":
-            _say("On Linux, Docker Engine only runs amd64 images once amd64 emulation "
-                 "(binfmt/QEMU) is registered, e.g. `docker run --privileged --rm "
-                 "tonistiigi/binfmt --install amd64`; without it the container stops with "
-                 "'exec format error'. Docker Desktop includes it.")
     _say(f"[1/4] Downloading images (first run: ~1-2 GB) — {env['ODOO_IMAGE']}")
     env = box.pull(env, args.registry)
     _say("[2/4] Starting PostgreSQL + Odoo")

@@ -9,7 +9,7 @@ on:
     paths:
       - "scripts/deploy_local.py"
       - "scripts/sandbox_smoke.py"
-      - "server/src/**"
+      - "server/**"
       - ".github/workflows/sandbox-matrix.yml"
   schedule:
     - cron: "17 8 * * 1"   # Mondays 08:17 UTC, after the weekly image mirror

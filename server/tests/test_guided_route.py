@@ -365,3 +365,50 @@ def test_wait_for_odoo_keeps_waiting_while_not_answering(
     monkeypatch.setattr(dl.time, "sleep", lambda s: None)
     with pytest.raises(dl.SandboxError, match="did not answer"):
         dl.wait_for_odoo(f"http://127.0.0.1:{port}", 0.5)
+
+
+def test_retry_cannot_switch_postgres_major(tmp_path: Path) -> None:
+    box = dl.Sandbox(tmp_path / "sbx")
+    box.prepare("15.0", None, None, None, None, "dockerhub")  # PostgreSQL 13, not ready
+    box.prepare("14.0", None, None, None, None, "dockerhub")  # same major: allowed
+    with pytest.raises(dl.SandboxError, match="PostgreSQL 16"):
+        box.prepare("16.0", None, None, None, None, "dockerhub")
+
+
+def test_malformed_xmlrpc_reply_counts_as_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    import xml.parsers.expat
+    calls = {"n": 0}
+
+    def flaky(url: str, service: str, method: str, args: list[Any], timeout: float = 30) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise xml.parsers.expat.ExpatError("no element found")
+        if calls["n"] == 2:
+            raise dl.xmlrpc.client.ResponseError("malformed")
+        return {"server_version": "12.0"}
+
+    monkeypatch.setattr(dl, "rpc", flaky)
+    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    assert dl.wait_for_odoo("http://127.0.0.1:1", 30)["server_version"] == "12.0"
+
+
+def test_arm_linux_without_binfmt_is_refused_before_pulling(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dl, "compose_command", lambda: ["docker", "compose"])
+    monkeypatch.setattr(dl, "check_docker_running", lambda: None)
+    monkeypatch.setattr(dl.Sandbox, "running", lambda self: False)
+    monkeypatch.setattr(dl, "port_is_free", lambda port: True)
+    monkeypatch.setattr(dl, "amd64_emulation_missing", lambda: True)
+    pulled = []
+    monkeypatch.setattr(dl.Sandbox, "pull", lambda self, e, r: pulled.append(e) or e)
+    assert dl.main(["sandbox", "up", "--odoo", "12.0", "--dir", str(tmp_path / "s")]) == 1
+    assert not pulled
+
+
+def test_amd64_emulation_check_is_linux_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dl.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(dl.platform, "machine", lambda: "arm64")
+    assert dl.amd64_emulation_missing() is False  # Docker Desktop emulates
+    monkeypatch.setattr(dl.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(dl.platform, "machine", lambda: "x86_64")
+    assert dl.amd64_emulation_missing() is False
