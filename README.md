@@ -100,7 +100,7 @@ Provided by Transgenia, started only when you run the command (Docker required):
   `status`, `down`, `logs` and `destroy --yes` manage it afterwards.
   **Community (CE) only**: Transgenia cannot provide Odoo Enterprise (licensed by
   Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances — connect your own
-  subscription to use them; the plugin supports all three.
+  instance to use them (on Odoo Online, the plan must include external API access).
 - **MCP server as a container** — `ghcr.io/transgenia/odoo-mcp-tools`, for
   machines without Python 3.9+, connected to an existing Odoo.
 
