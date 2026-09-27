@@ -99,6 +99,11 @@
   `SSL_CERT_FILE`, plus the `certifi` bundle when that package is already
   installed. There is no option to turn verification off. If your Python has no
   usable trust store, point `SSL_CERT_FILE` at a CA bundle.
+- **Basic auth in front of Odoo.** `ODOO_URL` may carry `user:pass@`; JSON-RPC
+  sends it as an `Authorization` header (never on a redirect, which is refused
+  anyway) and no error or log line echoes the password. Note that **Odoo URL**
+  is not a `sensitive` plugin option: a password embedded there is stored in the
+  plugin settings, not in the OS credential store.
 - **Timeouts.** Every JSON-RPC and XML-RPC request is bounded by `ODOO_TIMEOUT`
   (seconds, default 120, Odoo's own default request limit; plugin option
   **Request timeout**), so an unresponsive Odoo cannot hang the server

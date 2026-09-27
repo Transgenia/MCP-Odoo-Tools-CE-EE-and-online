@@ -41,9 +41,10 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 - The MCP server does not write credentials or records to disk. Its schema cache
   is in memory.
-- **Exception — optional CLI fallback:** `/odoo-tools:odoo-setup-cli` writes a
-  `.env` with your credentials under `~/.claude/tools/odoo-cli`. Delete it when
-  you stop using the CLI.
+- **Exception — optional CLI fallback:** `/odoo-tools:odoo-setup-cli` creates an
+  owner-only `.env` with placeholders under `~/.claude/tools/odoo-cli`; you type
+  your credentials into it yourself (Claude never asks for the secret). Delete it
+  when you stop using the CLI.
 
 ## Retention
 
