@@ -61,12 +61,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--expect", type=int, required=True, help="expected Odoo major")
     args = parser.parse_args(argv)
     env_file = read_env(Path(args.dir).expanduser() / ".env")
-    env = dict(os.environ,
-               ODOO_URL=f"http://localhost:{env_file['ODOO_PORT']}",
-               ODOO_DB=env_file["ODOO_DB"],
-               ODOO_LOGIN=env_file["ODOO_ADMIN_LOGIN"],
-               ODOO_PASSWORD=env_file["ODOO_ADMIN_PASSWORD"],
-               ODOO_API_KEY="")
+    env = dict(os.environ)
+    env.update({
+        "ODOO_URL": f"http://localhost:{env_file['ODOO_PORT']}",
+        "ODOO_DB": env_file["ODOO_DB"],
+        "ODOO_LOGIN": env_file["ODOO_ADMIN_LOGIN"],
+        "ODOO_PASSWORD": env_file["ODOO_ADMIN_PASSWORD"],
+        "ODOO_API_KEY": "",
+    })
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "server" / "run_stdio.py")],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env,
