@@ -31,7 +31,7 @@ Then run `/odoo-tools:odoo-setup-mcp` (or `odoo-setup-cli` if you can't run the 
 | Connect to a new Odoo instance and detect its version/edition/deployment before doing anything else | `odoo-connect` |
 | Understand how model/field names are resolved across Odoo 10-19 (e.g. `account.invoice` → `account.move`) | `odoo-crossversion` |
 | Configure the MCP server (primary surface, full tool set) | `odoo-setup-mcp` |
-| Configure the TypeScript CLI fallback (no Python/`uv` available, or scripted batch access) | `odoo-setup-cli` |
+| Configure the TypeScript CLI fallback (no `python3` 3.9+ available, or scripted batch access) | `odoo-setup-cli` |
 | Add a custom field, an inherited view, or an automated action the way Odoo Studio would — without installing Studio or writing a module | `odoo-studio-style` |
 
 Always run `odoo-connect` first against a new instance. The compatibility layer uses what it detects (version, edition, transport) to resolve model and field names, so the other skills rarely need version-specific branching.

@@ -4,13 +4,19 @@
 
 Preference:
   * ``auto``    -> try JSON-RPC first, fall back to XML-RPC on api-key rejection
-                   or transport error.
+                   or when JSON-RPC is unusable.
   * ``jsonrpc`` -> JSON-RPC only.
   * ``xmlrpc``  -> XML-RPC only.
 
 The api-key-on-/jsonrpc caveat (Odoo 17+) is the primary reason auto mode
 exists; when it triggers we log a single warning and pin XML-RPC for the rest
 of the transport's life so we don't pay the failed round-trip repeatedly.
+
+A call is replayed over XML-RPC only when that cannot run it twice: always for
+``version``/``authenticate`` (idempotent), but for ``execute_kw`` only when the
+JSON-RPC request certainly never reached Odoo (:class:`JsonRpcUnavailable`).
+After a timeout or HTTP 5xx the call may already have committed, so the error
+is raised instead of risking a duplicate create/write.
 """
 
 from __future__ import annotations
@@ -19,7 +25,7 @@ import logging
 from typing import Any
 
 from ..errors import TransportError
-from .jsonrpc import ApiKeyRejected, JsonRpcTransport
+from .jsonrpc import ApiKeyRejected, JsonRpcTransport, JsonRpcUnavailable
 from .xmlrpc import XmlRpcTransport
 
 log = logging.getLogger("odoo_mcp.transport")
@@ -71,22 +77,30 @@ class FallbackTransport:
                 return result
             except ApiKeyRejected as exc:
                 last_exc = exc
-                self._pin_xmlrpc(reason=str(exc))
+                self._pin_xmlrpc(reason=f"JSON-RPC rejected the API key ({exc})")
+                continue
+            except JsonRpcUnavailable as exc:
+                last_exc = exc
+                # nothing reached Odoo: safe to retry, and JSON-RPC is not usable here
+                self._pin_xmlrpc(reason=f"JSON-RPC unavailable ({exc})")
                 continue
             except TransportError as exc:
                 last_exc = exc
-                # transport-level problem; try the next candidate if any
-                continue
+                if op == "execute_kw":
+                    # Outcome unknown (timeout, 5xx, cut reply): never replay.
+                    raise TransportError(
+                        f"{exc} - the call may or may not have been applied in Odoo; "
+                        "check before retrying"
+                    ) from exc
+                continue  # version/authenticate are idempotent: try the next one
         assert last_exc is not None
         raise last_exc
 
     def _pin_xmlrpc(self, reason: str) -> None:
+        if self.pref == "jsonrpc":
+            return  # the operator forced JSON-RPC: report errors, never switch
         if not self._warned_fallback:
-            log.warning(
-                "JSON-RPC rejected API key on %s; falling back to XML-RPC (%s)",
-                self.base_url,
-                reason,
-            )
+            log.warning("falling back to XML-RPC: %s", reason)
             self._warned_fallback = True
         self._pinned = "xmlrpc"
 

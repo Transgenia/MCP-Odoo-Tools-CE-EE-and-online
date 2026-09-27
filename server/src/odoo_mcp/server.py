@@ -28,7 +28,7 @@ from . import tools as _tools  # noqa: F401  (import registers all tools)
 from .config import Settings
 from .errors import CompatError, OdooMcpError
 from .observability import Observability
-from .registry import ToolContext, ToolDef, registry
+from .registry import ToolContext, ToolDef, registry, validate_arguments
 from .telemetry import PLUGIN_VERSION
 from .tenancy import ConnectionManager
 
@@ -45,6 +45,7 @@ PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
+INTERNAL_ERROR = -32603
 
 
 def check_readonly(settings: Settings, tool: ToolDef) -> None:
@@ -76,6 +77,15 @@ def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
 
 def _tool_result(text: str, *, is_error: bool) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+def _valid_id(value: Any) -> bool:
+    """MCP ids are strings or integers (never null, never a bool)."""
+    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def _is_tool_call(msg: Any) -> bool:
+    return isinstance(msg, dict) and msg.get("method") == "tools/call" and "id" in msg
 
 
 class McpServer:
@@ -142,9 +152,12 @@ class McpServer:
             raise _RpcError(INVALID_PARAMS, f"unknown tool: {name}") from None
 
         try:
-            check_readonly(self.settings, tool)
+            check_readonly(self.settings, tool)  # disabled tools say so, whatever the args
         except OdooMcpError as exc:
             return _tool_result(str(exc), is_error=True)
+        problem = validate_arguments(tool.input_schema, arguments)
+        if problem:
+            return _tool_result(f"Input validation error: {problem}", is_error=True)
 
         started = time.monotonic()
         status = "ok"
@@ -181,6 +194,8 @@ class McpServer:
             return None  # a response to a request we never send: ignore
         is_request = "id" in msg
         msg_id = msg.get("id")
+        if is_request and not _valid_id(msg_id):
+            return _error(None, INVALID_REQUEST, "id must be a string or an integer")
         if msg.get("jsonrpc") != "2.0" or not isinstance(method, str):
             if is_request:
                 return _error(msg_id, INVALID_REQUEST, "invalid JSON-RPC 2.0 message")
@@ -215,33 +230,92 @@ class McpServer:
 
     def _notification(self, method: str, params: dict[str, Any]) -> None:
         if method == "notifications/cancelled":
-            with self._cancel_lock:
-                self._cancelled.add(params.get("requestId"))
+            request_id = params.get("requestId")
+            if _valid_id(request_id):
+                with self._cancel_lock:
+                    self._cancelled.add(request_id)
         # notifications/initialized and anything else need no action.
 
     # ---------------------------------------------------------------- stdio
 
     def _write(self, obj: Any) -> None:
         data = json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
+        # "replace": a lone surrogate echoed back from the input must not kill
+        # the write; every valid character is encoded unchanged.
+        payload = data.encode("utf-8", "replace") + b"\n"
         with self._write_lock:
             assert self._out is not None
-            self._out.write(data.encode("utf-8") + b"\n")
+            self._out.write(payload)
             self._out.flush()
 
     def _was_cancelled(self, msg_id: Any) -> bool:
+        if not _valid_id(msg_id):
+            return False
         with self._cancel_lock:
             if msg_id in self._cancelled:
                 self._cancelled.discard(msg_id)
                 return True
             return False
 
+    def _safe_handle(self, msg: Any) -> dict[str, Any] | None:
+        """``handle()`` that turns an unexpected exception into -32603."""
+        try:
+            return self.handle(msg)
+        except Exception:
+            log.exception("unexpected error while handling a message")
+            msg_id = msg.get("id") if isinstance(msg, dict) else None
+            if isinstance(msg, dict) and "id" in msg and _valid_id(msg_id):
+                return _error(msg_id, INTERNAL_ERROR, "internal error")
+            return None
+
     def _run_tool_call(self, msg: dict[str, Any]) -> None:
         msg_id = msg.get("id")
         if self._was_cancelled(msg_id):
             return  # cancelled while queued: skip the work entirely
-        response = self.handle(msg)
+        response = self._safe_handle(msg)
         if response is not None and not self._was_cancelled(msg_id):
-            self._write(response)
+            self._write_quietly(response)
+
+    def _run_batch(self, batch: list[Any]) -> None:
+        replies = []
+        for msg in batch:
+            if _is_tool_call(msg) and self._was_cancelled(msg.get("id")):
+                continue
+            reply = self._safe_handle(msg)
+            if reply is None or (_is_tool_call(msg) and self._was_cancelled(msg.get("id"))):
+                continue
+            replies.append(reply)
+        if replies:
+            self._write_quietly(replies)
+
+    def _write_quietly(self, obj: Any) -> None:
+        """Worker-side write: a client that already went away is not an error."""
+        try:
+            self._write(obj)
+        except (BrokenPipeError, ValueError):  # ValueError: stdout already closed
+            pass
+
+    def _dispatch(self, raw: bytes, worker: ThreadPoolExecutor) -> None:
+        line = raw.strip()
+        if not line:
+            return
+        try:
+            msg = json.loads(line.decode("utf-8"))
+        except (ValueError, RecursionError) as exc:  # ValueError covers bad UTF-8
+            self._write(_error(None, PARSE_ERROR, f"parse error: {type(exc).__name__}"))
+            return
+        if isinstance(msg, list):  # JSON-RPC batch (MCP 2025-03-26)
+            if msg:
+                # On the worker, so batched tool calls stay serialized with the rest.
+                worker.submit(self._run_batch, msg)
+            else:
+                self._write(_error(None, INVALID_REQUEST, "empty batch"))
+        elif _is_tool_call(msg):
+            worker.submit(self._run_tool_call, msg)
+        else:
+            response = self._safe_handle(msg)
+            if response is not None:
+                self._write(response)
 
     def run(self, inp: BinaryIO, out: BinaryIO) -> None:
         """Serve newline-delimited JSON-RPC from ``inp`` to ``out`` until EOF."""
@@ -249,27 +323,12 @@ class McpServer:
         worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="odoo-tool")
         try:
             for raw in inp:
-                line = raw.strip()
-                if not line:
-                    continue
                 try:
-                    msg = json.loads(line.decode("utf-8"))
-                except ValueError as exc:  # includes UnicodeDecodeError
-                    self._write(_error(None, PARSE_ERROR, f"parse error: {exc}"))
-                    continue
-                if isinstance(msg, list):  # JSON-RPC batch (MCP 2025-03-26)
-                    if not msg:
-                        self._write(_error(None, INVALID_REQUEST, "empty batch"))
-                        continue
-                    replies = [r for r in (self.handle(m) for m in msg) if r is not None]
-                    if replies:
-                        self._write(replies)
-                elif isinstance(msg, dict) and msg.get("method") == "tools/call" and "id" in msg:
-                    worker.submit(self._run_tool_call, msg)
-                else:
-                    response = self.handle(msg)
-                    if response is not None:
-                        self._write(response)
+                    self._dispatch(raw, worker)
+                except BrokenPipeError:
+                    break  # the client closed our stdout: nothing left to answer
+                except Exception:  # one bad message must never stop the server
+                    log.exception("unexpected error in the stdio loop")
         finally:
             # Answer every request already received before exiting.
             worker.shutdown(wait=True)

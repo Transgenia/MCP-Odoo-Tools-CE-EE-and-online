@@ -1,6 +1,6 @@
 # Privacy policy — Odoo Tools plugin
 
-_Last updated: 2026-09-25. Applies to the `odoo-tools` Claude plugin in this
+_Last updated: 2026-09-26. Applies to the `odoo-tools` Claude plugin in this
 repository (MCP server, CLI fallback, skills, commands, agents and hooks)._
 
 Publisher: Transgenia (Centrum Transgenia S.A.S. de C.V.), dev@transgenia.org.
@@ -27,10 +27,10 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 1. **Your Odoo instance** — the URL you configure, over JSON-RPC / XML-RPC, from
    the MCP server (primary) or the optional CLI fallback.
-2. **Package registries, at install/first launch only** — `uv` downloads the
-   server's Python dependencies pinned in `server/uv.lock` from PyPI; the
-   optional CLI fallback runs `npm install` against the npm registry. No Odoo
-   data or credentials are sent.
+2. **The npm registry, only for the optional CLI fallback** — when you run
+   `/odoo-tools:odoo-setup-cli`, it runs `npm install` to build the CLI. No Odoo
+   data or credentials are sent. The MCP server downloads nothing: it has no
+   third-party dependencies and runs from the source shipped in the plugin.
 3. **Optional, off by default, operator-configured:** an OTLP collector you set
    in `ODOO_OTEL_ENDPOINT`, and a local Prometheus endpoint (`ODOO_METRICS`).
    Telemetry (`ODOO_TELEMETRY=opt-in`) never sends anything by itself: it only

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 
 TRANSPORT_CHOICES = ("auto", "jsonrpc", "xmlrpc")
@@ -28,6 +29,14 @@ def _env(name: str) -> str:
     return raw
 
 
+def _without_userinfo(url: str) -> str:
+    """``https://user:pass@host`` -> ``https://host`` for logs."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.username is None and parts.password is None:
+        return url
+    return urllib.parse.urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
+
+
 def _get_bool(name: str, default: bool = False) -> bool:
     raw = _env(name)
     if not raw.strip():
@@ -40,7 +49,7 @@ def _get_int(name: str, default: int) -> int:
     if not raw.strip():
         return default
     try:
-        return int(raw)
+        return int(float(raw))  # plugin "number" options may arrive as "90.0"
     except ValueError:
         return default
 
@@ -55,7 +64,9 @@ class Settings:
     password: str = ""
     api_key: str = ""
     transport_pref: str = "auto"
-    timeout: int = 30
+    # Seconds per Odoo RPC. 120 matches Odoo's default limit_time_real, so a
+    # call Odoo itself allows is never cut short, while a hung server still is.
+    timeout: int = 120
     multitenant: bool = False
     cache_ttl: int = 300
     metrics: bool = False
@@ -86,7 +97,7 @@ class Settings:
             password=_env("ODOO_PASSWORD"),
             api_key=_env("ODOO_API_KEY"),
             transport_pref=pref,
-            timeout=_get_int("ODOO_TIMEOUT", 30),
+            timeout=_get_int("ODOO_TIMEOUT", 120),
             multitenant=_get_bool("ODOO_MULTITENANT", False),
             cache_ttl=_get_int("ODOO_CACHE_TTL", 300),
             metrics=_get_bool("ODOO_METRICS", False),
@@ -99,7 +110,7 @@ class Settings:
     def redacted(self) -> dict:
         """A log-safe view: no secrets."""
         return {
-            "url": self.url,
+            "url": _without_userinfo(self.url),
             "db": self.db,
             "login": self.login,
             "transport_pref": self.transport_pref,

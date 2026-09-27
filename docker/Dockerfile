@@ -14,5 +14,7 @@ RUN useradd -m mcp
 USER mcp
 
 # stdio MCP server: run interactively, e.g.
-#   docker run -i --rm -e ODOO_URL -e ODOO_DB -e ODOO_LOGIN -e ODOO_API_KEY odoo-mcp-tools
+#   docker run -i --rm --env-file ./odoo.env odoo-mcp-tools
+# where odoo.env (chmod 600, never committed) sets ODOO_URL, ODOO_DB, ODOO_LOGIN
+# and ODOO_API_KEY.
 ENTRYPOINT ["odoo-mcp"]

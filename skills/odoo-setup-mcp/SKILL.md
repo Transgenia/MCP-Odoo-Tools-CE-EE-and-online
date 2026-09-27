@@ -12,16 +12,29 @@ compatibility layer.
 
 ## Step 1 — Check the runtime
 
-The server runs with `uv` from the source bundled in this plugin, pinned by
-`server/uv.lock` (`uv run --frozen`), so every install resolves the same
-dependency versions. Verify:
+The server is plain Python source bundled in this plugin and uses only the
+standard library. Claude Code runs it as
+`python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: nothing is installed or
+downloaded, and no virtualenv is created. It needs **Python 3.9 or newer,
+reachable as `python3`**. Verify:
 
 ```bash
-uv --version || echo "install uv: https://docs.astral.sh/uv/getting-started/installation/"
+python3 --version
 ```
 
-`uv` ships a self-contained Python; no separate Python install is required.
-The virtualenv lives in the plugin's data directory, not in your project.
+The output must be `Python 3.9` or newer. If the command is missing, too old,
+or prints no version, tell the user the fix for their OS:
+- **macOS:** `xcode-select --install` (Apple's Command Line Tools include
+  `python3`), or a python.org / Homebrew Python.
+- **Linux:** the distribution's `python3` package.
+- **Windows:** the command must be named `python3`. The Microsoft Store Python
+  provides `python3.exe`; the python.org installer provides only `python` and
+  `py`. Either install Python from the Store, or put a `python3.exe` on `PATH`
+  (a copy of or hard link to `python.exe` in the same folder). A PowerShell or
+  `doskey` alias is not enough, because Claude Code starts the command
+  directly. If `python3` opens the Microsoft Store, that is the App execution
+  alias stub: install the Store Python, or turn that alias off in Windows
+  Settings so the user's own `python3.exe` is found.
 
 ## Step 2 — Gather Odoo credentials
 
@@ -33,7 +46,8 @@ Tell the user what they will be asked for:
    On Odoo < 14 (no API keys), fill **Password** instead.
 
 Optional: **Transport preference** = `auto` (default), `jsonrpc`, or `xmlrpc`,
-and **Read-only mode** for demos or safe exploration.
+**Request timeout** (seconds, default 120) and **Read-only mode** for demos or
+safe exploration.
 
 ## Step 3 — Enter them in the plugin's options
 
@@ -55,5 +69,7 @@ call the `odoo_version` tool. A successful response reports the version, edition
 which confirms the connection end-to-end.
 
 If it fails:
+- `odoo_version` tool not available at all → the MCP server did not start:
+  re-check Step 1 (`python3 --version`, 3.9+), then restart Claude
 - auth error → re-check Database / Login / API key in **Configure options**
 - transport error → re-check the Odoo URL (scheme + host, no trailing path)

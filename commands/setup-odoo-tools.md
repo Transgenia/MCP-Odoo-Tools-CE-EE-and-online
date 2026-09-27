@@ -13,7 +13,7 @@ tool for multiple-choice steps when available; otherwise ask in plain text.
 ## Step 0 — Detect what's already set up
 Run this and read the result before asking anything:
 ```bash
-echo "uv: $(command -v uv || echo no)"; echo "node: $(node --version 2>/dev/null || echo no)"
+echo "python3: $(python3 --version 2>/dev/null || echo no)"; echo "node: $(node --version 2>/dev/null || echo no)"
 ```
 Then call the `odoo_version` tool once. If it succeeds, the plugin options are
 already configured → skip to **Step 5 (Verify)**. (Do not read `ODOO_*`
@@ -21,12 +21,14 @@ variables or credential files from the user's machine to find out.)
 
 ## Step 1 — Choose the surface
 Ask the user (AskUserQuestion, single choice):
-- **MCP server (recommended)** — full tools + cross-version compat. Needs `uv` (or Python 3.11+).
+- **MCP server (recommended)** — full tools + cross-version compat. Needs Python 3.9+ as `python3`; nothing else is installed.
 - **CLI fallback** — lightweight, Node-only. Use if they can't run the MCP server.
 
-If MCP but `uv` is missing, tell them to install uv
-(https://docs.astral.sh/uv/getting-started/installation/) or use Python 3.11+
-(`python -m odoo_mcp`). If CLI but Node missing, point to https://nodejs.org/ (18+).
+If MCP but `python3` is missing or older than 3.9, give them the fix from Step 1
+of `/odoo-tools:odoo-setup-mcp`. On Windows the command must be named `python3`:
+the Microsoft Store Python provides it; with a python.org install they need a
+`python3.exe` on `PATH` (a shell alias is not enough). If CLI but Node missing,
+point to https://nodejs.org/ (18+).
 
 ## Step 2 — Odoo version & edition (sets expectations, optional)
 Ask (AskUserQuestion, single choice): "Which Odoo are you connecting to?"

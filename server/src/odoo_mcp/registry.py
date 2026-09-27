@@ -80,6 +80,66 @@ class ToolRegistry:
 registry = ToolRegistry()
 
 
+_JSON_TYPES: dict[str, Callable[[Any], bool]] = {
+    "object": lambda v: isinstance(v, dict),
+    "array": lambda v: isinstance(v, list),
+    "string": lambda v: isinstance(v, str),
+    "boolean": lambda v: isinstance(v, bool),
+    # bool is an int subclass in Python but not a JSON number; 1.0 is an integer
+    # in JSON Schema, as jsonschema (and so the MCP SDK) treats it.
+    "integer": lambda v: not isinstance(v, bool)
+    and (isinstance(v, int) or (isinstance(v, float) and v.is_integer())),
+    "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+    "null": lambda v: v is None,
+}
+
+
+def validate_arguments(schema: dict[str, Any], value: Any, path: str = "arguments") -> str | None:
+    """Check ``value`` against a tool's input schema; return the first problem or ``None``.
+
+    Covers exactly the JSON Schema keywords the tool schemas use (``type``,
+    ``properties``, ``required``, ``additionalProperties``, ``items``, ``enum``,
+    ``minItems``, ``maxItems``), so bad or misnamed arguments are refused before
+    they reach Odoo, as the MCP SDK's input validation did.
+    """
+    expected = schema.get("type")
+    if expected is not None:
+        names = expected if isinstance(expected, list) else [expected]
+        if not any(_JSON_TYPES.get(n, lambda _v: True)(value) for n in names):
+            return f"{path}: expected {' or '.join(names)}, got {type(value).__name__}"
+    if "enum" in schema and value not in schema["enum"]:
+        return f"{path}: must be one of {schema['enum']}"
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                return f"{path}: missing required property '{key}'"
+        extra = schema.get("additionalProperties", True)
+        for key, item in value.items():
+            if key in props:
+                problem = validate_arguments(props[key], item, f"{path}.{key}")
+            elif extra is False:
+                problem = f"{path}: unexpected property '{key}'"
+            elif isinstance(extra, dict):
+                problem = validate_arguments(extra, item, f"{path}.{key}")
+            else:
+                problem = None
+            if problem:
+                return problem
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            return f"{path}: needs at least {schema['minItems']} item(s)"
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            return f"{path}: allows at most {schema['maxItems']} item(s)"
+        items = schema.get("items")
+        if isinstance(items, dict):
+            for i, item in enumerate(value):
+                problem = validate_arguments(items, item, f"{path}[{i}]")
+                if problem:
+                    return problem
+    return None
+
+
 def obj(properties: dict[str, Any], required: list[str] | None = None,
         additional: bool = False) -> dict[str, Any]:
     """Helper to build a JSON-schema object for a tool's inputSchema."""

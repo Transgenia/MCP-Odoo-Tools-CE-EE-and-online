@@ -4,19 +4,36 @@
 
 from __future__ import annotations
 
+import os
 import ssl
 from typing import Any, Protocol, runtime_checkable
+
+# Well-known CA bundles maintained by the OS (macOS, Debian/Ubuntu, RHEL/Fedora).
+_OS_CA_BUNDLES = (
+    "/etc/ssl/cert.pem",
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+)
 
 
 def tls_context() -> ssl.SSLContext:
     """Certificate-verifying TLS context shared by both transports.
 
-    Always trusts the system store (and honours ``SSL_CERT_FILE``). When the
-    optional ``certifi`` package happens to be installed its CA bundle is added
-    too, which helps Python builds that ship without a usable trust store.
-    Nothing is installed or downloaded for this.
+    Always trusts the interpreter's default store (and honours
+    ``SSL_CERT_FILE``). Some Python builds ship with no CA file of their own
+    (python.org macOS installers before "Install Certificates"); for those the
+    OS bundle is loaded instead. The optional ``certifi`` package is added when
+    it happens to be installed. Nothing is installed or downloaded for this.
     """
     ctx = ssl.create_default_context()
+    if not os.environ.get("SSL_CERT_FILE") and ssl.get_default_verify_paths().cafile is None:
+        for bundle in _OS_CA_BUNDLES:
+            if os.path.isfile(bundle):
+                try:
+                    ctx.load_verify_locations(cafile=bundle)
+                    break
+                except (OSError, ssl.SSLError):  # pragma: no cover - unreadable bundle
+                    continue
     try:
         import certifi  # type: ignore[import-not-found]
     except ImportError:

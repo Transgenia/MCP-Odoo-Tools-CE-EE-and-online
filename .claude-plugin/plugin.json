@@ -49,6 +49,14 @@
       "description": "auto (default), jsonrpc or xmlrpc.",
       "default": "auto"
     },
+    "odoo_timeout": {
+      "type": "number",
+      "title": "Request timeout (seconds)",
+      "description": "Maximum time to wait for one Odoo call before reporting an error. Default 120, Odoo's own default request limit.",
+      "default": 120,
+      "min": 5,
+      "max": 3600
+    },
     "odoo_readonly": {
       "type": "boolean",
       "title": "Read-only mode",
@@ -67,6 +75,7 @@
         "ODOO_API_KEY": "${user_config.odoo_api_key}",
         "ODOO_PASSWORD": "${user_config.odoo_password}",
         "ODOO_TRANSPORT_PREF": "${user_config.odoo_transport_pref}",
+        "ODOO_TIMEOUT": "${user_config.odoo_timeout}",
         "ODOO_READONLY": "${user_config.odoo_readonly}"
       }
     }

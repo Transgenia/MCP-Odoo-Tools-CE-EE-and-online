@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,9 @@ import pytest
 
 from odoo_mcp.config import Settings
 from odoo_mcp.errors import AuthError
-from odoo_mcp.registry import ToolDef, registry
+from odoo_mcp.registry import ToolDef, registry, validate_arguments
 from odoo_mcp.server import (
+    INTERNAL_ERROR,
     INVALID_PARAMS,
     INVALID_REQUEST,
     METHOD_NOT_FOUND,
@@ -233,3 +235,112 @@ def test_entry_point_ignores_unresolved_plugin_placeholders() -> None:
         ("ODOO_API_KEY", "${user_config.odoo_api_key}"),
     )
     assert replies[0]["result"]["isError"] is True  # refused by readonly, not a crash
+
+
+# --- review follow-ups -------------------------------------------------------
+
+
+@pytest.fixture
+def typed_tool(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    threads: list[str] = []
+
+    def handler(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+        threads.append(threading.current_thread().name)
+        return {"ok": args}
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "model": {"type": "string"},
+            "limit": {"type": "integer"},
+            "ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1, "maxItems": 3},
+            "mode": {"type": "string", "enum": ["a", "b"]},
+        },
+        "required": ["model"],
+        "additionalProperties": False,
+    }
+    monkeypatch.setitem(
+        registry._tools, "t_typed",
+        ToolDef(name="t_typed", description="typed", input_schema=schema, handler=handler),
+    )
+    return threads
+
+
+@pytest.mark.parametrize(
+    ("arguments", "problem"),
+    [
+        ({}, "missing required property 'model'"),
+        ({"model": 3}, "arguments.model: expected string"),
+        ({"model": "x", "limit": True}, "arguments.limit: expected integer"),
+        ({"model": "x", "limt": 5}, "unexpected property 'limt'"),
+        ({"model": "x", "ids": []}, "at least 1"),
+        ({"model": "x", "ids": [1, 2, 3, 4]}, "at most 3"),
+        ({"model": "x", "ids": [1, "2"]}, "arguments.ids[1]: expected integer"),
+        ({"model": "x", "mode": "c"}, "must be one of"),
+    ],
+)
+def test_arguments_are_validated_before_the_handler(
+    typed_tool: list[str], arguments: dict[str, Any], problem: str
+) -> None:
+    result = _server().handle(_req("tools/call", {"name": "t_typed", "arguments": arguments}))
+    assert result["result"]["isError"] is True
+    assert result["result"]["content"][0]["text"].startswith("Input validation error: ")
+    assert problem in result["result"]["content"][0]["text"]
+    assert typed_tool == []  # the handler never ran
+
+
+def test_valid_arguments_reach_the_handler(typed_tool: list[str]) -> None:
+    args = {"model": "res.partner", "limit": 5.0, "ids": [1], "mode": "a"}
+    result = _server().handle(_req("tools/call", {"name": "t_typed", "arguments": args}))
+    assert result["result"]["isError"] is False  # 5.0 is a valid JSON-Schema integer
+
+
+def test_every_registered_schema_accepts_its_own_required_fields_shape() -> None:
+    # Guard against the validator rejecting a schema keyword the tools use.
+    for tool in registry.all():
+        assert validate_arguments(tool.input_schema, None) is not None  # not an object
+        assert set(tool.input_schema) <= {"type", "properties", "required",
+                                          "additionalProperties"}, tool.name
+
+
+@pytest.mark.parametrize("bad_id", [{"x": 1}, [1], True, None, 1.5])
+def test_requests_with_invalid_ids_are_rejected(bad_id: Any) -> None:
+    reply = _server().handle({"jsonrpc": "2.0", "id": bad_id, "method": "ping"})
+    assert reply == {"jsonrpc": "2.0", "id": None,
+                     "error": {"code": INVALID_REQUEST,
+                               "message": "id must be a string or an integer"}}
+
+
+def test_hostile_input_never_stops_the_loop() -> None:
+    replies = _run([
+        {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": {"a": 1}}},
+        "[" * 100_000 + "]" * 100_000,  # RecursionError while parsing
+        {"jsonrpc": "2.0", "id": 1, "method": "x\ud800"},  # lone surrogate echoed back
+        {"jsonrpc": "2.0", "id": {"x": 1}, "method": "tools/call", "params": {"name": "odoo_version"}},
+        _req("ping", msg_id=99),
+    ])
+    assert {"jsonrpc": "2.0", "id": 99, "result": {}} in replies
+    codes = [r["error"]["code"] for r in replies if isinstance(r, dict) and "error" in r]
+    assert PARSE_ERROR in codes and METHOD_NOT_FOUND in codes and INVALID_REQUEST in codes
+
+
+def test_unexpected_handler_failure_answers_internal_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(self: McpServer, params: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("bug outside any tool")
+
+    monkeypatch.setattr(McpServer, "list_tools", explode)
+    replies = _run([_req("tools/list", msg_id=5), _req("ping", msg_id=6)])
+    assert {"jsonrpc": "2.0", "id": 5,
+            "error": {"code": INTERNAL_ERROR, "message": "internal error"}} in replies
+    assert {"jsonrpc": "2.0", "id": 6, "result": {}} in replies
+
+
+def test_batched_tool_calls_run_on_the_worker_thread(typed_tool: list[str]) -> None:
+    replies = _run([
+        [_req("tools/call", {"name": "t_typed", "arguments": {"model": "a"}}, 1),
+         _req("tools/call", {"name": "t_typed", "arguments": {"model": "b"}}, 2)],
+    ])
+    assert [r["id"] for r in replies[0]] == [1, 2]
+    assert typed_tool and all(name.startswith("odoo-tool") for name in typed_tool)

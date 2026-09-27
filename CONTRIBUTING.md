@@ -14,11 +14,20 @@ Thanks for helping improve MCP-Odoo-Tools.
 
 ```bash
 cd server
-python -m venv .venv && . .venv/bin/activate   # or use uv
+python3 -m venv .venv && . .venv/bin/activate   # or use uv
 pip install -e ".[dev,cache]"
 ruff check src tests
-pytest -q
+pytest -q -m "not live"
 ```
+
+- **No runtime dependencies.** The plugin runs the shipped source with the
+  user's `python3` and installs nothing, so `src/` may import only the standard
+  library. Optional packages (cache/metrics/otel, `certifi`) must stay behind a
+  guarded import that degrades gracefully. Adding a required dependency would
+  bring back a package install and the directory review hold it causes.
+- **Python 3.9 compatible.** CI runs 3.9, 3.11, 3.12 and 3.13; ruff targets
+  `py39`. `run_stdio.py` must also parse on older interpreters so it can print
+  its version error.
 
 - Add or change a cross-version behavior? Edit
   `src/odoo_mcp/compat/deltas.py` (data) and add a row to

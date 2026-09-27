@@ -11,13 +11,19 @@ transport layer that speaks JSON-RPC with automatic XML-RPC fallback, and a
 single tool call works across every supported version.
 
 Not derived from any AGPL project; relies only on Odoo's public RPC interfaces.
+It has **no third-party runtime dependencies**: the MCP stdio protocol and both
+transports use only the Python standard library. Requires Python 3.9+.
 
 ## Install & run
 
 ```bash
-pipx run odoo-mcp-tools            # or: uvx odoo-mcp
-python -m odoo_mcp                 # from a checkout
+python3 run_stdio.py               # from a checkout of server/, nothing to install
+pip install . && odoo-mcp          # or install the package, then the entry point
 ```
+
+The Claude plugin runs `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`
+directly, so nothing is installed when the plugin starts. A Dockerfile is in
+the repository's `docker/` folder.
 
 Configure via environment: `ODOO_URL`, `ODOO_DB`, `ODOO_LOGIN`,
 `ODOO_API_KEY` (or `ODOO_PASSWORD`). Optional: `ODOO_TRANSPORT_PREF`

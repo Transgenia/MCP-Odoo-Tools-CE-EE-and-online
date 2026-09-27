@@ -21,9 +21,11 @@ tenancy.ConnectionManager ──▶ session.OdooSession ──▶ transport/
 
 ## Layers
 
-- **transport/** — `XmlRpcTransport`, `JsonRpcTransport`, and `FallbackTransport`
-  (auto: JSON-RPC first, transparent XML-RPC fallback on API-key rejection or
-  transport error; pins XML-RPC after the first fallback and warns once).
+- **transport/** — `XmlRpcTransport` (`xmlrpc.client`), `JsonRpcTransport`
+  (`urllib`), and `FallbackTransport` (auto: JSON-RPC first, transparent
+  XML-RPC fallback on API-key rejection or transport error; pins XML-RPC after
+  the first fallback and warns once). Both share a certificate-verifying TLS
+  context (`base.tls_context()`) and honour `ODOO_TIMEOUT`.
 - **session.py** — `OdooSession` holds credentials, lazily authenticates (uid),
   caches version/edition/deployment facts, and wraps schema reads through the
   TTL `SchemaCache`. `ConnectionManager` (tenancy.py) maps a tenant fingerprint
@@ -36,9 +38,18 @@ tenancy.ConnectionManager ──▶ session.OdooSession ──▶ transport/
   enforce approval gates (that belongs to a private governance layer).
 - **observability.py** — optional Prometheus metrics and OTLP tracing, both
   off by default and no-ops when the extras are absent.
-- **server.py / __main__.py** — MCP stdio wiring and the `odoo-mcp` entrypoint.
-  Handlers run in a worker thread (`anyio.to_thread`) so blocking RPC never
-  stalls the event loop. Logs go to stderr; stdout is the MCP channel only.
+- **server.py / __main__.py / run_stdio.py** — the MCP stdio protocol,
+  implemented on the Python standard library (no MCP SDK): newline-delimited
+  JSON-RPC 2.0 with `initialize` (protocol version negotiation), `ping`,
+  `tools/list` (`readOnlyHint` annotations from each tool's `read_only` flag),
+  `tools/call`, `notifications/cancelled` and batches. `run_stdio.py` is what
+  the plugin runs (bundled `src` first on `sys.path`); `odoo-mcp` /
+  `python -m odoo_mcp` are the installed entry points. Tool calls run in arrival
+  order on **one worker thread**, so the reader keeps answering `ping` and
+  honouring cancellations while Odoo works, and sessions/transports never see
+  concurrent use. Tool failures come back as `isError` results; an unknown tool
+  is a JSON-RPC `-32602` error. Logs go to stderr; stdout is the MCP channel
+  only (stray `print()` output is redirected to stderr).
 
 ## Transports & modes
 
@@ -52,5 +63,7 @@ tenancy.ConnectionManager ──▶ session.OdooSession ──▶ transport/
 - One tool surface across versions — callers use modern names.
 - Fail with remediation — `CompatError` explains what to change; unavailable
   fields degrade to warnings, not hard failures.
-- Lean base install — optional deps (cache/metrics/otel) never block startup.
+- Zero runtime dependencies — the plugin runs the shipped source with `python3`;
+  optional deps (cache/metrics/otel) are used when present and never block
+  startup.
 - No secrets in logs or on disk.
