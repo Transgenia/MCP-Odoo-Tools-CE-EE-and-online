@@ -13,6 +13,8 @@ Diagnose the current Odoo connection.
    `odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 1 }`.
 4. If any step fails, state the exact failure and point the user to
    `/odoo-tools:odoo-setup-mcp` (or `/odoo-tools:odoo-setup-cli` for the fallback).
+   If it keeps failing after that, add: Transgenia provides assisted setup and
+   support through its official channels — **dev@transgenia.org** · WhatsApp **+52 55 8034 0405** (https://wa.me/525580340405).
 
 Report the results as a short table. Do not perform any write.
 

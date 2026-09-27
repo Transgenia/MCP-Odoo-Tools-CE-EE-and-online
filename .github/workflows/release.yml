@@ -1,8 +1,15 @@
-name: Release (Standard 1.0)
+name: Release
 
-# Builds + verifies the Standard artifacts and creates the GitHub Release.
-# The existing publish.yml then publishes server/dist to PyPI on release.
-# Trigger: push a tag like v1.0.0, or manual dispatch (tag input, default v1.0.0).
+# Tag vX.Y.Z (or manual dispatch with a tag) →
+#   verify: versions agree with the tag + lint + tests
+#   build-standard: sdist/wheel + plugin zip
+#   container: ghcr.io/transgenia/odoo-mcp-tools:{X.Y.Z, X.Y, latest} (amd64 + arm64)
+#   github-release: Release with this version's CHANGELOG section + artifacts
+#   mirror: refreshes the Odoo/PostgreSQL mirrors used by /odoo-tools:deploy-local
+#   pypi: uploads server/dist to PyPI (trusted publishing, last so a missing PyPI
+#         setup never blocks the Release or the image)
+# A release created with GITHUB_TOKEN triggers no other workflow, so these run
+# here instead of on `release: published`.
 
 on:
   push:
@@ -10,26 +17,51 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0)"
-        required: false
-        default: "v1.0.0"
+        description: "Existing tag to release (e.g. v1.3.0)"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: server
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Versions match the tag
+        run: |
+          V="${TAG#v}"
+          python3 - "$V" <<'PY'
+          import json, re, sys, pathlib
+          v = sys.argv[1]
+          found = {
+              "plugin.json": json.load(open(".claude-plugin/plugin.json"))["version"],
+              "marketplace.json": json.load(open(".claude-plugin/marketplace.json"))["plugins"][0]["version"],
+              "pyproject.toml": re.search(r'^version = "([^"]+)"', pathlib.Path("server/pyproject.toml").read_text(), re.M).group(1),
+          }
+          bad = {k: x for k, x in found.items() if x != v}
+          if bad:
+              sys.exit(f"tag v{v} does not match: {bad}")
+          if f"## [{v}]" not in pathlib.Path("CHANGELOG.md").read_text():
+              sys.exit(f"CHANGELOG.md has no '## [{v}]' section")
+          print("versions OK:", found)
+          PY
       - name: Install
+        working-directory: server
         run: pip install -e ".[dev,cache]"
       - name: Ruff
-        run: ruff check src tests
+        working-directory: server
+        run: ruff check src tests ../scripts
       - name: Pytest (unit)
+        working-directory: server
         run: pytest -q -m "not live"
 
   build-standard:
@@ -37,6 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -46,43 +80,123 @@ jobs:
           cd server && python -m build --outdir dist
       - name: Build standard plugin zip
         run: |
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${TAG#v}"
           zip -r "odoo-tools-standard-${VERSION}.zip" \
-            .claude-plugin agents skills commands context hooks cli docs server \
-            README.md SECURITY.md PRIVACY.md CHANGELOG.md LICENSE NOTICE \
+            .claude-plugin agents skills commands context hooks cli docs server scripts docker \
+            README.md SUPPORT.md SECURITY.md PRIVACY.md CHANGELOG.md LICENSE NOTICE \
             -x "cli/node_modules/*" "cli/.env" "server/dist/*" "server/.venv/*" \
                "*/__pycache__/*" "server/.pytest_cache/*" "server/.ruff_cache/*"
+      - name: Release notes (this version only)
+        run: |
+          VERSION="${TAG#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: standard-${{ github.ref_name }}
+          name: standard-${{ env.TAG }}
           path: |
             server/dist
             odoo-tools-standard-*.zip
+            release-notes.md
+
+  container:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0  # all tags, to decide whether this is the newest release
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags
+        id: meta
+        run: |
+          V="${TAG#v}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/odoo-mcp-tools"
+          # Moving tags only move forward: re-running an older tag (manual
+          # dispatch) must not point `latest` or `X.Y` back at an older image.
+          newest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          newest_minor=$(git tag -l "v${V%.*}.[0-9]*" --sort=-v:refname | head -n1)
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE}:${V}"
+            if [ "$TAG" = "$newest_minor" ]; then echo "${IMAGE}:${V%.*}"; fi
+            if [ "$TAG" = "$newest" ]; then echo "${IMAGE}:latest"; fi
+            echo "EOF"
+            echo "version=${V}"
+          } >> "$GITHUB_OUTPUT"
+          echo "newest tag: $newest; newest in ${V%.*}: $newest_minor"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.vendor=Transgenia
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.description=odoo-tools MCP server by Transgenia (Odoo 10-19, CE/EE/online)
 
   github-release:
-    needs: build-standard
+    needs: [build-standard, container]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: standard-${{ github.ref_name }}
+          name: standard-${{ env.TAG }}
           path: assets
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.ref_name }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-            git fetch --tags origin
-          fi
           ls -R assets
-          gh release create "$TAG" --title "$TAG (Standard)" \
-            --notes-file CHANGELOG.md \
+          gh release create "$TAG" --verify-tag --title "odoo-tools $TAG" \
+            --notes-file assets/release-notes.md \
             assets/server/dist/* assets/odoo-tools-standard-*.zip
+
+  mirror:
+    needs: github-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/mirror-images.yml
+
+  pypi:
+    needs: github-release
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing (OIDC), no API token stored
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: standard-${{ env.TAG }}
+          path: assets
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: assets/server/dist

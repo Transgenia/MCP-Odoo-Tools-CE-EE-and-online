@@ -26,9 +26,10 @@ from typing import Any, BinaryIO
 
 from . import tools as _tools  # noqa: F401  (import registers all tools)
 from .config import Settings
-from .errors import CompatError, OdooMcpError
+from .errors import AuthError, CompatError, ConfigError, OdooMcpError, TransportError
 from .observability import Observability
 from .registry import ToolContext, ToolDef, registry, validate_arguments
+from .support import INSTRUCTIONS, SETUP_HINT, SUPPORT_LINE
 from .telemetry import PLUGIN_VERSION
 from .tenancy import ConnectionManager
 
@@ -46,6 +47,14 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+
+
+def _with_guidance(exc: OdooMcpError) -> str:
+    """Connection problems also say where to fix them and who can help."""
+    text = str(exc)
+    if isinstance(exc, (ConfigError, AuthError, TransportError)):
+        text = f"{text}\n{SETUP_HINT}\n{SUPPORT_LINE}"
+    return text
 
 
 def check_readonly(settings: Settings, tool: ToolDef) -> None:
@@ -122,6 +131,7 @@ class McpServer:
             "protocolVersion": version,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": PLUGIN_VERSION},
+            "instructions": INSTRUCTIONS,
         }
 
     def list_tools(self) -> dict[str, Any]:
@@ -171,7 +181,7 @@ class McpServer:
         except OdooMcpError as exc:
             status = "error"
             # Clean, actionable message; the client shows it as a tool error.
-            return _tool_result(str(exc), is_error=True)
+            return _tool_result(_with_guidance(exc), is_error=True)
         except Exception as exc:
             status = "error"
             log.exception("tool %s failed unexpectedly", name)

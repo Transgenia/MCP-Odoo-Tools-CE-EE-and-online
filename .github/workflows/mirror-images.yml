@@ -1,0 +1,44 @@
+name: Mirror sandbox images
+
+# /odoo-tools:deploy-local pulls Odoo and PostgreSQL from ghcr.io/transgenia so
+# the whole sandbox is served by Transgenia. This copies the official
+# multi-arch images (manifests and layers, unchanged) and refreshes them weekly
+# so upstream security fixes keep flowing. deploy_local.py falls back to Docker
+# Hub if a mirror is missing.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_call:          # from release.yml (a GITHUB_TOKEN release fires no events)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { src: "odoo:16.0", dst: "odoo:16.0" }
+          - { src: "odoo:17.0", dst: "odoo:17.0" }
+          - { src: "odoo:18.0", dst: "odoo:18.0" }
+          - { src: "odoo:19.0", dst: "odoo:19.0" }
+          - { src: "postgres:16", dst: "postgres:16" }
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Copy docker.io/library/${{ matrix.image.src }}
+        run: |
+          DST="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image.dst }}"
+          docker buildx imagetools create --tag "$DST" "docker.io/library/${{ matrix.image.src }}"
+          docker buildx imagetools inspect "$DST" | head -20

@@ -4,6 +4,55 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-27
+
+Plug and play: one guided route, local infrastructure provided by Transgenia,
+and the first published Release and package.
+
+### Added
+- **Guided route `/odoo-tools:odoo-setup-mcp` (start here).** Detects what is
+  already set up, then walks the user through five phases: setup, verification,
+  hands-on training (7 exercises, read-only first, writes only on a sandbox or
+  test database), daily use (map of commands, skills and agents) and deployment
+  to a team or production (least privilege, read-only by default, pilot,
+  backups, updates). `/setup-odoo-tools` now opens the same route.
+- **`/odoo-tools:deploy-local`** — local infrastructure, only when the user runs
+  it and confirms (Docker required):
+  - *Sandbox*: PostgreSQL 16 + Odoo 16.0, 17.0, 18.0 or 19.0 bound to
+    `127.0.0.1`, with a database (demo data optional) ready for the plugin.
+    `scripts/deploy_local.py` (standard library only) generates the passwords
+    locally into `~/.odoo-tools/sandbox/.env` (owner-only), never prints them,
+    and offers `status`, `down`, `logs` and `destroy --yes`.
+  - *Container*: the MCP server as `ghcr.io/transgenia/odoo-mcp-tools`, for
+    machines without Python 3.9+, connected to an existing Odoo.
+- **Images served by Transgenia.** The release publishes the MCP server image to
+  GHCR (`X.Y.Z`, `X.Y`, `latest`; amd64 + arm64). `mirror-images.yml` copies the
+  official `odoo` (16.0-19.0) and `postgres:16` images to `ghcr.io/transgenia`
+  and refreshes them weekly; the sandbox uses them and falls back to Docker Hub.
+- **MCP server `instructions`**: sent at `initialize`, so every session knows the
+  guided route, the safe-use rules (confirm before any write) and when to point
+  the user to Transgenia.
+- **Transgenia support channels** at the points where they help: setup blocked
+  (`/odoo-doctor`, connection errors), end of training, end of the sandbox and
+  deployment phases, `SUPPORT.md` and the README: **dev@transgenia.org** and
+  WhatsApp **+52 55 8034 0405** (https://wa.me/525580340405). They are not
+  appended to unrelated answers.
+
+### Changed
+- Connection errors (incomplete credentials, authentication, transport) now end
+  with the setup entry point and the support channels.
+- `release.yml`: checks that the tag matches `plugin.json`, `marketplace.json`,
+  `pyproject.toml` and the CHANGELOG; builds from the tag on manual runs (it
+  built from the default branch); uses only this version's CHANGELOG section as
+  release notes (it used the whole file); the plugin zip now includes
+  `scripts/`, `docker/` and `SUPPORT.md`.
+- PyPI publishing and the image mirror now run inside `release.yml`
+  (`publish.yml` removed): a Release created with `GITHUB_TOKEN` triggers no
+  other workflow, so `publish.yml` would never have run. The PyPI trusted
+  publisher must name workflow `release.yml` and environment `pypi`.
+- CI lints `scripts/` too.
+- README badges for Claude Code / Claude AI and Odoo ERP (10-19, CE/EE/Online); `claude*` and `odoo-*` keywords in the plugin and marketplace manifests.
+
 ## [1.2.0] - 2026-09-27
 
 Directory-submission follow-up: fixes the findings the Claude plugin directory
