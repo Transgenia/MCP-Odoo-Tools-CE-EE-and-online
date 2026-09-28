@@ -7,6 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 ## [Unreleased]
 
 ### Added
+- `packages/`: an index of the packages related to odoo-tools, and a README for
+  odoo-tools-lsp, Transgenia's language server for Odoo addons (proprietary, private
+  preview; documentation only, no source in this repository).
 - **Sandbox for Odoo Community 10.0 to 15.0** (was 16.0-19.0), for testing and
   migrations. Each series gets a PostgreSQL major it supports (10 for 10.0/11.0,
   12 for 12.0/13.0, 13 for 14.0/15.0, 16 for 16.0+); series up to 15.0 run as
