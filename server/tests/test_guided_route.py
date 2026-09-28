@@ -101,18 +101,19 @@ def test_versions_agree_everywhere() -> None:
         r'^version = "([^"]+)"', (ROOT / "server/pyproject.toml").read_text(), re.MULTILINE
     )
     assert pyproject
-    telemetry_fallback = re.search(
-        r'return "([0-9.]+)"  # fallback', (ROOT / "server/src/odoo_mcp/telemetry.py").read_text()
+    runtime = re.search(
+        r'^__version__ = "([0-9.]+)"', (ROOT / "server/src/odoo_mcp/__init__.py").read_text(),
+        re.MULTILINE,
     )
-    assert telemetry_fallback
+    assert runtime
     image_tags = set(re.findall(
         r"ghcr\.io/transgenia/odoo-mcp-tools:([0-9.]+)",
         (ROOT / "commands/deploy-local.md").read_text(),
     ))
     assert {plugin, market["plugins"][0]["version"], pyproject.group(1),
-            telemetry_fallback.group(1)} | image_tags == {plugin}
+            runtime.group(1)} | image_tags == {plugin}
     assert f"## [{plugin}]" in (ROOT / "CHANGELOG.md").read_text()
-    assert PLUGIN_VERSION  # importable either way
+    assert PLUGIN_VERSION == plugin  # what serverInfo reports
 
 
 def test_entry_points_route_to_the_guided_skill() -> None:
@@ -287,3 +288,128 @@ def test_release_version_check_script() -> None:
     usage = subprocess.run([sys.executable, str(script), "1.3"],
                            capture_output=True, text=True, check=False)
     assert usage.returncode == 2
+
+
+# --------------------------------------------- sandbox: Odoo 10.0-19.0 + XML-RPC
+
+
+@pytest.mark.parametrize("version,postgres,platform_", [
+    ("10.0", "10", "linux/amd64"), ("11.0", "10", "linux/amd64"),
+    ("12.0", "12", "linux/amd64"), ("13.0", "12", "linux/amd64"),
+    ("14.0", "13", "linux/amd64"), ("15.0", "13", "linux/amd64"),
+    ("16.0", "16", ""), ("17.0", "16", ""), ("18.0", "16", ""), ("19.0", "16", ""),
+])
+def test_each_series_gets_its_postgres_and_platform(tmp_path: Path, version: str,
+                                                    postgres: str, platform_: str) -> None:
+    env = dl.Sandbox(tmp_path / version).prepare(version, None, None, None, None, "dockerhub")
+    assert env["ODOO_IMAGE"] == f"odoo:{version}"
+    assert env["POSTGRES_IMAGE"] == f"postgres:{postgres}"
+    assert env["ODOO_PLATFORM"] == platform_
+
+
+def test_every_offered_series_is_mapped_and_mirrored() -> None:
+    assert dl.ODOO_VERSIONS == tuple(f"{v}.0" for v in range(10, 20))
+    assert set(dl.POSTGRES_FOR) == set(dl.ODOO_VERSIONS)
+    assert dl.UNSUPPORTED <= set(dl.ODOO_VERSIONS)
+    # Odoo S.A. maintains the three latest majors only.
+    assert set(dl.ODOO_VERSIONS) - dl.UNSUPPORTED == {"17.0", "18.0", "19.0"}
+    mirror = (ROOT / ".github/workflows/mirror-images.yml").read_text()
+    for version in dl.ODOO_VERSIONS:
+        assert f'"odoo:{version}"' in mirror, version
+    for pg in set(dl.POSTGRES_FOR.values()):
+        assert f'"postgres:{pg}"' in mirror, pg
+    matrix = (ROOT / ".github/workflows/sandbox-matrix.yml").read_text()
+    for version in dl.ODOO_VERSIONS:
+        assert f'"{version}"' in matrix, version
+
+
+def _xmlrpc_server() -> Any:
+    import threading
+    from xmlrpc.server import SimpleXMLRPCRequestHandler, SimpleXMLRPCServer
+
+    class Handler(SimpleXMLRPCRequestHandler):
+        rpc_paths = ("/xmlrpc/2/common", "/xmlrpc/2/db")
+
+    server = SimpleXMLRPCServer(("127.0.0.1", 0), requestHandler=Handler,
+                                logRequests=False, allow_none=True)
+
+    def version() -> dict[str, Any]:
+        return {"server_version": "10.0-20231201", "server_serie": "10.0"}
+
+    def create_database(*args: Any) -> bool:
+        raise Exception("Access Denied: wrong master password")  # noqa: TRY002
+
+    server.register_function(version, "version")
+    server.register_function(create_database, "create_database")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_rpc_speaks_xmlrpc_on_every_series() -> None:
+    server = _xmlrpc_server()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        assert dl.rpc(url, "common", "version", [])["server_serie"] == "10.0"
+        assert dl.wait_for_odoo(url, 5)["server_version"].startswith("10.0")
+        with pytest.raises(dl.SandboxError, match="Odoo refused db.create_database"):
+            dl.rpc(url, "db", "create_database", ["bad", "x", False, "en_US", "pw", "admin"])
+    finally:
+        server.shutdown()
+
+
+def test_wait_for_odoo_keeps_waiting_while_not_answering(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket as _socket
+    with _socket.socket() as sock:  # a free port nobody listens on
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    with pytest.raises(dl.SandboxError, match="did not answer"):
+        dl.wait_for_odoo(f"http://127.0.0.1:{port}", 0.5)
+
+
+def test_retry_cannot_switch_postgres_major(tmp_path: Path) -> None:
+    box = dl.Sandbox(tmp_path / "sbx")
+    box.prepare("15.0", None, None, None, None, "dockerhub")  # PostgreSQL 13, not ready
+    box.prepare("14.0", None, None, None, None, "dockerhub")  # same major: allowed
+    with pytest.raises(dl.SandboxError, match="PostgreSQL 16"):
+        box.prepare("16.0", None, None, None, None, "dockerhub")
+
+
+def test_malformed_xmlrpc_reply_counts_as_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    import xml.parsers.expat
+    calls = {"n": 0}
+
+    def flaky(url: str, service: str, method: str, args: list[Any], timeout: float = 30) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise xml.parsers.expat.ExpatError("no element found")
+        if calls["n"] == 2:
+            raise dl.xmlrpc.client.ResponseError("malformed")
+        return {"server_version": "12.0"}
+
+    monkeypatch.setattr(dl, "rpc", flaky)
+    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    assert dl.wait_for_odoo("http://127.0.0.1:1", 30)["server_version"] == "12.0"
+
+
+def test_arm_linux_without_binfmt_is_refused_before_pulling(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dl, "compose_command", lambda: ["docker", "compose"])
+    monkeypatch.setattr(dl, "check_docker_running", lambda: None)
+    monkeypatch.setattr(dl.Sandbox, "running", lambda self: False)
+    monkeypatch.setattr(dl, "port_is_free", lambda port: True)
+    monkeypatch.setattr(dl, "amd64_emulation_missing", lambda: True)
+    pulled = []
+    monkeypatch.setattr(dl.Sandbox, "pull", lambda self, e, r: pulled.append(e) or e)
+    assert dl.main(["sandbox", "up", "--odoo", "12.0", "--dir", str(tmp_path / "s")]) == 1
+    assert not pulled
+
+
+def test_amd64_emulation_check_is_linux_arm_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dl.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(dl.platform, "machine", lambda: "arm64")
+    assert dl.amd64_emulation_missing() is False  # Docker Desktop emulates
+    monkeypatch.setattr(dl.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(dl.platform, "machine", lambda: "x86_64")
+    assert dl.amd64_emulation_missing() is False

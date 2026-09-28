@@ -31,8 +31,12 @@ works on one instance fails on another.
 
 - `account.invoice*` → `account.move*` at v13.
 - Analytic: `analytic_account_id` → `analytic_distribution` at v16.
-- API keys from v14; `/jsonrpc` rejects API keys on v17+ (auto XML-RPC fallback).
-- `stock.quant.package` → `stock.package` (~v19, best-effort).
+- API keys from v14, accepted on `/jsonrpc` and XML-RPC alike.
+- `name_get` removed at v18 (deprecated at v17) → read `display_name`.
+- `product.template.uom_po_id` removed at saas~18.1 / 19.0 → `uom_id`;
+  `res.partner.company_type` removed at saas~19.1 (still in 19.0) → `is_company`.
+- `stock.quant.package` → `stock.package` at v19.
+- `/xmlrpc` and `/jsonrpc` deprecated in v19, scheduled for removal in v22.
 - Enterprise-only models unavailable on Community.
 
 ## Boundaries

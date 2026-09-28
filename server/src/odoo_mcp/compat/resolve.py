@@ -65,7 +65,7 @@ def resolve_field(model: str, field: str, facts: EnvFacts) -> str | None:
     for rem in FIELD_REMOVED:
         if resolve_model(rem.model, facts) != canonical_model:
             continue
-        if field == rem.field and facts.version >= rem.removed_in:
+        if field == rem.field and facts.series >= rem.removed_in_series:
             return None  # gone on this version
     return field
 
@@ -76,7 +76,7 @@ def resolve_fields(model: str, fields: list[str], facts: EnvFacts) -> FieldResol
     for f in fields:
         actual = resolve_field(model, f, facts)
         if actual is None:
-            dropped[f] = f"field '{f}' is not available on Odoo {facts.version}"
+            dropped[f] = f"field '{f}' is not available on Odoo {facts.raw_version or facts.version}"
         else:
             mapping[f] = actual
     return FieldResolution(mapping=mapping, dropped=dropped)

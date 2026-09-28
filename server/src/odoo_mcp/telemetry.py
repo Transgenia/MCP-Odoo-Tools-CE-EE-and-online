@@ -19,19 +19,8 @@ Design contract (see SECURITY.md "Opt-in telemetry"):
 from __future__ import annotations
 
 import os
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _pkg_version
 
-
-def _plugin_version() -> str:
-    """Canonical version from installed package metadata, fallback for source runs."""
-    try:
-        return _pkg_version("odoo-mcp-tools")
-    except PackageNotFoundError:
-        return "1.3.0"  # fallback when running from source without install
-
-
-PLUGIN_VERSION = _plugin_version()
+from . import __version__ as PLUGIN_VERSION
 
 TELEMETRY_ENV_VAR = "ODOO_TELEMETRY"
 # The ONLY value that enables telemetry — docs promise exact-token consent,

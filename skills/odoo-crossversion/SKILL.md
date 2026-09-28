@@ -35,14 +35,25 @@ Unknown/unchanged models pass through untouched.
 
 - `account.move.line.analytic_distribution` ↔ `analytic_account_id` (boundary v16).
 - Removed fields return a **dropped_fields** warning in the response instead of
-  failing the whole call (e.g. `product.template.uom_po_id` on v17+,
-  `res.partner.company_type` on v19+ → use `is_company`).
+  failing the whole call (e.g. `product.template.uom_po_id` from saas~18.1 and
+  19.0 → use `uom_id`; `res.partner.company_type` from saas~19.1 → use
+  `is_company`; self-hosted 19.0 still has `company_type`).
+- Odoo Online runs `saas~<major>.N` lines between two stable series
+  (18.0 < saas~18.1 < … < 19.0); `odoo_version` reports the exact line, and the
+  resolver uses it, so an Online database can differ from the same major
+  on-premise.
 
 ## Capabilities
 
 - API keys exist from v14 (older needs a password).
-- `/jsonrpc` rejects API keys on v17+ — the transport auto-falls back to XML-RPC
-  and logs one warning; you don't need to do anything.
+- API keys work on `/jsonrpc` and XML-RPC alike. If a proxy in front of Odoo
+  blocks or alters `/jsonrpc`, the `auto` transport falls back to XML-RPC and
+  logs one warning; you don't need to do anything.
+- `/xmlrpc`, `/xmlrpc/2` and `/jsonrpc` are **deprecated in Odoo 19** and
+  scheduled for removal in **Odoo 22** (Odoo's replacement is the JSON-2 API).
+  They work on 10-19 today; mention it when the user plans beyond Odoo 21.
+- The `name_get` method is gone in v18 (deprecated in v17): read the
+  `display_name` field instead, which works on 10-19.
 - Translations use the native `update_field_translations` API on v16+, and a
   language-context write on older versions — `odoo_translate_set` picks the path.
 
