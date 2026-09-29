@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-29
+
 ### Added
 - **Six Odoo Online tools** (`tools/online.py`, 28 tools in total). They work on
   any Odoo 10-19, over JSON-2, JSON-RPC and XML-RPC unless noted, and degrade
@@ -153,6 +155,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   `docs/compat-matrix.md` (an Odoo Online tools section).
 
 ### Fixed
+- **Odoo Online detection used a substring of the URL** (code scanning
+  alert): `https://example.com/?next=.odoo.com` counted as `*.odoo.com`.
+  `detect_deployment` now compares the host name (`odoo.com` or a
+  subdomain of it).
 - **`odoo_read_group` on `formatted_read_group` (saas~18.4+) accepted a field
   spec with trailing text** (`amount:sum trailing`, `total:sum(amount)junk`,
   `amount:sum,tax:sum`) and silently dropped the rest, so a second aggregate
