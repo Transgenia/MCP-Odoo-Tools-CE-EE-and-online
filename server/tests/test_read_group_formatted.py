@@ -165,6 +165,14 @@ def test_fold_information_is_passed_through() -> None:
     (["nope"], ["country_id"], "invalid field"),
     (["color:sum"], ["nope"], "invalid groupby"),
     (["!!"], ["country_id"], "invalid field specification"),
+    # trailing text after a valid prefix used to be dropped silently (re.match)
+    (["color:sum trailing"], ["country_id"], "invalid field specification"),
+    (["total:sum(color)junk"], ["country_id"], "invalid field specification"),
+    (["color:sum,name:count"], ["country_id"], "invalid field specification"),
+    (["color:sum "], ["country_id"], "invalid field specification"),
+    ([" color"], ["country_id"], "invalid field specification"),
+    (["top:max(color"], ["country_id"], "invalid field specification"),
+    (["color.id"], ["country_id"], "invalid field specification"),
 ])
 def test_bad_fields_are_refused_before_calling_odoo(fields: list[str], groupby: list[str],
                                                     match: str) -> None:
@@ -172,6 +180,18 @@ def test_bad_fields_are_refused_before_calling_odoo(fields: list[str], groupby: 
     with pytest.raises(CompatError, match=match):
         _run(session, fields=fields, groupby=groupby)
     assert session.calls == []
+
+
+@pytest.mark.parametrize(("spec", "aggregate"), [
+    ("color", "color:sum"),  # default aggregator
+    ("color:max", "color:max"),
+    ("color:count_distinct", "color:count_distinct"),
+    ("top:max(color)", "color:max"),
+])
+def test_valid_field_specifications_still_pass(spec: str, aggregate: str) -> None:
+    session = _Session((19, 0))
+    _run(session, fields=[spec], groupby=["country_id"])
+    assert session.calls[-1][3]["aggregates"] == ["__count", aggregate]
 
 
 def test_classic_path_is_unchanged_before_saas_18_4() -> None:

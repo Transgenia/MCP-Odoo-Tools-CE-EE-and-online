@@ -798,6 +798,8 @@ def test_preview_runs_a_dry_run_through_base_import_and_cleans_up() -> None:
     vals = create["args"][0]
     assert (vals["res_model"], vals["file_type"]) == ("res.partner", "text/csv")
     assert list(csv.reader(io.StringIO(vals["file"]))) == ROWS  # no header row, UTF-8 text
+    # raw CSV text, never base64: base_import.import.file holds the file's bytes on 16-19
+    assert vals["file"].startswith('"José, S.A. de C.V.",jose@example.com,Mexico\n"Ana ')
     assert execute["args"] == [[42], FIELDS, FIELDS, IMPORT_OPTIONS]
     assert execute["kwargs"] == {"dryrun": True}
     assert execute["args"][3]["has_headers"] is False  # so Odoo stores no column mapping

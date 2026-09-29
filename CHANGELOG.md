@@ -153,6 +153,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   `docs/compat-matrix.md` (an Odoo Online tools section).
 
 ### Fixed
+- **`odoo_read_group` on `formatted_read_group` (saas~18.4+) accepted a field
+  spec with trailing text** (`amount:sum trailing`, `total:sum(amount)junk`,
+  `amount:sum,tax:sum`) and silently dropped the rest, so a second aggregate
+  or a typo vanished from the result. The whole spec must now be `field`,
+  `field:agg` or `name:agg(field)`, else a `CompatError` before any call.
+  Up to saas~18.3 the spec still goes to Odoo's classic `read_group` as given.
 - `docs/telemetry-schema.json` rejected payloads counting `odoo_telemetry_preview`
   or `odoo_read_group`, which the server already counts; its tool pattern now
   equals `KNOWN_TOOLS`, and a test keeps them equal.

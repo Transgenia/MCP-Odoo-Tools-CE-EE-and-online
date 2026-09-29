@@ -345,10 +345,13 @@ def formatted_group(ctx: ToolContext, model: str, args: dict[str, Any]) -> dict[
     for spec in args["fields"]:
         if spec == "__count":
             continue
-        match = _FIELD_AGG.match(spec)
+        # The whole spec must match: a prefix match would drop a typo or a second aggregate
+        # ("amount:sum,tax:sum") without a word and return something other than asked.
+        match = _FIELD_AGG.fullmatch(spec)
         if not match:
             raise CompatError(f"invalid field specification {spec!r}",
-                              remediation="use 'field', 'field:agg' or 'name:agg(field)'")
+                              remediation="use 'field', 'field:agg' or 'name:agg(field)', one "
+                              "per list item, with nothing before or after")
         name, func, source = match.groups()
         if source:
             annotated_aggregates[name] = f"{source}:{func}"
