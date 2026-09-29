@@ -4,9 +4,48 @@
 
 from __future__ import annotations
 
+import datetime
+import email.utils
 import os
 import ssl
+import time
 from typing import Any, Protocol, runtime_checkable
+
+# Waits for an HTTP 429 (seconds): the server's Retry-After, capped, or a default.
+RETRY_AFTER_DEFAULT = 10.0
+RETRY_AFTER_MAX = 30.0
+
+
+def parse_retry_after(value: str | None, *, now: float | None = None) -> float | None:
+    """Seconds to wait from a ``Retry-After`` header (delta-seconds or HTTP date).
+
+    Returns ``None`` when the header is absent or unreadable, so the caller can
+    apply its default. Never negative.
+    """
+    if value is None or not str(value).strip():
+        return None
+    text = str(value).strip()
+    try:
+        return max(0.0, float(text))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:  # pragma: no cover - some Python versions return None for junk
+        return None
+    if when.tzinfo is None:  # "-0000" dates are naive: RFC 7231 dates are GMT
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    current = time.time() if now is None else now
+    return max(0.0, when.timestamp() - current)
+
+
+def retry_delay(retry_after: float | None) -> float:
+    """The wait before retrying a rate-limited read: bounded, with a default."""
+    if retry_after is None:
+        return RETRY_AFTER_DEFAULT
+    return min(max(0.0, retry_after), RETRY_AFTER_MAX)
 
 # Well-known CA bundles maintained by the OS (macOS, Debian/Ubuntu, RHEL/Fedora).
 _OS_CA_BUNDLES = (

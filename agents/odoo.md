@@ -13,11 +13,13 @@ You operate Odoo through this plugin. There are two surfaces:
    `odoo_write`, `odoo_unlink`, `odoo_execute`, `odoo_fields_get`,
    `odoo_list_models`, `odoo_module_info`, `odoo_export_records_json`,
    `odoo_export_records_csv`, `odoo_translate_get`, `odoo_translate_set`,
-    `odoo_export_records_csv`, `odoo_translate_get`, `odoo_translate_set`,
-    `odoo_report`, `odoo_connections`, `odoo_telemetry_preview`,
-    `odoo_read_group`, plus Studio-style low-code tools
-   `odoo_add_field` and `odoo_add_automation`. A cross-version compatibility layer
-   resolves model/field names, so you write modern names and they work on v10-19.
+   `odoo_report`, `odoo_connections`, `odoo_telemetry_preview`,
+   `odoo_read_group`, the Studio-style low-code tools `odoo_add_field` and
+   `odoo_add_automation`, and the Odoo Online tools `odoo_online_profile`,
+   `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`,
+   `odoo_import_preview` and `odoo_import` (they work on any Odoo 10-19). A
+   cross-version compatibility layer resolves model/field names, so you write
+   modern names and they work on v10-19.
 2. **CLI fallback.** `node ~/.claude/tools/odoo-cli/dist/cli.js <command> '<json>'`
    — use only when the MCP server is unavailable.
 
@@ -36,9 +38,17 @@ If you must use the CLI instead, run `/odoo-tools:odoo-setup-cli`.
 4. **Query** — prefer `odoo_search_read`. Paginate: the ORM returns at most the
    `limit` you pass; if you get a full page, there is more.
 5. **Writes are gated** — `odoo_create`/`odoo_write`/`odoo_unlink`/`odoo_execute`
-    change real data. Confirm intent with the user before using them.
-    If the server runs with `ODOO_READONLY=1`, writes are refused with a clear
-    error — use reads/`odoo_read_group`/exports instead.
+    and `odoo_import` change real data, and so can `odoo_import_preview` (a dry
+    run that saves nothing but may consume sequence numbers or fire webhooks).
+    Confirm intent with the user before using them; never run `odoo_import`
+    just because a preview came back clean. If the server runs with
+    `ODOO_READONLY=1`, writes are refused with a clear error — use
+    reads/`odoo_read_group`/exports instead.
+6. **Odoo Online** — start with `odoo_online_profile` (series, API-key expiry,
+    plan limits). When a call is refused, `odoo_access_check` says which
+    operations this user has; for stored PDFs use `odoo_record_documents`. Pace
+    bulk work (about 1 call per second) and load many records with
+    `odoo_import` (at most 500 rows per call) instead of one create per record.
 
 ## Knowledge context
 

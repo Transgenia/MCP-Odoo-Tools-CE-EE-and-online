@@ -9,7 +9,7 @@ import re
 import urllib.parse
 from dataclasses import dataclass, field
 
-TRANSPORT_CHOICES = ("auto", "jsonrpc", "xmlrpc")
+TRANSPORT_CHOICES = ("auto", "json2", "jsonrpc", "xmlrpc")
 
 # A plugin host that leaves a manifest reference unresolved (e.g. an unset
 # optional ``${user_config.odoo_password}``) would otherwise hand the literal

@@ -25,7 +25,7 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 ## Services the plugin contacts
 
-1. **Your Odoo instance** — the URL you configure, over JSON-RPC / XML-RPC, from
+1. **Your Odoo instance** — the URL you configure, over JSON-2 / JSON-RPC / XML-RPC, from
    the MCP server (primary) or the optional CLI fallback.
 2. **The npm registry, only for the optional CLI fallback** — when you run
    `/odoo-tools:odoo-setup-cli`, it runs `npm install` to build the CLI. No Odoo

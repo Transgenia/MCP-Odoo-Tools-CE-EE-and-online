@@ -14,7 +14,10 @@ Call `odoo_version`. It returns:
 - `version` (major int, 10-19)
 - `edition` (`community` | `enterprise` | `unknown`)
 - `deployment` (`onprem` | `saas`)
-- `transport` (`jsonrpc(auto)` or `xmlrpc` after fallback)
+- `transport` (`json2` on Odoo saas~18.4 / 19.0+ with an API key; `jsonrpc(auto)`,
+  or `jsonrpc` / `xmlrpc` after a fallback, elsewhere)
+- `transport_notice` (null, or why the deprecated `/xmlrpc`/`/jsonrpc` is in use on
+  Odoo 19+ and how to switch to JSON-2; pass it on to the user)
 
 Record these. The compat layer uses them to resolve model/field names, so you
 almost never need version-specific branching in your queries.

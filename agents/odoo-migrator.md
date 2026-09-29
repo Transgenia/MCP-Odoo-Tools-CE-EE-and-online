@@ -36,7 +36,12 @@ works on one instance fails on another.
 - `product.template.uom_po_id` removed at saas~18.1 / 19.0 → `uom_id`;
   `res.partner.company_type` removed at saas~19.1 (still in 19.0) → `is_company`.
 - `stock.quant.package` → `stock.package` at v19.
-- `/xmlrpc` and `/jsonrpc` deprecated in v19, scheduled for removal in v22.
+- `/xmlrpc` and `/jsonrpc` deprecated in v19, removed in v22 and in Odoo Online
+  saas~21.1; JSON-2 (saas~18.4 / 19.0+, API key only) replaces them, and the
+  plugin uses it automatically when an API key is set.
+- Classic `read_group` deprecated in 19.0 and absent on saas~19.1-19.4 →
+  `formatted_read_group` (the plugin's `odoo_read_group` switches by itself);
+  `check_access_rights` removed from saas~19.1 → `has_access`.
 - Enterprise-only models unavailable on Community.
 
 ## Boundaries

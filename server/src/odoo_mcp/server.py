@@ -66,8 +66,9 @@ def check_readonly(settings: Settings, tool: ToolDef) -> None:
     if settings.readonly and not tool.read_only:
         raise CompatError(
             f"tool '{tool.name}' is disabled: the server runs with ODOO_READONLY=1",
-            remediation="unset ODOO_READONLY and restart for writes, "
-            "or use a read-only tool (search/read/fields_get/export/report/preview)",
+            remediation="unset ODOO_READONLY and restart for writes, or use a read-only "
+            "tool (search/read/fields_get/export/report/odoo_online_profile/"
+            "odoo_access_check)",
         )
 
 

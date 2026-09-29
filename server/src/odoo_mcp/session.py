@@ -21,6 +21,9 @@ class Credentials:
     login: str
     # kept out of repr() so a traceback, log line or debugger never shows it
     secret: str = field(repr=False)
+    # "api_key" (ODOO_API_KEY) or "password": JSON-2 accepts API keys only, so
+    # the transport policy needs to know. Not part of the fingerprint.
+    secret_kind: str = field(default="password", repr=False)
 
     def fingerprint(self) -> str:
         # login+db+url identify the tenant; the secret is never part of the key
@@ -35,7 +38,9 @@ class OdooSession:
         if not (creds.url and creds.db and creds.login and creds.secret):
             raise ConfigError("incomplete Odoo credentials (need url, db, login, secret)")
         self.creds = creds
-        self.transport = FallbackTransport(creds.url, timeout=timeout, pref=transport_pref)
+        self.transport = FallbackTransport(
+            creds.url, timeout=timeout, pref=transport_pref, secret_kind=creds.secret_kind
+        )
         self.schema = SchemaCache(ttl=cache_ttl)
         self._uid: int | None = None
         self._facts: EnvFacts | None = None
@@ -56,13 +61,33 @@ class OdooSession:
 
     # -- core ORM call ------------------------------------------------------
     def execute(self, model: str, method: str, args: list[Any] | None = None,
-                kwargs: dict[str, Any] | None = None) -> Any:
+                kwargs: dict[str, Any] | None = None, *, ids: list[int] | None = None,
+                transports: tuple[str, ...] | None = None) -> Any:
+        """``model.method(*args, **kwargs)``; ``ids`` are the records of a record
+        method when given apart from ``args`` (``odoo_execute``): JSON-2 sends
+        them as ``"ids"``, the legacy transports as the first positional arg.
+        ``transports`` limits the call to those transport kinds (e.g.
+        ``("json2", "jsonrpc")``); it is never replayed over another one."""
+        extra: dict[str, Any] = {}
+        if ids is not None:
+            extra["ids"] = ids
+        if transports is not None:
+            extra["transports"] = tuple(transports)
         return self.transport.execute_kw(
-            self.creds.db, self.uid, self.creds.secret, model, method, args or [], kwargs or {}
+            self.creds.db, self.uid, self.creds.secret, model, method, args or [],
+            kwargs or {}, **extra,
         )
 
     def version_info(self) -> dict[str, Any]:
         return self.transport.version()
+
+    def api_doc(self, model: str) -> dict[str, Any] | None:
+        """Odoo's ``/doc-bearer/<model>.json`` (19.0+, an administrator's API
+        key), or ``None`` where it is not available to this credential."""
+        fetch = getattr(self.transport, "api_doc", None)
+        if fetch is None:
+            return None
+        return fetch(self.creds.db, self.creds.secret, model)
 
     # -- environment facts (version/edition/deployment), cached -------------
     def facts(self) -> EnvFacts:

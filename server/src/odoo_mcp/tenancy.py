@@ -50,7 +50,8 @@ class ConnectionManager:
                 "single-tenant mode needs ODOO_URL, ODOO_DB, ODOO_LOGIN and "
                 "ODOO_API_KEY or ODOO_PASSWORD"
             )
-        creds = Credentials(url=s.url, db=s.db, login=s.login, secret=s.secret)
+        creds = Credentials(url=s.url, db=s.db, login=s.login, secret=s.secret,
+                            secret_kind="api_key" if s.api_key else "password")
         return self.get(creds)
 
     def from_headers(self, headers: dict[str, str]) -> OdooSession:

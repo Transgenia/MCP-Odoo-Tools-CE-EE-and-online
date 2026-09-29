@@ -14,6 +14,7 @@ Failures are split in two so a retry can never run a write twice:
 JSON-RPC handler (connection or TLS failure, HTTP 3xx/4xx), while a plain
 :class:`TransportError` (HTTP 5xx, a timeout while waiting, a cut connection,
 a 2xx reply that is not JSON-RPC) means Odoo may already have run the call.
+HTTP 429 is :class:`RateLimited`: the request was refused for now.
 """
 
 from __future__ import annotations
@@ -28,8 +29,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from ..errors import AuthError, OdooFault, TransportError
-from .base import tls_context
+from ..errors import AuthError, OdooFault, RateLimited, TransportError
+from .base import parse_retry_after, tls_context
 
 # Raised so FallbackTransport knows this specific failure is recoverable by
 # switching transports rather than a genuine application error.
@@ -114,6 +115,11 @@ class JsonRpcTransport:
                 if resp.headers.get("Content-Encoding", "").lower() == "gzip":
                     body = gzip.decompress(body)
         except urllib.error.HTTPError as exc:
+            if exc.code == 429:  # rate limited: refused, never a reason to switch transport
+                raise RateLimited(
+                    "jsonrpc: HTTP 429 Too Many Requests",
+                    retry_after=parse_retry_after(exc.headers.get("Retry-After")),
+                ) from None
             if 300 <= exc.code < 500:  # redirect or rejected before Odoo ran anything
                 raise JsonRpcUnavailable(f"jsonrpc: HTTP {exc.code} {exc.reason}") from None
             raise TransportError(f"jsonrpc: HTTP {exc.code} {exc.reason}") from None

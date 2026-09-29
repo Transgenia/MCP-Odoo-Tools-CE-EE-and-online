@@ -51,7 +51,7 @@
     "odoo_api_key": {
       "type": "string",
       "title": "Odoo API key",
-      "description": "Odoo 14+: Preferences > Account Security > New API Key. Leave empty on Odoo < 14 and fill the password instead.",
+      "description": "Odoo 14+: Preferences > Account Security > New API Key. Odoo 19+ needs it for JSON-2, the only API left in Odoo 22. Leave empty on Odoo < 14 and fill the password instead.",
       "sensitive": true
     },
     "odoo_password": {
@@ -63,7 +63,7 @@
     "odoo_transport_pref": {
       "type": "string",
       "title": "Transport preference",
-      "description": "auto (default), jsonrpc or xmlrpc.",
+      "description": "auto (default), json2, jsonrpc or xmlrpc. auto uses JSON-2 on Odoo saas~18.4 / 19.0+ when an API key is set (Odoo 22 and Odoo Online saas~21.1 remove XML-RPC and JSON-RPC), and JSON-RPC then XML-RPC elsewhere.",
       "default": "auto"
     },
     "odoo_timeout": {

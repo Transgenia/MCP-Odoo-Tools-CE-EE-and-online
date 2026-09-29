@@ -13,8 +13,8 @@ import xml.parsers.expat
 import xmlrpc.client
 from typing import Any
 
-from ..errors import AuthError, OdooFault, TransportError
-from .base import tls_context
+from ..errors import AuthError, OdooFault, RateLimited, TransportError
+from .base import parse_retry_after, tls_context
 
 
 class _TimeoutTransport(xmlrpc.client.Transport):
@@ -45,6 +45,15 @@ class _TimeoutSafeTransport(xmlrpc.client.SafeTransport):
 
 def _transport_error(what: str, exc: BaseException) -> TransportError:
     """Describe a failure without echoing the URL (it may carry user:pass@)."""
+    if isinstance(exc, xmlrpc.client.ProtocolError) and exc.errcode == 429:
+        headers = exc.headers or {}  # a plain dict: look the name up case-insensitively
+        retry_after = next(
+            (value for key, value in headers.items() if str(key).lower() == "retry-after"), None
+        )
+        return RateLimited(
+            f"xmlrpc {what} failed: HTTP 429 {exc.errmsg}",
+            retry_after=parse_retry_after(retry_after),
+        )
     if isinstance(exc, xmlrpc.client.ProtocolError):
         detail = f"HTTP {exc.errcode} {exc.errmsg}"
     else:

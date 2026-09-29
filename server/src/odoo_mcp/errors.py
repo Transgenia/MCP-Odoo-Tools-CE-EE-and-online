@@ -17,6 +17,19 @@ class TransportError(OdooMcpError):
     """A transport-level failure (network, protocol) occurred."""
 
 
+class RateLimited(TransportError):
+    """HTTP 429: Odoo or a gateway in front of it refused the request for now.
+
+    ``retry_after`` is the wait the server asked for, in seconds (``None`` when
+    it gave none). Reads are retried on the same transport after that wait;
+    writes are reported, never retried, and a 429 never switches transport.
+    """
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class OdooFault(OdooMcpError):
     """The Odoo server returned an application-level fault."""
 

@@ -7,9 +7,11 @@ from .resolve import (
     FieldResolution,
     assert_capability,
     has_capability,
+    method_available,
     requires_edition,
     resolve_field,
     resolve_fields,
+    resolve_method,
     resolve_model,
 )
 
@@ -18,9 +20,11 @@ __all__ = [
     "FieldResolution",
     "assert_capability",
     "has_capability",
+    "method_available",
     "probe",
     "requires_edition",
     "resolve_field",
     "resolve_fields",
+    "resolve_method",
     "resolve_model",
 ]

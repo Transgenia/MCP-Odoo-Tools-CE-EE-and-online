@@ -29,7 +29,7 @@ OPT_IN_VALUES = {"opt-in"}
 
 # Finite transport labels. Anything else is normalized to "unknown" so an
 # unexpected value can never smuggle hostnames or secrets into the payload.
-TRANSPORT_LABELS = {"auto", "jsonrpc", "xmlrpc", "unknown"}
+TRANSPORT_LABELS = {"auto", "json2", "jsonrpc", "xmlrpc", "unknown"}
 
 ALLOWED_KEYS = frozenset(
     {
@@ -68,6 +68,12 @@ KNOWN_TOOLS = frozenset(
         "odoo_add_automation",
         "odoo_telemetry_preview",
         "odoo_read_group",
+        "odoo_online_profile",
+        "odoo_api_catalog",
+        "odoo_access_check",
+        "odoo_record_documents",
+        "odoo_import_preview",
+        "odoo_import",
     }
 )
 

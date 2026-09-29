@@ -92,19 +92,26 @@
 
 ## Transport
 
-- Use HTTPS Odoo URLs. XML-RPC and JSON-RPC both run over the URL you provide;
-  a plain `http://` URL is sent unencrypted.
-- **TLS is always verified.** Both transports share one certificate-verifying
+- Use HTTPS Odoo URLs. JSON-2, JSON-RPC and XML-RPC all run over the URL you
+  provide; a plain `http://` URL is sent unencrypted.
+- **JSON-2** (Odoo saas~18.4 / 19.0+) sends the API key as
+  `Authorization: bearer` on each request, never on a redirect (redirects are
+  refused), sends no cookies, and never shows Odoo's server traceback (the
+  `debug` field of an error) in a tool result. It accepts API keys only, so a
+  password configuration keeps the legacy endpoints.
+- **TLS is always verified.** All transports share one certificate-verifying
   context (hostname checked) built from the system trust store, honouring
   `SSL_CERT_FILE`, plus the `certifi` bundle when that package is already
   installed. There is no option to turn verification off. If your Python has no
   usable trust store, point `SSL_CERT_FILE` at a CA bundle.
 - **Basic auth in front of Odoo.** `ODOO_URL` may carry `user:pass@`; JSON-RPC
   sends it as an `Authorization` header (never on a redirect, which is refused
-  anyway) and no error or log line echoes the password. Note that **Odoo URL**
+  anyway) and no error or log line echoes the password. JSON-2 needs that same
+  header for its API key, so such a URL stays on the legacy endpoints (and
+  cannot work from Odoo 22 / Odoo Online saas~21.1, where they are removed). Note that **Odoo URL**
   is not a `sensitive` plugin option: a password embedded there is stored in the
   plugin settings, not in the OS credential store.
-- **Timeouts.** Every JSON-RPC and XML-RPC request is bounded by `ODOO_TIMEOUT`
+- **Timeouts.** Every JSON-2, JSON-RPC and XML-RPC request is bounded by `ODOO_TIMEOUT`
   (seconds, default 120, Odoo's own default request limit; plugin option
   **Request timeout**), so an unresponsive Odoo cannot hang the server
   (XML-RPC ignored the timeout before 1.2.0).
@@ -115,10 +122,19 @@
 
 - Set `ODOO_READONLY=1` for demos or safe exploration: the server refuses every
   non-read-only tool (`odoo_create/write/unlink/execute`, `odoo_translate_set`,
-  both Studio tools) with a clear error before touching Odoo. Reads, exports,
-  reports and `odoo_telemetry_preview` keep working. Unset + restart to re-enable
-  writes. (The CLI fallback has no equivalent gate: its `write` command always
-  attempts the RPC — use a least-privilege Odoo user there.)
+  both Studio tools, and both import tools: `odoo_import_preview` too, because
+  its rolled-back dry run can still consume sequence numbers and fire webhooks)
+  with a clear error before touching Odoo. Reads, exports, reports,
+  `odoo_telemetry_preview` and the read-only Online tools (`odoo_online_profile`,
+  `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`) keep
+  working. Unset + restart to re-enable writes. (The CLI fallback has no
+  equivalent gate: its `write` command always attempts the RPC — use a
+  least-privilege Odoo user there.)
+- `odoo_online_profile` lists the user's API keys by name, scope and dates
+  only: Odoo keeps no key material in a readable field, and the plugin never
+  mints, rotates or revokes keys. `odoo_record_documents` returns a file only
+  for an attachment of the record asked for, and only up to `max_bytes` (at
+  most 5 MiB).
 
 ## Reporting a vulnerability
 
