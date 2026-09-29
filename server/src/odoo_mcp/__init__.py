@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Clean-room MCP server for Odoo CE/EE/online, versions 10-19.
 
 This package is an original implementation. It does NOT derive from any

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """A scripted Odoo HTTP server for transport tests (JSON-2, JSON-RPC, web probes).
 
 Routes map ``(verb, path)`` (exact) or ``(verb, prefix)`` to a reply, or to a

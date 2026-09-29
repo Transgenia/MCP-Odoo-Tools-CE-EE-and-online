@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Transport selection: JSON-2, JSON-RPC and XML-RPC, with a safe fallback.
 
 ``ODOO_TRANSPORT_PREF``:

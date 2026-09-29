@@ -3,7 +3,7 @@
 _Last updated: 2026-09-26. Applies to the `odoo-tools` Claude plugin in this
 repository (MCP server, CLI fallback, skills, commands, agents and hooks)._
 
-Publisher: Transgenia (Centrum Transgenia S.A.S. de C.V.), dev@transgenia.org.
+Publisher: Transgenia (Centrum Transgenia SAS), dev@transgenia.org.
 Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 ## Summary

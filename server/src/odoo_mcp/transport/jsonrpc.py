@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """JSON-RPC transport (``/jsonrpc``), on the standard library (``urllib``).
 
 Faster and friendlier to modern tooling. Odoo accepts API keys on ``/jsonrpc``

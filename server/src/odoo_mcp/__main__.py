@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """CLI entry point: ``odoo-mcp`` / ``python -m odoo_mcp``."""
 
 from __future__ import annotations

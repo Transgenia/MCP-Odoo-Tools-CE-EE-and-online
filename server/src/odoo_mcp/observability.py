@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Optional Prometheus metrics and OpenTelemetry tracing.
 
 Both are OFF by default and degrade to no-ops when the optional dependencies

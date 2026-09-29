@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """XML-RPC transport (``/xmlrpc/2/common`` and ``/xmlrpc/2/object``).
 
 XML-RPC is the most broadly compatible interface across Odoo 10-19 and works

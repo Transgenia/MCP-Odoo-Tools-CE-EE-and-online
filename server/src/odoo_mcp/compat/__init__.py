@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Cross-version compatibility layer for Odoo 10-19 / CE / EE / online."""
 
 from .detect import EnvFacts, probe

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Odoo Online tools: profile, API catalog, access check, stored documents, imports.
 
 Odoo Online runs no custom Python, takes external API calls on Custom plans

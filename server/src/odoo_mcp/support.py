@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Where users start, and how they reach Transgenia (official channels only).
 
 The MCP ``instructions`` below are sent once at ``initialize``; the client adds

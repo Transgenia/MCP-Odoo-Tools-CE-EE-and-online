@@ -1,7 +1,7 @@
 # Support
 
 **odoo-tools** is built and maintained by [Transgenia](https://transgenia.org)
-(Centrum Transgenia S.A.S. de C.V.).
+(Centrum Transgenia SAS).
 
 ## Start here
 

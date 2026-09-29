@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Interop: the official MCP Python client drives our stdlib server end to end.
 
 The ``mcp`` package is a dev-only dependency (Python 3.10+); the server itself

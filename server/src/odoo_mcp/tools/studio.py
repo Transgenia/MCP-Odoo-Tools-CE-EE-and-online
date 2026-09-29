@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Studio-style low-code tools: custom fields and automated actions.
 
 These bring the most common Odoo Studio operations to plain RPC, so you can add

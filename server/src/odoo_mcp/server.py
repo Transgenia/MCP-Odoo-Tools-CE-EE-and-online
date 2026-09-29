@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """MCP server wiring (stdio), built on the Python standard library only.
 
 The plugin runs ``python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`` directly:

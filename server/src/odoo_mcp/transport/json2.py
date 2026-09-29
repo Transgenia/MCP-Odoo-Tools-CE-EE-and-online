@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """JSON-2 transport (``POST /json/2/<model>/<method>``), on the standard library.
 
 JSON-2 is Odoo's external API from saas~18.4 and 19.0 on; it replaces

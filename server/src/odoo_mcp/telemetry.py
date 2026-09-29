@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Opt-in usage telemetry — disabled by default, no PII, no background sends.
 
 Design contract (see SECURITY.md "Opt-in telemetry"):

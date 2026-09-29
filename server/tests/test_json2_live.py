@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Live JSON-2 checks against local sandboxes (opt-in: ``-m live`` plus paths).
 
 Start the sandboxes with ``scripts/deploy_local.py sandbox up`` (19.0 and 18.0),

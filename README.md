@@ -280,5 +280,9 @@ itself never imports it, and the plugin never installs it.
 
 ## License
 
-MIT © Transgenia (Centrum Transgenia S.A.S. de C.V.). See `LICENSE` and
+MIT © Transgenia (Centrum Transgenia SAS). See `LICENSE` and
 [`NOTICE`](NOTICE) for third-party attributions.
+
+The [Terms of Use](TERMS-OF-USE.en.md) ([Términos de uso](TERMS-OF-USE.es.md), the
+prevailing text) complement the MIT license: trademarks, support, privacy,
+third-party licenses and governing law (Mexico).

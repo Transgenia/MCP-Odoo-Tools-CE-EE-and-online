@@ -38,4 +38,4 @@ compatibility matrix.
 
 ## License
 
-MIT © Transgenia (Centrum Transgenia S.A.S. de C.V.)
+MIT © Transgenia (Centrum Transgenia SAS)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Transport package: JSON-2, JSON-RPC, XML-RPC, and the selecting fallback wrapper."""
 
 from .base import Transport

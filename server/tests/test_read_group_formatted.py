@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """odoo_read_group on formatted_read_group (saas~18.4+), keeping the classic output shape."""
 
 from __future__ import annotations

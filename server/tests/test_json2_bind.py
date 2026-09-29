@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """JSON-2 signature mismatches (HTTP 422 from Odoo's bind check) and unreachable hosts.
 
 The fake controller below does what Odoo's JSON-2 controller does before it

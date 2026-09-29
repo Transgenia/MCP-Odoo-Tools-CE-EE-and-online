@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Declarative cross-version delta map for Odoo 10-19.
 
 This is DATA, not logic. New deltas are added here and covered by table-driven
