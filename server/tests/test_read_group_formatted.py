@@ -203,6 +203,32 @@ def test_classic_path_is_unchanged_before_saas_18_4() -> None:
     assert session.fields_calls == []
 
 
+
+@pytest.mark.parametrize("series", [(17, 0), (17, 2), (18, 0), (18, 3)])
+@pytest.mark.parametrize("spec", ["color:sum trailing", "total:sum(color)junk",
+                                  "color:sum,id:count", " color"])
+def test_classic_path_refuses_bad_specs_from_17(series: tuple[int, int], spec: str) -> None:
+    session = _Session(series)
+    with pytest.raises(CompatError, match="invalid field specification"):
+        _run(session, fields=[spec], groupby=["stage_id"])
+    assert session.calls == []  # refused before any call to Odoo
+
+
+@pytest.mark.parametrize("series", [(10, 0), (13, 0), (16, 0)])
+def test_classic_path_below_17_keeps_odoo_behaviour(series: tuple[int, int]) -> None:
+    session = _Session(series)
+    _run(session, fields=["color:sum trailing"], groupby=["stage_id"])
+    assert session.calls[-1][1] == "read_group"
+    assert session.calls[-1][2][1] == ["color:sum trailing"]  # passed through unchanged
+
+
+@pytest.mark.parametrize("spec", ["color", "color:sum", "tot:sum(color)", "__count",
+                                  "color:count_distinct"])
+def test_classic_path_valid_specs_pass_from_17(spec: str) -> None:
+    session = _Session((17, 0))
+    _run(session, fields=[spec], groupby=["stage_id"])
+    assert session.calls[-1][2][1] == [spec]
+
 # --- method deltas -------------------------------------------------------------
 
 

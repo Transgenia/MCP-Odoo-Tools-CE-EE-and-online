@@ -10,6 +10,8 @@
 [![Odoo CE | EE | Online](https://img.shields.io/badge/Odoo-CE_%7C_EE_%7C_Online-714B67?logo=odoo&logoColor=white)](docs/compat-matrix.md)
 [![M8ven Score](https://m8ven.ai/badge/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)](https://m8ven.ai/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)
 
+**Links:** [Homepage](https://transgenia.org/mcp-transgenia-odoo.html) · [Documentation](https://docs.transgenia.org/odoo-tools/) · [Support](SUPPORT.md) (dev@transgenia.org, WhatsApp +52 55 8034 0405) · [Privacy policy](PRIVACY.md) · [Terms of use](TERMS-OF-USE.en.md) · [License: MIT](LICENSE)
+
 A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
 
 - **MCP server (primary)** — a clean-room, MIT-licensed Python server exposing

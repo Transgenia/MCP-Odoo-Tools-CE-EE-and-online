@@ -240,6 +240,12 @@ def odoo_read_group(ctx: ToolContext, args: dict[str, Any]) -> Any:
     if resolve_method("read_group", facts) == "formatted_read_group":
         # saas~18.4+: the classic method is deprecated (19.0), then gone (saas~19.1).
         return formatted_group(ctx, model, args)
+    if facts.series >= (17, 0):
+        # Odoo accepts "amount:sum junk" on the classic path and drops the tail without a
+        # word. From 17.0 (the series Odoo still supports) the tool refuses it, as on
+        # formatted_read_group; 10-16 keep Odoo's own behaviour.
+        for spec in args["fields"]:
+            _check_field_spec(spec)
     kwargs: dict[str, Any] = {
         k: args[k] for k in ("limit", "offset", "orderby", "lazy") if k in args
     }
@@ -258,6 +264,17 @@ def odoo_read_group(ctx: ToolContext, args: dict[str, Any]) -> Any:
 # '<groupby>_count'; values are keyed by the requested names.
 
 _FIELD_AGG = re.compile(r"(\w+)(?::(\w+)(?:\((\w+)\))?)?")
+
+
+def _check_field_spec(spec: str) -> re.Match[str]:
+    """The whole spec must match: a prefix match would drop a typo or a second aggregate
+    ("amount:sum,tax:sum") without a word and return something other than asked."""
+    match = _FIELD_AGG.fullmatch(spec) if isinstance(spec, str) else None
+    if not match:
+        raise CompatError(f"invalid field specification {spec!r}",
+                          remediation="use 'field', 'field:agg' or 'name:agg(field)', one "
+                          "per list item, with nothing before or after")
+    return match
 _TIME_GRANULARITIES = frozenset({"hour", "day", "week", "month", "quarter", "year"})
 _DATE_TYPES = frozenset({"date", "datetime"})
 
@@ -347,12 +364,7 @@ def formatted_group(ctx: ToolContext, model: str, args: dict[str, Any]) -> dict[
             continue
         # The whole spec must match: a prefix match would drop a typo or a second aggregate
         # ("amount:sum,tax:sum") without a word and return something other than asked.
-        match = _FIELD_AGG.fullmatch(spec)
-        if not match:
-            raise CompatError(f"invalid field specification {spec!r}",
-                              remediation="use 'field', 'field:agg' or 'name:agg(field)', one "
-                              "per list item, with nothing before or after")
-        name, func, source = match.groups()
+        name, func, source = _check_field_spec(spec).groups()
         if source:
             annotated_aggregates[name] = f"{source}:{func}"
         elif func:
