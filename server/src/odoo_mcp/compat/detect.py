@@ -8,6 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..errors import AuthError
 from .deltas import MAX_VERSION, MIN_VERSION
@@ -78,8 +79,10 @@ def detect_edition_from_version(version_info: dict[str, Any]) -> Edition:
 
 
 def detect_deployment(base_url: str) -> Deployment:
-    host = base_url.lower()
-    if ".odoo.com" in host:
+    # Compare the host name only: a substring test would call
+    # "https://example.com/?next=.odoo.com" an Odoo Online instance.
+    host = (urlsplit(base_url if "//" in base_url else f"//{base_url}").hostname or "").lower()
+    if host == "odoo.com" or host.endswith(".odoo.com"):
         return "saas"
     return "onprem"
 

@@ -12,4 +12,4 @@ themselves copyrightable.
 # older odoo-mcp-tools installed in site-packages would otherwise answer an
 # importlib.metadata lookup. scripts/check_release_version.py keeps it equal to
 # pyproject.toml and the plugin manifests.
-__version__ = "1.3.0"
+__version__ = "1.4.0"

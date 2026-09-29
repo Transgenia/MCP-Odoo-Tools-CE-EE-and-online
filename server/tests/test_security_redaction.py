@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import re
+
 from odoo_mcp.config import Settings
 
 SECRET = "sup3r-secret-api-key-DO-NOT-LEAK"
@@ -26,7 +28,7 @@ def test_repr_and_str_do_not_leak_secret() -> None:
         assert SECRET not in text
         assert PASSWORD not in text
     # but it should still be useful for debugging
-    assert "example.odoo.com" in repr(s)
+    assert re.search(r"\bexample\.odoo\.com\b", repr(s))
     assert "has_secret" in repr(s)
 
 
