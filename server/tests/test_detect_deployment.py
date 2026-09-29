@@ -13,6 +13,8 @@ from odoo_mcp.compat.detect import detect_deployment
     "https://ACME.Odoo.COM:443/odoo",
     "acme.odoo.com",
     "https://odoo.com",
+    "https://acme.odoo.com./web",
+    "acme.odoo.com.",
 ])
 def test_odoo_com_hosts_are_saas(url: str) -> None:
     assert detect_deployment(url) == "saas"

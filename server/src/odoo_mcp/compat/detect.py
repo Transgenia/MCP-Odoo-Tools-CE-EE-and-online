@@ -82,6 +82,7 @@ def detect_deployment(base_url: str) -> Deployment:
     # Compare the host name only: a substring test would call
     # "https://example.com/?next=.odoo.com" an Odoo Online instance.
     host = (urlsplit(base_url if "//" in base_url else f"//{base_url}").hostname or "").lower()
+    host = host.rstrip(".")  # a fully qualified name ("acme.odoo.com.") is the same host
     if host == "odoo.com" or host.endswith(".odoo.com"):
         return "saas"
     return "onprem"
