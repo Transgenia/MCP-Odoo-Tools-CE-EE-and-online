@@ -37,6 +37,21 @@ RPC API itself from v19, and more), and Enterprise adds models Community
 lacks. This plugin absorbs those differences behind one stable tool surface so
 you don't hand-branch per version.
 
+## Where it works
+
+| Surface | MCP server (the Odoo tools) | Skills, commands | Agents |
+|---|---|---|---|
+| Claude Code (CLI, VS Code, JetBrains, Desktop) | Yes | Yes | Yes |
+| Cowork, session on your computer (Claude Desktop) | Yes | Yes | Yes |
+| Cowork on the web | No | Yes | No |
+| Claude apps chat (claude.ai web, desktop, mobile) | No | Yes | No |
+
+The Odoo tools run as a local stdio MCP server (`python3`, 3.9+) on the machine
+where the session runs, so they need Claude Code or a local Cowork session.
+Surfaces that ignore local MCP servers load only the skills and commands, which
+cannot reach Odoo without the tools. Source:
+[plugin component support](https://claude.com/docs/plugins/platform-support).
+
 ## Install
 
 ```

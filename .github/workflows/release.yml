@@ -151,9 +151,9 @@ jobs:
         with:
           ref: ${{ env.TAG }}
           fetch-depth: 0  # all tags, to decide whether this is the newest release
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -176,7 +176,7 @@ jobs:
             echo "version=${V}"
           } >> "$GITHUB_OUTPUT"
           echo "newest tag: $newest; newest in ${V%.*}: $newest_minor"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/Dockerfile
@@ -233,6 +233,6 @@ jobs:
           name: standard-${{ env.TAG }}
           path: assets
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: assets/server/dist
