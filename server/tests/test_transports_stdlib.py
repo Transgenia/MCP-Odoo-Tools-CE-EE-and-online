@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Standard-library transports: JSON-RPC over urllib, XML-RPC with a timeout."""
 
 from __future__ import annotations

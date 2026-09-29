@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Tests for opt-in telemetry: default-off, allowlist-only, no PII."""
 
 from __future__ import annotations

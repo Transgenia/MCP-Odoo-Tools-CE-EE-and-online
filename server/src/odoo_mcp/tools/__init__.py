@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Importing this package registers all generic tools on the shared registry."""
 
-from . import crud, export, i18n, meta, report, studio
+from . import crud, export, i18n, meta, online, report, studio
 
-__all__ = ["crud", "export", "i18n", "meta", "report", "studio"]
+__all__ = ["crud", "export", "i18n", "meta", "online", "report", "studio"]

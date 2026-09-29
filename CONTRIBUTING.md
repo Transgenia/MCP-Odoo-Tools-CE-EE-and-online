@@ -6,7 +6,7 @@ Thanks for helping improve MCP-Odoo-Tools.
 
 - **License:** contributions are accepted under the **MIT** license.
 - **Clean-room:** do not copy code from AGPL-licensed Odoo MCP projects. Rely on
-  Odoo's public XML-RPC/JSON-RPC interfaces and public model/field names only.
+  Odoo's public XML-RPC/JSON-RPC/JSON-2 interfaces and public model/field names only.
 - **Scope:** this repo is the generic public core. Localization/governance/
   tenant-specific engines (CFDI, approval gates, backups, etc.) belong elsewhere.
 

@@ -4,14 +4,17 @@ Clean-room MIT MCP server for Odoo — Community, Enterprise and online (SaaS),
 across major versions **10 to 19**. This is the Python package that backs the
 `MCP-Odoo-Tools-CE-EE-and-online` Claude plugin.
 
-It exposes generic Odoo tools (search / read / search_read / create / write /
-unlink / execute / export / translate / report / version / connections) over a
-transport layer that speaks JSON-RPC with automatic XML-RPC fallback, and a
+It exposes 28 generic Odoo tools (search / read / search_read / create / write /
+unlink / execute / export / translate / report / version / connections, plus
+the Odoo Online tools: profile / API catalog / access check / record documents /
+import preview / import; see the root README) over a
+transport layer that speaks JSON-2 (Odoo saas~18.4 / 19.0+, with an API key) or
+JSON-RPC, with automatic XML-RPC fallback, and a
 **cross-version compatibility layer** that resolves model/field names so a
 single tool call works across every supported version.
 
 Not derived from any AGPL project; relies only on Odoo's public RPC interfaces.
-It has **no third-party runtime dependencies**: the MCP stdio protocol and both
+It has **no third-party runtime dependencies**: the MCP stdio protocol and the
 transports use only the Python standard library. Requires Python 3.9+.
 
 ## Install & run
@@ -35,4 +38,4 @@ compatibility matrix.
 
 ## License
 
-MIT © Transgenia (Centrum Transgenia S.A.S. de C.V.)
+MIT © Transgenia (Centrum Transgenia SAS)

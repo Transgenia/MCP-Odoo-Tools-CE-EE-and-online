@@ -7,10 +7,18 @@ description: Probe the connected Odoo instance and report version, edition, depl
 Diagnose the current Odoo connection.
 
 1. Call the MCP tool `odoo_version` and report: `version`, `edition`
-   (community/enterprise), `deployment` (onprem/saas) and `transport`.
+   (community/enterprise), `deployment` (onprem/saas), `transport` (`json2`,
+   `jsonrpc`, `xmlrpc` or `jsonrpc(auto)`) and, when it is not null,
+   `transport_notice`: Odoo 19 deprecates `/xmlrpc` and `/jsonrpc` and Odoo 22
+   (Odoo Online saas~21.1) removes them, so show the notice with its fix
+   (usually: create an API key and set it in the plugin options).
 2. Call `odoo_connections` and list active sessions.
 3. Do a bounded sanity read to confirm data access:
    `odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 1 }`.
+   Then call the read-only `odoo_online_profile` and add to the table its
+   `series` (e.g. `saas~19.2` on Odoo Online), `deployment_confidence` and any
+   `hints` (for example an API key that expires soon). When `deployment` is
+   `saas`, also list its `online_hints`.
 4. If any step fails, state the exact failure and point the user to
    `/odoo-tools:odoo-setup-mcp` (or `/odoo-tools:odoo-setup-cli` for the fallback).
    If it keeps failing after that, add: Transgenia provides assisted setup and

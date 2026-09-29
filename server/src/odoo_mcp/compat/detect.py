@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Detect version / edition / deployment facts of a target Odoo instance."""
 
 from __future__ import annotations

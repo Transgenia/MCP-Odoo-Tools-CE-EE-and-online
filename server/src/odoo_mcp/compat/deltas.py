@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Declarative cross-version delta map for Odoo 10-19.
 
 This is DATA, not logic. New deltas are added here and covered by table-driven
@@ -65,6 +65,24 @@ class FieldRemoved:
 
 
 @dataclass(frozen=True)
+class MethodDelta:
+    """An ORM method that appears, disappears or is superseded on a series.
+
+    ``since`` is the first ``(major, minor)`` series that has the method,
+    ``removed_in`` the first one without it. ``prefer_from`` is the first series
+    where the plugin calls ``use_instead`` instead, although the method may
+    still exist there.
+    """
+
+    method: str
+    since: tuple[int, int] | None = None
+    removed_in: tuple[int, int] | None = None
+    use_instead: str = ""
+    prefer_from: tuple[int, int] | None = None
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class Capability:
     feature: str
     since: int | None = None  # available from this version
@@ -123,6 +141,33 @@ FIELD_REMOVED: tuple[FieldRemoved, ...] = (
         note="company_type dropped; use the is_company boolean (saas~19.1; still in 19.0)",
         removed_in_minor=1,
     ),
+)
+
+# --- Method deltas -----------------------------------------------------------
+# Checked in odoo/orm/models.py and addons/web/models/models.py of saas-18.4,
+# 19.0, saas-19.1 to saas-19.4 and master. A version clamped down from 20+ is
+# (19, 99), past every saas~19 line, which matches 20.0 for these entries.
+METHOD_DELTAS: tuple[MethodDelta, ...] = (
+    MethodDelta(
+        "formatted_read_group",
+        since=(18, 4),
+        note="the web module's grouping method, saas~18.4 and 19.0+",
+    ),
+    MethodDelta(
+        "read_group",
+        removed_in=(19, 1),
+        use_instead="formatted_read_group",
+        prefer_from=(18, 4),
+        note="classic read_group: deprecated in 19.0, absent on saas~19.1 to saas~19.4, "
+        "and back in 20.0 with the _read_group signature (tuples)",
+    ),
+    MethodDelta(
+        "check_access_rights",
+        removed_in=(19, 1),
+        use_instead="has_access",
+        note="deprecated in 19.0, removed from saas~19.1",
+    ),
+    MethodDelta("has_access", since=(18, 0), note="record-level access check, 18.0+"),
 )
 
 # --- Capabilities ------------------------------------------------------------

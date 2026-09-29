@@ -24,7 +24,7 @@
       "type": "object",
       "additionalProperties": false,
       "patternProperties": {
-        "^(odoo_version|odoo_search|odoo_read|odoo_search_read|odoo_search_count|odoo_create|odoo_write|odoo_unlink|odoo_execute|odoo_fields_get|odoo_list_models|odoo_module_info|odoo_export_records_json|odoo_export_records_csv|odoo_translate_get|odoo_translate_set|odoo_report|odoo_connections|odoo_add_field|odoo_add_automation)$": { "type": "integer", "minimum": 0 }
+        "^(odoo_version|odoo_search|odoo_read|odoo_search_read|odoo_search_count|odoo_create|odoo_write|odoo_unlink|odoo_execute|odoo_fields_get|odoo_list_models|odoo_module_info|odoo_export_records_json|odoo_export_records_csv|odoo_translate_get|odoo_translate_set|odoo_report|odoo_connections|odoo_add_field|odoo_add_automation|odoo_telemetry_preview|odoo_read_group|odoo_online_profile|odoo_api_catalog|odoo_access_check|odoo_record_documents|odoo_import_preview|odoo_import)$": { "type": "integer", "minimum": 0 }
       },
       "example": { "odoo_version": 1, "odoo_search_read": 3 }
     }

@@ -36,6 +36,20 @@ Then run `/odoo-tools:odoo-setup-mcp` (or `odoo-setup-cli` if you can't run the 
 
 Always run `odoo-connect` first against a new instance. The compatibility layer uses what it detects (version, edition, transport) to resolve model and field names, so the other skills rarely need version-specific branching.
 
+## Odoo Online databases
+
+Odoo Online installs data modules only (no custom Python), takes API calls on Custom plans only, expires API keys (Odoo 18+) and moves to a new saas~X.Y line every few months. Six MCP tools cover it, and work on any Odoo 10-19:
+
+| You need to... | Tool |
+| --- | --- |
+| See the series and line, the API-key expiry, the transport and the plan limits in one read | `odoo_online_profile` |
+| Know why a call is refused: can this user read, write, create or unlink here, and export? | `odoo_access_check` |
+| Get a stored PDF or other attachment of a record (reports cannot be rendered over RPC on 14+) | `odoo_record_documents` |
+| Find a method's parameter names for JSON-2 or `odoo_execute` | `odoo_api_catalog` |
+| Load many records: check the rows first, then import them atomically | `odoo_import_preview`, then `odoo_import` (write; confirm with the user first) |
+
+Pace bulk work on Online (about 1 call per second, no parallel calls) and use `odoo_import` (at most 500 rows per call) instead of one `odoo_create` per record. An `id` column in an import holds external ids and updates the records that already have them.
+
 ## What this is not
 
 This plugin talks to Odoo's existing data model and configuration surface. It does not replace real module development for anything beyond small, low-code changes (see `odoo-studio-style` for exactly where that line is drawn), and it does not vendor Odoo-side logic — it authenticates with credentials you provide and respects Odoo's own access rights and record rules.

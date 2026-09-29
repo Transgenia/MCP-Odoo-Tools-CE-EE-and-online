@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Regression tests for the v1.2.0 review: session lock, transports, fallback, TLS, config."""
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from odoo_mcp.errors import TransportError
 from odoo_mcp.session import Credentials, OdooSession
 from odoo_mcp.transport import base as tls_base
 from odoo_mcp.transport.fallback import FallbackTransport
+from odoo_mcp.transport.json2 import Json2Unavailable
 from odoo_mcp.transport.jsonrpc import JsonRpcTransport, JsonRpcUnavailable, split_userinfo
 from odoo_mcp.transport.xmlrpc import XmlRpcTransport
 
@@ -199,6 +200,8 @@ def _fallback(json_exc: Exception, pref: str = "auto") -> tuple[FallbackTranspor
     fb = FallbackTransport("https://odoo.example", timeout=5, pref=pref)
     js, xs = _Stub(json_exc), _Stub()
     fb._json, fb._xml = js, xs  # type: ignore[assignment]
+    # The no-log version probes (web client, /json/version) find nothing here.
+    fb._j2 = _Stub(Json2Unavailable("json2: HTTP 404"))  # type: ignore[assignment]
     return fb, js, xs
 
 
@@ -218,6 +221,7 @@ def test_unavailable_jsonrpc_falls_back_and_pins_xmlrpc() -> None:
 
 def test_idempotent_calls_fall_back_after_uncertain_errors_and_pin_xmlrpc() -> None:
     fb, js, xs = _fallback(TransportError("timed out"))
+    fb._remember_version({"server_version": "17.0"})  # sign-in detects the series first
     assert fb.authenticate("db", "me", "k") == "ok"
     assert fb.active == "xmlrpc"  # JSON-RPC failed where XML-RPC works
     assert fb.execute_kw("db", 2, "k", "res.partner", "create", [{}]) == "ok"

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """In-process TTL cache for schema metadata (fields_get / name_get / model lists).
 
 Uses ``cachetools.TTLCache`` when available, otherwise a small stdlib fallback

@@ -14,8 +14,9 @@ A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
 
 - **MCP server (primary)** — a clean-room, MIT-licensed Python server exposing
   native Odoo tools (`odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`,
-  `odoo_export_records_json/csv`, `odoo_version`, ...) over JSON-RPC with
-  automatic XML-RPC fallback, and a **cross-version compatibility layer** that
+  `odoo_export_records_json/csv`, `odoo_version`, ...) over **JSON-2** (Odoo's
+  new API, saas~18.4 / 19.0+) or JSON-RPC, with automatic XML-RPC fallback, and
+  a **cross-version compatibility layer** that
   makes a single tool call work across **Community, Enterprise and online (SaaS)
   from Odoo 10 through 19**.
 - **CLI fallback** — a lightweight TypeScript XML-RPC CLI (Node-only) for when
@@ -29,8 +30,8 @@ open-source project, not an Anthropic-certified or first-party product.)
 ## Why this exists
 
 Odoo's model and field names drift across versions (`account.invoice` →
-`account.move` at v13, analytic fields at v16, package models near v19, API-key
-behavior on `/jsonrpc` at v17, and more), and Enterprise adds models Community
+`account.move` at v13, analytic fields at v16, package models near v19, the
+RPC API itself from v19, and more), and Enterprise adds models Community
 lacks. This plugin absorbs those differences behind one stable tool surface so
 you don't hand-branch per version.
 
@@ -118,14 +119,73 @@ standalone (`python3 server/run_stdio.py` from a checkout, `odoo-mcp` after
 | `ODOO_URL` | yes | `https://host` (no trailing path) |
 | `ODOO_DB` | yes | database name |
 | `ODOO_LOGIN` | yes | login email |
-| `ODOO_API_KEY` | yes* | Odoo ≥ 14; created in Account Security |
+| `ODOO_API_KEY` | yes* | Odoo ≥ 14; created in Account Security. The only credential JSON-2 accepts |
 | `ODOO_PASSWORD` | yes* | use on Odoo < 14 (no API keys) |
-| `ODOO_TRANSPORT_PREF` | no | `auto` (default) / `jsonrpc` / `xmlrpc` |
+| `ODOO_TRANSPORT_PREF` | no | `auto` (default) / `json2` / `jsonrpc` / `xmlrpc` (see [Transports](#transports)) |
 | `ODOO_TIMEOUT` | no | seconds per Odoo call (default 120; plugin option **Request timeout**) |
 | `ODOO_CACHE_TTL` | no | int (seconds) |
 | `ODOO_METRICS`, `ODOO_OTEL_ENDPOINT` | no | optional observability |
 
 \* one of `ODOO_API_KEY` or `ODOO_PASSWORD`.
+
+### Tools
+
+28 MCP tools. With Read-only mode (`ODOO_READONLY=1`) every write tool is
+refused before anything reaches Odoo.
+
+| Group | Tools |
+|-------|-------|
+| Connection | `odoo_version`, `odoo_connections`, `odoo_telemetry_preview` |
+| Read | `odoo_search`, `odoo_search_count`, `odoo_read`, `odoo_search_read`, `odoo_read_group`, `odoo_fields_get`, `odoo_list_models`, `odoo_module_info`, `odoo_translate_get`, `odoo_report` |
+| Export | `odoo_export_records_json`, `odoo_export_records_csv` |
+| Write | `odoo_create`, `odoo_write`, `odoo_unlink`, `odoo_execute`, `odoo_translate_set` |
+| Studio-style (write) | `odoo_add_field`, `odoo_add_automation` |
+| Odoo Online (useful on any Odoo) | read: `odoo_online_profile`, `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`; write: `odoo_import_preview`, `odoo_import` |
+
+The Odoo Online tools cover what an Online database makes hard: no custom
+Python, API access on Custom plans only, API keys that expire (18+), a new
+saas~X.Y line every few months, no PDF rendering over RPC, and imports as the
+sanctioned bulk path.
+
+| Tool | What it does | Odoo |
+|------|--------------|------|
+| `odoo_online_profile` | One read: series and line (`19.0` or `saas~19.2`), deployment and how sure that is, the transport, whether JSON-2 and Odoo's `/doc-bearer` catalog are usable, the deprecation notice and when `/xmlrpc` and `/jsonrpc` disappear, the user and companies, 2FA, the user's API keys with their expiry (names and dates only, never key material), installed applications, imported data modules, Studio, and the Online limits (Custom plan, about 1 call/s, 5-200 e-mails/day, data modules only) | 10-19; API keys 14+, expiry 18+; on 19.0 the module list needs an administrator |
+| `odoo_api_catalog` | A model's methods with their parameter names in order, model-level and read-only flags, for JSON-2 and `odoo_execute` (`ids` + `kwargs`). Exact names from Odoo's own per-database catalog (`/doc-bearer`, custom and Studio methods included) with an administrator's API key on 19.0+; otherwise the plugin's built-in table: base names from saas~18.4 (a model's override may rename one), flags only (`parameters: null`) on 10.0 to saas~18.3 | 10-19 |
+| `odoo_access_check` | Whether the signed-in user may read, write, create and unlink on a model, record by record with `ids` on 18+, and whether the user may export | 10-19; record level 18+, export group 16+ |
+| `odoo_record_documents` | A record's attachments with the main one and an invoice's stored PDF flagged (17+), and one file's content on request (at most 5 MiB). Use it for PDFs on 14+, where reports cannot be rendered over RPC | 10-19 |
+| `odoo_import_preview` | Dry run with Odoo's own importer: the row errors and warnings, and `would_import`. Nothing is saved, but sequence numbers can be consumed and automated actions can fire webhooks | 16-19, JSON-RPC or JSON-2 |
+| `odoo_import` | Atomic `load()`: every row is saved or none is. An `id` column holds external ids and **updates** the records that already have them | 12-19, JSON-RPC or JSON-2 |
+
+Both import tools take at most 500 rows per call and never run by themselves:
+the preview does not import, and the agent asks before `odoo_import`. Odoo's
+XML-RPC cannot return the empty values an import result carries, so a session
+on XML-RPC refuses them instead of risking a saved import reported as an error.
+On Odoo Online, pace bulk work (about 1 call per second, no parallel calls).
+
+### Transports
+
+Odoo 19 deprecates `/xmlrpc` and `/jsonrpc` (every call logs a warning on the
+Odoo server), and **Odoo 22 and Odoo Online saas~21.1 remove them**. Their
+replacement, **JSON-2** (`/json/2/<model>/<method>`), exists from saas~18.4 and
+19.0 and accepts an **API key only**.
+
+With `ODOO_TRANSPORT_PREF=auto` (the default) the server reads the version first
+(the web client's own route: no login, nothing in the Odoo log) and then:
+
+- on Odoo 10 to 18 (and saas~18.1-18.3) it uses JSON-RPC, then XML-RPC, as before;
+- on saas~18.4 / 19.0+ **with an API key** it uses JSON-2, falling back to JSON-RPC
+  and XML-RPC only when a proxy blocks JSON-2;
+- with a password, or with `user:pass@` in `ODOO_URL` (whose basic auth takes the
+  `Authorization` header JSON-2 needs), it stays on the deprecated endpoints, and on
+  19+ `odoo_version` returns a `transport_notice` saying how to switch;
+- on saas~21.1 / Odoo 22+ it needs an API key (JSON-2 is the only endpoint left).
+
+`json2` forces JSON-2; `jsonrpc` and `xmlrpc` force that endpoint. None of them
+switch transport by themselves. `odoo_version` reports the transport in use.
+A call moves to another transport only when that cannot run it twice, and a rate
+limit (HTTP 429) never switches transport: reads wait for `Retry-After`, writes
+are reported. On JSON-2, `odoo_execute` takes the record ids in `ids` and the
+other arguments by name in `kwargs`. Details: [`docs/compat-matrix.md`](docs/compat-matrix.md#rpc-endpoints-and-transports).
 
 The **MCP server** does not persist credentials to disk. Two caveats worth
 stating plainly:
@@ -180,7 +240,7 @@ Details and the delta table: [`docs/compat-matrix.md`](docs/compat-matrix.md).
 ## Architecture
 
 See [`docs/architecture.md`](docs/architecture.md). In short: transport
-(xmlrpc/jsonrpc/fallback) → session (auth + version/edition facts + schema
+(json2/jsonrpc/xmlrpc, selected per version and credential) → session (auth + version/edition facts + schema
 cache) → compat (resolve model/field/capability) → tools → MCP stdio.
 
 ## Scope
@@ -220,5 +280,9 @@ itself never imports it, and the plugin never installs it.
 
 ## License
 
-MIT © Transgenia (Centrum Transgenia S.A.S. de C.V.). See `LICENSE` and
+MIT © Transgenia (Centrum Transgenia SAS). See `LICENSE` and
 [`NOTICE`](NOTICE) for third-party attributions.
+
+The [Terms of Use](TERMS-OF-USE.en.md) ([Términos de uso](TERMS-OF-USE.es.md), the
+prevailing text) complement the MIT license: trademarks, support, privacy,
+third-party licenses and governing law (Mexico).

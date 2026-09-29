@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """End-to-end check of a local sandbox through the plugin's own MCP server.
 
 Used by the sandbox matrix workflow after ``deploy_local.py sandbox up``:

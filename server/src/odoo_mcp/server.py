@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """MCP server wiring (stdio), built on the Python standard library only.
 
 The plugin runs ``python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`` directly:
@@ -66,8 +66,9 @@ def check_readonly(settings: Settings, tool: ToolDef) -> None:
     if settings.readonly and not tool.read_only:
         raise CompatError(
             f"tool '{tool.name}' is disabled: the server runs with ODOO_READONLY=1",
-            remediation="unset ODOO_READONLY and restart for writes, "
-            "or use a read-only tool (search/read/fields_get/export/report/preview)",
+            remediation="unset ODOO_READONLY and restart for writes, or use a read-only "
+            "tool (search/read/fields_get/export/report/odoo_online_profile/"
+            "odoo_access_check)",
         )
 
 

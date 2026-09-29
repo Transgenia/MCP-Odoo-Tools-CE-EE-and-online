@@ -7,6 +7,108 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 ## [Unreleased]
 
 ### Added
+- **Six Odoo Online tools** (`tools/online.py`, 28 tools in total). They work on
+  any Odoo 10-19, over JSON-2, JSON-RPC and XML-RPC unless noted, and degrade
+  per version:
+  - `odoo_online_profile` (read): the series and line (`19.0`, `saas~19.2`),
+    deployment with `deployment_confidence` (a `saas~` version proves Odoo
+    Online, also on a custom domain; `*.odoo.com` alone may be Odoo.sh), the
+    transport, `json2_available`, `doc_bearer`, `transport_notice`, when
+    `/xmlrpc` and `/jsonrpc` disappear (Odoo 22; Odoo Online saas~21.1), the
+    user and companies, 2FA, the user's API keys with `expires_in_hours` (names
+    and dates only, never key material) and a hint when one expires within
+    48 h, installed applications, imported data modules, Studio, and the Online
+    limits (Custom plan, about 1 call/s, 5-200 e-mails/day, data modules only).
+  - `odoo_api_catalog` (read): a model's methods with ordered parameter names
+    and model-level/read-only flags, from Odoo's `/doc-bearer` on 19.0+ with an
+    administrator's API key (ETag-cached, this model's exact names), else from
+    the plugin's built-in table, filtered by series: the base definitions'
+    names from saas~18.4 on (a model's override may rename a parameter, which
+    the note says), and on 10.0 to saas~18.3 the flags only, with
+    `parameters: null`, because names differ there (`name_search(args)`, the
+    classic `web_read_group`, `default_get`/`write` overrides); `name_get` is
+    listed up to 17.0. At most 100.
+  - `odoo_access_check` (read): read/write/create/unlink for the signed-in user
+    (`has_access` on 18+, record level with `ids`; `check_access_rights` on
+    10-17) and `export_allowed` (`base.group_allow_export`, 16+).
+  - `odoo_record_documents` (read): a record's attachments, its main attachment
+    and an invoice's stored PDF (17+), which a plain attachment search hides;
+    one file's content on request, only for an attachment of that record, up to
+    `max_bytes` (default 1 MiB, at most 5 MiB). The way to get PDFs on 14+,
+    where reports cannot be rendered over RPC.
+  - `odoo_import_preview` (write, dry run; 16-19): Odoo's own importer with
+    `dryrun=True`; returns the row errors and warnings and `would_import`,
+    never the rolled-back ids, and removes its temporary wizard.
+  - `odoo_import` (write): atomic `load()`; an `id` column upserts by external
+    id. Both import tools take at most 500 rows, are refused in read-only mode,
+    never run by themselves, and run on JSON-2 or JSON-RPC only (see below).
+- `session.execute(..., transports=(...))` and `FallbackTransport.execute_kw(...,
+  transports=...)`: a call limited to those transports is never sent or replayed
+  over another one, and a `CompatError` says so when none is left. The import
+  tools use it, so an import is never replayed over XML-RPC, whose marshaller
+  cannot return the `None` values an import result carries (a saved import
+  could otherwise be reported as a fault).
+- `OdooSession.api_doc(model)`: `/doc-bearer` for tools, keeping the secret
+  inside the session.
+- **JSON-2 transport** (`transport/json2.py`): Odoo's new external API,
+  `POST /json/2/<model>/<method>`, on saas~18.4 and 19.0+. It sends the API key
+  as `Authorization: bearer`, the database as `X-Odoo-Database` and named
+  arguments only (no cookies, no `Accept-Language`, no redirects). Positional
+  arguments are named from a table of the base definitions of every method the
+  plugin calls (`transport/json2_signatures.py`, keyed by series where the base
+  names differ: `default_get`, `read_group`); other methods use
+  `/doc-bearer/<model>.json` (19.0+, admin keys, cached with its `ETag`) or ask
+  for named arguments. A model's override may use other names (saas~18.4:
+  `write(values)` on `res.company`, `product.pricelist` and `mail.thread`
+  models, `res.partner.default_get(default_fields)`; any addon on any series):
+  Odoo then answers HTTP 422 from its `signature.bind` check before running the
+  method (`Json2SignatureMismatch`), and the transport sends the call again with
+  the signature from `/doc-bearer` or, when one argument was named, the name
+  Odoo reports as missing, and remembers it per (database, model, method). When
+  it cannot, `auto` sends that one call over JSON-RPC/XML-RPC (JSON-2 stays
+  pinned) and `json2` asks for named `kwargs`. Names the caller gave in
+  `kwargs` are never changed: the 422 is reported with a pointer to
+  `odoo_api_catalog`.
+  `create` with one dict still returns an id. Model and method names are checked
+  before sending. The sign-in is `res.users.context_get` plus a read of the key
+  owner's login, which must be `ODOO_LOGIN`.
+- `ODOO_TRANSPORT_PREF=json2`, and a new `auto` policy based on the target's
+  unclamped series, the credential kind and `user:pass@` in `ODOO_URL`:
+  JSON-2 → JSON-RPC → XML-RPC on saas~18.4 / 19.0+ with an API key (JSON-2 is
+  pinned after the first sign-in), JSON-RPC → XML-RPC as before elsewhere, and
+  JSON-2 only from saas~21.1 (Odoo Online saas~21.1 and Odoo 22 remove the
+  legacy endpoints; a password there is a `ConfigError` that says what to set).
+  With `json2`, a server that does not answer JSON-2 gets "needs saas~18.4 /
+  19.0 or newer, or a proxy blocks /json/2"; a host that cannot be reached at
+  all (connection refused, DNS, TLS: `Json2Unreachable`) gets "check ODOO_URL
+  and that this machine can reach it" instead.
+- The version is detected without signing in and without a deprecated endpoint
+  (`/web/webclient/version_info`, then `GET /json/version`, then
+  `common.version`), so it leaves no warning in the Odoo 19 log, and it is
+  fetched once per session.
+- **Deprecation notice**: when the deprecated `/xmlrpc` or `/jsonrpc` is in use
+  on Odoo 19+, the server logs one warning per session and `odoo_version` returns
+  an additive `transport_notice` with the fix (create an API key, move gateway
+  basic auth out of `ODOO_URL`, or set the transport back to `auto`).
+  `/odoo-doctor` shows it.
+- `odoo_execute` takes an optional top-level `ids` (the records of a record
+  method): JSON-2 sends it as `ids`, the legacy transports as the first
+  positional argument, so the same call works on every transport.
+- `Credentials.secret_kind` (`api_key` or `password`), set from the settings;
+  it is not part of the session fingerprint or of `repr()`.
+- `compat/deltas.py` records method deltas (`METHOD_DELTAS`, with
+  `resolve_method` and `method_available`): `formatted_read_group` from
+  saas~18.4, classic `read_group` absent from saas~19.1, `check_access_rights`
+  removed from saas~19.1, `has_access` from 18.0.
+- An opt-in live test (`-m live`, `tests/test_json2_live.py`) compares the core
+  read tools over JSON-2 and XML-RPC on a 19.0 sandbox (`odoo_version`,
+  `odoo_fields_get`, `odoo_search`, `odoo_search_count`, `odoo_search_read`,
+  `odoo_read`, `odoo_read_group`, `odoo_export_records_csv`, `odoo_list_models`,
+  `odoo_module_info`, `odoo_translate_get` and two `odoo_execute` reads), checks a
+  create/write/unlink round trip over JSON-2 against XML-RPC and Odoo's real
+  signature-mismatch 422, and checks the transport choice on 18.0. Not compared:
+  `odoo_report`, `odoo_export_records_json`, `odoo_connections`,
+  `odoo_telemetry_preview` and the Online tools.
 - `packages/`: an index of the packages related to odoo-tools, and a README for
   odoo-tools-lsp, Transgenia's language server for Odoo addons (proprietary, private
   preview; documentation only, no source in this repository).
@@ -28,7 +130,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   line (e.g. saas~18.1), which sits between two stable series
   (18.0 < saas~18.1 < … < 19.0). Field removals can now start on a saas line.
 
+### Changed
+- **`odoo_read_group` uses `formatted_read_group` from saas~18.4 on** (19.0
+  deprecates the classic `read_group`, and Odoo Online saas~19.1 to saas~19.4
+  do not have it), on every transport. The tool keeps its arguments and its
+  classic output: the `<groupby>_count` / `__count` keys, `__domain`,
+  `__context` for lazy grouping, date labels with `__range`, and `orderby`. A
+  field without a default aggregator is listed in an additive `dropped_fields`
+  instead of being silently ignored.
+- `odoo_execute` says "(write operation)" and that read-only mode refuses it,
+  and explains the `ids` + `kwargs` form.
+- `READ_METHODS` (calls that may be retried on another transport) gains
+  `formatted_read_group`, `web_read_group`, `context_get`, `has_access`,
+  `has_groups` and `get_field_translations`.
+- The MCP `instructions` list the two import tools among the write tools and
+  point Odoo Online users to `odoo_online_profile`; the read-only refusal
+  suggests read tools by name. Telemetry's `KNOWN_TOOLS` gains the six tools.
+- Docs: a tool table in the README, Odoo Online routes in the guided route
+  (`odoo-setup-mcp`: API keys on Online, verify, training exercise 8, daily
+  use, deployment), the `odoo-mcp-tools` index skill, the `odoo` agent,
+  `/odoo-doctor` (calls `odoo_online_profile`), `SECURITY.md` and
+  `docs/compat-matrix.md` (an Odoo Online tools section).
+
 ### Fixed
+- `docs/telemetry-schema.json` rejected payloads counting `odoo_telemetry_preview`
+  or `odoo_read_group`, which the server already counts; its tool pattern now
+  equals `KNOWN_TOOLS`, and a test keeps them equal.
+- The `odoo` agent listed three tools twice.
+- **HTTP 429 on `/jsonrpc` switched the session to XML-RPC** and replayed the
+  call. A 429 is now `RateLimited` on every transport: reads wait for
+  `Retry-After` (at most 30 s, 3 tries) and retry the same transport, writes are
+  reported ("retry later"), and the transport is never switched.
 - The sandbox talks to Odoo over XML-RPC (`/xmlrpc/2/common`, `/xmlrpc/2/db`)
   instead of `/jsonrpc`, which does not exist before Odoo 12.0.
 - **`product.template.uom_po_id` was dropped from reads and exports on Odoo 17
@@ -54,13 +186,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - Docs, skill and agent no longer claim that `/jsonrpc` rejects API keys on
   Odoo 17+: Odoo handles both endpoints with the same `dispatch_rpc` (14-19)
   and a live Odoo 18.0 accepts an API key on both. The `auto` transport keeps
-  its XML-RPC fallback for proxies that block or alter `/jsonrpc`.
+  its XML-RPC fallback for proxies that block or alter `/jsonrpc`. One place
+  still says it: the verbatim telemetry consent statement in `/odoo-doctor`
+  ("Odoo 17+ `/jsonrpc` API-key refusal handling"), left unchanged on purpose
+  because a change to the consent wording needs the maintainers' review; the
+  correction is pending that review.
 
 ### Notes
 - Odoo 19 deprecates `/xmlrpc`, `/xmlrpc/2` and `/jsonrpc` and schedules their
-  removal for Odoo 22 (they now live in the auto-installed `rpc` module). They
-  work on every version this plugin supports; the compat matrix and the
-  cross-version skill say so.
+  removal for Odoo 22 (they now live in the auto-installed `rpc` module); Odoo
+  Online removes them in saas~21.1. With an API key the plugin now uses JSON-2
+  there; a password keeps working on the legacy endpoints up to Odoo 21, with
+  the notice above. The compat matrix and the cross-version skill say so.
+- JSON-2 sends `@api.readonly` methods to a read-only cursor, which is a
+  replica when the Odoo host sets `db_replica_host`: a read right after a write
+  may lag there, and a client cannot force the primary.
+- saas~18.4 was checked against the Odoo source only (no public image).
 
 ## [1.3.0] - 2026-09-27
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Metadata / introspection tools: version, connections, fields, models."""
 
 from __future__ import annotations
@@ -14,7 +14,8 @@ from ..registry import ToolContext, obj, registry
     "odoo_version",
     "Check the connection end to end (signs in with the configured credentials) "
     "and return the target Odoo version, edition (community/enterprise), "
-    "deployment (onprem/saas) and the active transport.",
+    "deployment (onprem/saas), the active transport (json2, jsonrpc or xmlrpc) and "
+    "transport_notice, set when the deprecated /xmlrpc or /jsonrpc is in use on Odoo 19+.",
     obj({}),
 )
 def odoo_version(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -28,6 +29,8 @@ def odoo_version(ctx: ToolContext, args: dict[str, Any]) -> Any:
         "edition": facts.edition,
         "deployment": facts.deployment,
         "transport": ctx.session.transport.active,
+        # Odoo 19 deprecates the legacy endpoints and Odoo 22 removes them.
+        "transport_notice": getattr(ctx.session.transport, "transport_notice", None),
     }
 
 

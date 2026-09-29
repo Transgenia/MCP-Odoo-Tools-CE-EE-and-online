@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Transgenia (Centrum Transgenia S.A.S. de C.V.)
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Resolve model/field names and capabilities for a given Odoo environment.
 
 Every tool routes its model/field names through here BEFORE hitting the ORM so
@@ -16,8 +16,10 @@ from .deltas import (
     ENTERPRISE_ONLY_MODELS,
     FIELD_REMOVED,
     FIELD_RENAMES,
+    METHOD_DELTAS,
     MODEL_RENAMES,
     Capability,
+    MethodDelta,
 )
 from .detect import EnvFacts
 
@@ -80,6 +82,37 @@ def resolve_fields(model: str, fields: list[str], facts: EnvFacts) -> FieldResol
         else:
             mapping[f] = actual
     return FieldResolution(mapping=mapping, dropped=dropped)
+
+
+def _method_delta(method: str) -> MethodDelta | None:
+    return next((d for d in METHOD_DELTAS if d.method == method), None)
+
+
+def method_available(method: str, facts: EnvFacts) -> bool:
+    """Whether the ORM method exists on ``facts.series`` (unknown methods: yes)."""
+    delta = _method_delta(method)
+    if delta is None:
+        return True
+    if delta.since is not None and facts.series < delta.since:
+        return False
+    return not (delta.removed_in is not None and facts.series >= delta.removed_in)
+
+
+def resolve_method(method: str, facts: EnvFacts) -> str:
+    """The method the plugin should call for ``method`` on this series.
+
+    ``read_group`` becomes ``formatted_read_group`` from saas~18.4 on. A method
+    that is gone becomes its replacement when that one exists; otherwise the
+    name is returned unchanged and Odoo reports the error.
+    """
+    delta = _method_delta(method)
+    if delta is None or not delta.use_instead:
+        return method
+    preferred = delta.prefer_from is not None and facts.series >= delta.prefer_from
+    if (preferred or not method_available(method, facts)) and method_available(
+            delta.use_instead, facts):
+        return delta.use_instead
+    return method
 
 
 def _find_capability(feature: str) -> Capability | None:
