@@ -158,7 +158,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   `amount:sum,tax:sum`) and silently dropped the rest, so a second aggregate
   or a typo vanished from the result. The whole spec must now be `field`,
   `field:agg` or `name:agg(field)`, else a `CompatError` before any call.
-  Up to saas~18.3 the spec still goes to Odoo's classic `read_group` as given.
+  The same check now runs on the classic `read_group` path from Odoo 17.0
+  (the oldest series Odoo still supports), so 17.0-saas~18.3 refuse the same
+  specs; 10-16 still pass the spec to Odoo as given.
 - `docs/telemetry-schema.json` rejected payloads counting `odoo_telemetry_preview`
   or `odoo_read_group`, which the server already counts; its tool pattern now
   equals `KNOWN_TOOLS`, and a test keeps them equal.
