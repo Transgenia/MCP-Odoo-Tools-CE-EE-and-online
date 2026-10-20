@@ -10,6 +10,11 @@ verification, hands-on training, daily use and deployment. No Odoo to practise
 with? **`/odoo-tools:deploy-local`** starts a local sandbox. **`/odoo-doctor`**
 checks an existing connection.
 
+Using Cowork or claude.ai chat? The Odoo tools do not load there: the plugin's
+skills and commands do, but those apps do not start its MCP server and have no form
+for the connection options. See [Where it works](README.md#where-it-works) and use
+Claude Code.
+
 ## Contact Transgenia (official channels only)
 
 Maintenance, support, training for your team, customizations, Odoo migrations

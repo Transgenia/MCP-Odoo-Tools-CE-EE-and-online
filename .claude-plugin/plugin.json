@@ -2,7 +2,7 @@
   "name": "odoo-tools",
   "displayName": "Odoo Tools",
   "version": "1.4.0",
-  "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer.",
+  "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer. The Odoo tools run in Claude Code; Cowork and Claude chat load the skills and commands without the tools.",
   "author": {
     "name": "Transgenia",
     "email": "dev@transgenia.org",

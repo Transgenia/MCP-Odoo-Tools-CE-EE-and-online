@@ -1,6 +1,6 @@
 ---
 name: odoo-setup-mcp
-description: START HERE. The guided route of the odoo-tools plugin by Transgenia — setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails.
+description: START HERE. The guided route of the odoo-tools plugin by Transgenia — setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab).
 ---
 
 # odoo-tools — guided route (start here)
@@ -33,6 +33,42 @@ Then call the `odoo_version` tool once. If it succeeds, the plugin is already
 connected: say so, show the version/edition, and ask whether to go to
 **Phase 3 (Training)**, **4 (Daily use)** or **5 (Deployment)**. (Do not read
 `ODOO_*` variables or credential files from the user's machine to find out.)
+If the tool does not exist (it is not in your tool list), go to Phase 0b first.
+
+## Phase 0b — Are the Odoo tools loaded on this surface?
+
+Only when `odoo_version` does not exist as a tool: the MCP server is not running.
+**Do not start with Python.** Ask where the user runs Claude, one question:
+**1)** Claude Code (terminal, VS Code or JetBrains, or the Code tab of Claude
+Desktop) · **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or mobile).
+A user who describes an empty **odoo — Runs in each session** panel under the
+plugin's **Connectors** tab is on 2 or 3.
+
+- **1 — Claude Code.** The server did not start; the usual cause is that the
+  required options (Odoo URL, database, login) are empty. If you can run shell
+  commands, run `claude plugin list` to get the plugin's full id
+  (`odoo-tools@<marketplace>`), then `claude plugin configure <id> --json` and
+  read `unconfigured`; otherwise ask the user to run `/plugin configure <id>`,
+  which opens the options dialog. Fix the options in Step 1C, then check Python
+  in Step 1A, then restart Claude.
+- **2 or 3 — Cowork or Claude chat.** These apps do not run this plugin's local
+  MCP server and have no form for plugin options. Anthropic's plugin support
+  matrix says Cowork "doesn't prompt for values" and ignores an MCP server whose
+  options have no default, and chat ignores local MCP servers. The install is
+  fine and the skills and commands loaded, but they cannot reach Odoo without the
+  tools. Say it plainly, tell the user nothing is wrong with their account, and
+  offer:
+  1. **Claude Code** (recommended): a plugin installed on their Claude account
+     appears there as a synced plugin at the next session start. Continue from
+     Step 1B.
+  2. **The CLI fallback**, `/odoo-tools:odoo-setup-cli` (Node 18+). From a cloud or
+     sandboxed session it needs network access to their Odoo, and the key must
+     not be typed into the chat: advise a dedicated, least-privilege,
+     short-lived API key.
+  3. **☎ Transgenia** for assisted setup, with the official channels above.
+
+  Do not walk them through Python or the plugin options on these apps: those
+  steps cannot work there.
 
 ## Phase 1 — Setup
 
@@ -91,7 +127,15 @@ for the first days and for demos.
 
 These values are plugin options (`userConfig` in `plugin.json`). Claude Code
 prompts for them when the plugin is enabled. To enter or change them later:
-run `/plugin`, open **odoo-tools**, choose **Configure options**.
+run `/plugin`, open **odoo-tools**, choose **Configure options**, or run
+`/plugin configure <id>` (VS Code: the gear icon on the plugin's row). These
+options exist only in Claude Code. On a
+remote or headless machine without the interactive dialog, `claude plugin
+configure <id> --json` lists the unset options and `claude plugin configure <id>
+--values-stdin` saves values read from stdin as a JSON object of single-line
+strings (`<id>` is the full id from `claude plugin list`); the user pipes that
+JSON from a protected file or a secret manager, and you never ask for, read or
+echo the key.
 
 - The API key and password are marked `sensitive`: input is masked and they are
   stored in the operating system's secure credential store, not in
@@ -116,7 +160,9 @@ key expires (`api_keys`, `hints`) and the `online_hints` (Custom plan, about 1
 call per second, the daily e-mail limit, data modules only).
 
 If it fails:
-- `odoo_version` not available at all → the MCP server did not start: re-check
+- `odoo_version` not available at all → the MCP server did not start. Follow
+  Phase 0b first: on Cowork and Claude chat it never starts, and the fix is not
+  Python. On Claude Code, check that the options are set (Step 1C), then
   Step 1A (`python3 --version`, 3.9+), then restart Claude.
 - auth error → re-check Database / Login / API key in **Configure options**.
 - transport error → re-check the URL (scheme + host, no trailing path).

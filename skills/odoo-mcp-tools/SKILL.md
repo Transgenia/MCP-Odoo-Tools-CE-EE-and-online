@@ -1,6 +1,6 @@
 ---
 name: odoo-mcp-tools
-description: Entry point for the MCP-Odoo-Tools plugin — connects Claude Code and Cowork to any Odoo instance (Community, Enterprise, or online, versions 10 through 19) for querying data, exporting records, cross-version compatibility, and low-code customization without Odoo Studio. Start here to pick the specific skill for your task.
+description: Entry point for the MCP-Odoo-Tools plugin — connects Claude Code to any Odoo instance (Community, Enterprise, or online, versions 10 through 19) for querying data, exporting records, cross-version compatibility, and low-code customization without Odoo Studio. The Odoo tools run in Claude Code; in Cowork and Claude chat they are not available. Start here to pick the specific skill for your task.
 license: MIT
 metadata:
   author: Transgenia

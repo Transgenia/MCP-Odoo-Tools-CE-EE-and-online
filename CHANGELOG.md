@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ## [Unreleased]
 
+### Fixed
+- **Documentation: the Odoo tools do not run in Cowork or Claude chat.** v1.4.0
+  said the MCP server works in a local Cowork session. Anthropic's plugin support
+  matrix (https://claude.com/docs/plugins/platform-support) says Cowork does not
+  prompt for plugin options and ignores an MCP server that references an option
+  without a default (this plugin's URL, database, login and credentials have
+  none), and that chat ignores local MCP servers. A user who installed the plugin
+  from Cowork saw **odoo — Runs in each session** with an empty panel and no way
+  to enter the connection options. The README support table, `docs/install.md`,
+  `SUPPORT.md`, the plugin description and the `odoo-mcp-tools` skill now say
+  where the tools run; the README explains the empty panel and the route that
+  works (Claude Code, including `claude plugin configure` for headless machines);
+  and the guided route (`odoo-setup-mcp`, new Phase 0b) checks the surface before
+  it troubleshoots Python. No server code changed.
+
+### Added
+- `tests/test_docs_surfaces.py`: every `${user_config.KEY}` the server references
+  is declared; the README does not promise the Odoo tools where the options cannot
+  be entered; the guided route triages the surface before Python.
+
 ## [1.4.0] - 2026-09-29
 
 ### Added
