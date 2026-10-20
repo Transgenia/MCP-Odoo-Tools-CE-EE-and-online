@@ -23,16 +23,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ### Added
 - **Missing-options notice at session start** (`hooks/check_options.py`, a second
-  SessionStart hook in exec form). When the Odoo URL, database, login or a
-  credential has no saved value it emits hook JSON: `systemMessage` for the user,
-  on a new session and at most once a day (timestamp file in the plugin's data
-  folder), and `additionalContext` for Claude on every SessionStart. It reads the
-  `CLAUDE_PLUGIN_OPTION_*` variables for presence only and never prints, stores or
-  sends a value; it is silent when the options are set or when the container
-  mode's `~/.odoo-tools/mcp/odoo.env` exists, and always exits 0. A shell-form hook
-  cannot reference `${user_config.*}` and an exec-form one fails while an option is
-  unset, so the script reads the environment instead. Tests:
-  `tests/test_session_start_hook.py`.
+  SessionStart hook). When the Odoo URL, database or login has no saved value it
+  emits hook JSON: `systemMessage` for the user, on a new session and at most once
+  a day (timestamp file in the plugin's data folder), and `additionalContext` for
+  Claude on every SessionStart; with the container mode's
+  `~/.odoo-tools/mcp/odoo.env` present only Claude is told. It checks the
+  `CLAUDE_PLUGIN_OPTION_*` variables of those three non-sensitive options for
+  presence only. It keeps the v1.2.0 rule that no hook reads the API key or
+  password option (a directory finding), never prints, stores or sends a value,
+  and always exits 0. `hooks.json` starts it in shell form only when `python3` is
+  3.9 or newer, so a missing or old Python never shows a hook error (the first
+  hook already explains it); a shell-form hook cannot reference `${user_config.*}`,
+  so the script reads the environment. It reads the event as bytes, so a Windows
+  code page cannot garble a non-ASCII working directory. Known limit: a
+  non-interactive session (`claude -p`, the Agent SDK) started that day also uses
+  up the daily notice. Tests: `tests/test_session_start_hook.py`.
+- `PRIVACY.md`: Claude Code also exports saved options to the plugin's hook
+  processes (the hooks do not read the sensitive ones), and the hook's timestamp
+  file is listed under local storage.
 - `tests/test_docs_surfaces.py`: every `${user_config.KEY}` the server references
   is declared; the README does not promise the Odoo tools where the options cannot
   be entered; the guided route triages the surface before Python.

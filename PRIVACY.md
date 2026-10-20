@@ -1,6 +1,6 @@
 # Privacy policy — Odoo Tools plugin
 
-_Last updated: 2026-09-26. Applies to the `odoo-tools` Claude plugin in this
+_Last updated: 2026-10-20. Applies to the `odoo-tools` Claude plugin in this
 repository (MCP server, CLI fallback, skills, commands, agents and hooks)._
 
 Publisher: Transgenia (Centrum Transgenia SAS), dev@transgenia.org.
@@ -19,7 +19,7 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 | Data | Where it goes | Why |
 |------|---------------|-----|
-| Odoo URL, database, login, API key / password | Stored by Claude Code as plugin options; the API key and password are `sensitive` options kept in the OS secure credential store. Passed only to the local MCP server process. | To authenticate against **your** Odoo instance. |
+| Odoo URL, database, login, API key / password | Stored by Claude Code as plugin options; the API key and password are `sensitive` options kept in the OS secure credential store. Passed to the local MCP server process. Claude Code also exports every saved option to the environment of the plugin's hook processes; those hooks only check whether the URL, database and login are set and never read the API key or password. | To authenticate against **your** Odoo instance. |
 | Odoo records you query (may include personal data) | Sent from your Odoo to the local MCP server, then returned to your MCP client, which sends tool results to your model provider (e.g. Anthropic, for Claude) as with any tool. | To answer your request. Governed by your Odoo's and your model provider's terms, not by Transgenia. |
 | Nothing | Transgenia | — |
 
@@ -45,6 +45,9 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
   owner-only `.env` with placeholders under `~/.claude/tools/odoo-cli`; you type
   your credentials into it yourself (Claude never asks for the secret). Delete it
   when you stop using the CLI.
+- The SessionStart hook keeps one empty timestamp file, `options-notice`, in the
+  plugin's data folder (`~/.claude/plugins/data/…`) so that the missing-options
+  notice is shown at most once a day. It holds no data.
 
 ## Retention
 

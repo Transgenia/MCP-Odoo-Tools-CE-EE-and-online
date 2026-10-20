@@ -66,8 +66,8 @@ its **Connectors** tab lists **odoo — Runs in each session**, and opening that
 shows an empty panel with no fields to fill in. Anthropic's docs say that on the
 web the Connectors tab marks a local MCP server that way while chat does not start
 it, and there is no form because those apps do not prompt for plugin options.
-Where plugin hooks run (Claude Code and Cowork), the plugin also says at session
-start which options are missing.
+In Claude Code the plugin also says at session start which required options are
+missing (whether Cowork shows that notice has not been verified yet).
 
 1. **Use Claude Code** (terminal, VS Code or JetBrains, or the **Code** tab of
    Claude Desktop). A plugin installed on your Claude account appears there as a
@@ -135,15 +135,18 @@ verifies the connection with `odoo_version`.
 - **SessionStart hooks** — two, and neither contacts anything:
   - runs `python3 --version` and prints a warning only when `python3` is not
     runnable (the MCP server could not start);
-  - `hooks/check_options.py` checks only whether the connection options have a
-    saved value. Claude Code passes saved options to plugin hooks as
-    `CLAUDE_PLUGIN_OPTION_*` variables, the API key included; the script tests
-    them for presence and never prints, stores or sends a value. When some are
-    missing it tells you, at most once a day at the start of a session, and tells
-    Claude why the Odoo tools are off. It prints nothing when the options are set
-    or when the container mode's `~/.odoo-tools/mcp/odoo.env` exists (it checks
-    that the file exists, without reading it), and its only state is a timestamp
-    file in the plugin's data folder.
+  - `hooks/check_options.py`, started only when `python3` is 3.9 or newer, checks
+    whether the three required, non-sensitive options (URL, database, login) have a
+    saved value. It never reads the API key or password option and never prints,
+    stores or sends a value. When some are missing it tells you, at most once a day
+    at the start of a session, and tells Claude why the Odoo tools are off; when
+    the container mode's `~/.odoo-tools/mcp/odoo.env` exists (it checks that the
+    file exists, without reading it) it tells only Claude. Its only state is a
+    timestamp file in the plugin's data folder; a non-interactive session started
+    that day (`claude -p`, the Agent SDK) also uses up the daily notice.
+  - Claude Code exports every saved plugin option, sensitive ones included, to
+    the environment of each plugin hook process as `CLAUDE_PLUGIN_OPTION_*`. The
+    plugin's hooks do not read the sensitive ones.
 - **Local infrastructure (only if you run `/odoo-tools:deploy-local` and
   confirm)** — Docker containers on your machine: the sandbox (PostgreSQL + Odoo
   on `127.0.0.1`, files in `~/.odoo-tools/sandbox`) or the MCP server image.

@@ -5,16 +5,22 @@
 
 Claude Code exports each saved plugin option to hooks as CLAUDE_PLUGIN_OPTION_<KEY>
 and exports nothing for an option without a saved value. Cowork and claude.ai chat
-never prompt for plugin options, so there the variables are absent. This hook reads
-only whether those variables are present, never prints or stores their values, and
-prints nothing when the options are set. It always exits 0: a SessionStart hook must
-not get in the way of the session.
+never prompt for plugin options, so there the variables are absent.
+
+This hook looks only at the three required, non-sensitive options (URL, database,
+login), and only at whether they are present. It never reads the API key or the
+password option (since v1.2.0 no plugin hook does: a directory finding), never
+prints or stores a value, prints nothing when the three are set, and always exits 0:
+a SessionStart hook must not get in the way of the session. A missing credential is
+reported by the MCP server itself (odoo_version) and by the guided route.
 
 Output, as Claude Code hook JSON: "systemMessage" is shown to the user, on a new
 session (source "startup") and at most once a day; "additionalContext" goes to Claude
-on every SessionStart, so the reason survives /clear and compaction.
+on every SessionStart, so the reason survives /clear and compaction. With the
+container mode's env file present, only Claude is told.
 
-Standard library only; it must run on Python 3.9.
+Standard library only; it must run on Python 3.9. hooks.json starts it only when
+python3 is 3.9 or newer, so an old or missing Python never shows a hook error.
 """
 
 from __future__ import annotations
@@ -26,10 +32,9 @@ import time
 from pathlib import Path
 
 REQUIRED = ("odoo_url", "odoo_db", "odoo_login")
-CREDENTIALS = ("odoo_api_key", "odoo_password")
 # /odoo-tools:deploy-local container mode runs the server from this env file instead of
 # the plugin options (commands/deploy-local.md, Mode B). Only its existence is checked.
-CONTAINER_ENV = Path.home() / ".odoo-tools" / "mcp" / "odoo.env"
+CONTAINER_ENV = (".odoo-tools", "mcp", "odoo.env")
 NOTICE_EVERY = 24 * 3600  # seconds between two notices shown to the user
 MARKER = "options-notice"
 
@@ -41,10 +46,14 @@ def _is_set(key: str) -> bool:
 
 
 def missing_options() -> list[str]:
-    gaps = [key for key in REQUIRED if not _is_set(key)]
-    if not any(_is_set(key) for key in CREDENTIALS):
-        gaps.append("odoo_api_key or odoo_password")
-    return gaps
+    return [key for key in REQUIRED if not _is_set(key)]
+
+
+def _container_env_exists() -> bool:
+    try:
+        return Path.home().joinpath(*CONTAINER_ENV).exists()
+    except (OSError, RuntimeError):  # no resolvable home directory
+        return False
 
 
 def _notice_due(now: float) -> bool:
@@ -67,38 +76,50 @@ def _notice_due(now: float) -> bool:
     return True
 
 
-def build_output(gaps: list[str], source: str | None, notice_due: bool) -> dict | None:
+def build_output(gaps: list[str], source: str | None, notice_due: bool,
+                 container_env: bool = False) -> dict | None:
     if not gaps:
         return None
     listed = ", ".join(gaps)
     context = (
-        f"odoo-tools plugin status: the connection options {listed} have no saved value "
-        "in this session, so the plugin's Odoo MCP server has no connection settings and "
-        "its odoo_* tools are unavailable or answer with a configuration error. Claude "
-        "Code collects these options in /plugin (Configure options), and `claude plugin "
-        "configure <name@marketplace> --values-stdin` sets them without the dialog. "
-        "Cowork and claude.ai chat have no form for plugin options. The user enters the "
-        "API key or password in that form, never in the chat. The guided route "
-        "/odoo-tools:odoo-setup-mcp (Phase 0b) covers this case."
+        f"odoo-tools plugin status: the required connection options {listed} have no "
+        "saved value in this session, so the plugin's Odoo MCP server has no connection "
+        "settings and its odoo_* tools are unavailable or answer with a configuration "
+        "error. Claude Code collects these options in /plugin (Configure options), and "
+        "`claude plugin configure <name@marketplace> --values-stdin` sets them without "
+        "the dialog. Cowork and claude.ai chat have no form for plugin options. The user "
+        "enters the API key or password in that form, never in the chat. An Odoo "
+        "connector added separately in Claude does not depend on these options. The "
+        "guided route /odoo-tools:odoo-setup-mcp (Phase 0b) covers this case."
     )
+    if container_env:
+        context += (
+            " The file ~/.odoo-tools/mcp/odoo.env exists, so the container server "
+            "odoo-tools-docker from /odoo-tools:deploy-local may be the one in use."
+        )
     output: dict = {
         "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}
     }
-    if source in (None, "startup") and notice_due:
+    if source in (None, "startup") and notice_due and not container_env:
         output["systemMessage"] = (
             f"odoo-tools: the Odoo tools are off because these plugin options are not set: "
             f"{listed}. In Claude Code, open /plugin, select odoo-tools and choose Configure "
             "options. Cowork and claude.ai chat cannot ask for plugin options (see the "
-            "plugin README, \"If the Odoo tools do not appear\")."
+            "plugin README, \"If the Odoo tools do not appear\"). If you reach Odoo through "
+            "a remote connector instead, this notice does not apply."
         )
     return output
 
 
 def _read_event() -> dict:
-    if sys.stdin is None or sys.stdin.isatty():
+    stream = getattr(sys.stdin, "buffer", None)
+    if stream is None or sys.stdin.isatty():
         return {}
     try:
-        event = json.load(sys.stdin)
+        # Bytes, so json detects the UTF-8 that Claude Code sends whatever the locale's
+        # encoding is (Windows pipes default to the ANSI code page).
+        raw = stream.read()
+        event = json.loads(raw) if raw.strip() else {}
     except (ValueError, OSError):
         return {}
     return event if isinstance(event, dict) else {}
@@ -106,13 +127,13 @@ def _read_event() -> dict:
 
 def main() -> int:
     try:
-        if CONTAINER_ENV.exists():
-            return 0
         source = _read_event().get("source")
         source = source if isinstance(source, str) else None
         gaps = missing_options()
-        due = _notice_due(time.time()) if gaps and source in (None, "startup") else False
-        output = build_output(gaps, source, due)
+        container = bool(gaps) and _container_env_exists()
+        wants_notice = bool(gaps) and source in (None, "startup") and not container
+        due = _notice_due(time.time()) if wants_notice else False
+        output = build_output(gaps, source, due, container)
         if output:
             sys.stdout.write(json.dumps(output))
     except Exception:  # a notice must never break the session

@@ -9,8 +9,7 @@
           },
           {
             "type": "command",
-            "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check_options.py"],
+            "command": "if python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/check_options.py\"; fi",
             "timeout": 10
           }
         ]
