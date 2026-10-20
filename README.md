@@ -66,6 +66,8 @@ its **Connectors** tab lists **odoo — Runs in each session**, and opening that
 shows an empty panel with no fields to fill in. Anthropic's docs say that on the
 web the Connectors tab marks a local MCP server that way while chat does not start
 it, and there is no form because those apps do not prompt for plugin options.
+Where plugin hooks run (Claude Code and Cowork), the plugin also says at session
+start which options are missing.
 
 1. **Use Claude Code** (terminal, VS Code or JetBrains, or the **Code** tab of
    Claude Desktop). A plugin installed on your Claude account appears there as a
@@ -130,9 +132,18 @@ verifies the connection with `odoo_version`.
   Python source shipped in this plugin, with zero third-party runtime
   dependencies. It talks only to the Odoo URL you configure (plus your own
   OTLP collector, if you opt in with `ODOO_OTEL_ENDPOINT`).
-- **SessionStart hook** — runs `python3 --version` and prints a warning only
-  when `python3` is not runnable (the MCP server could not start). It reads no
-  plugin option or secret and contacts nothing.
+- **SessionStart hooks** — two, and neither contacts anything:
+  - runs `python3 --version` and prints a warning only when `python3` is not
+    runnable (the MCP server could not start);
+  - `hooks/check_options.py` checks only whether the connection options have a
+    saved value. Claude Code passes saved options to plugin hooks as
+    `CLAUDE_PLUGIN_OPTION_*` variables, the API key included; the script tests
+    them for presence and never prints, stores or sends a value. When some are
+    missing it tells you, at most once a day at the start of a session, and tells
+    Claude why the Odoo tools are off. It prints nothing when the options are set
+    or when the container mode's `~/.odoo-tools/mcp/odoo.env` exists (it checks
+    that the file exists, without reading it), and its only state is a timestamp
+    file in the plugin's data folder.
 - **Local infrastructure (only if you run `/odoo-tools:deploy-local` and
   confirm)** — Docker containers on your machine: the sandbox (PostgreSQL + Odoo
   on `127.0.0.1`, files in `~/.odoo-tools/sandbox`) or the MCP server image.

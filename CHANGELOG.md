@@ -22,6 +22,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   it troubleshoots Python. No server code changed.
 
 ### Added
+- **Missing-options notice at session start** (`hooks/check_options.py`, a second
+  SessionStart hook in exec form). When the Odoo URL, database, login or a
+  credential has no saved value it emits hook JSON: `systemMessage` for the user,
+  on a new session and at most once a day (timestamp file in the plugin's data
+  folder), and `additionalContext` for Claude on every SessionStart. It reads the
+  `CLAUDE_PLUGIN_OPTION_*` variables for presence only and never prints, stores or
+  sends a value; it is silent when the options are set or when the container
+  mode's `~/.odoo-tools/mcp/odoo.env` exists, and always exits 0. A shell-form hook
+  cannot reference `${user_config.*}` and an exec-form one fails while an option is
+  unset, so the script reads the environment instead. Tests:
+  `tests/test_session_start_hook.py`.
 - `tests/test_docs_surfaces.py`: every `${user_config.KEY}` the server references
   is declared; the README does not promise the Odoo tools where the options cannot
   be entered; the guided route triages the surface before Python.

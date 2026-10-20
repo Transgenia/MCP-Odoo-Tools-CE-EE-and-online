@@ -6,6 +6,12 @@
           {
             "type": "command",
             "command": "if python3 --version >/dev/null 2>&1; then :; else echo 'odoo-tools: python3 is not runnable, so the Odoo MCP server cannot start. It needs Python 3.9+ available as python3 (see the plugin README, Requirements).'; fi"
+          },
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check_options.py"],
+            "timeout": 10
           }
         ]
       }
