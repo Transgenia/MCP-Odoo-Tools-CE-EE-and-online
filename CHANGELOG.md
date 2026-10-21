@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Release workflow: a manual run can now be a **draft** (`release.yml`, input
+  `draft`). It creates the tag, runs the tests and leaves a draft GitHub Release with
+  the artifacts, but builds no container image and uploads nothing to PyPI.
+  Publishing the draft runs those jobs. `docs/packaging.md` describes the steps, and
+  `tests/test_release_workflow.py` checks that a draft run publishes nothing.
+
 ## [1.4.1] - 2026-10-21
 
 Documentation and diagnostics release: where the Odoo tools run, a notice when the

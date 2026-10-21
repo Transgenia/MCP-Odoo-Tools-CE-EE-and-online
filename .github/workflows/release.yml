@@ -11,6 +11,14 @@ name: Release
 #         setup never blocks the Release or the image)
 # A release created with GITHUB_TOKEN triggers no other workflow, so these run
 # here instead of on `release: published`.
+#
+# Draft mode (manual runs with `draft` checked): tag + verify + build-standard,
+# then a DRAFT GitHub Release with the artifacts. Nothing reaches users: no
+# image, no PyPI, no mirror. A maintainer reviews the draft and selects
+# **Publish release**; that human action is a `release: published` event, which
+# runs verify, build-standard, container, github-release (refreshes the assets
+# from the same tag), mirror and pypi. To discard a draft instead, delete it and
+# the tag (`git push --delete origin vX.Y.Z`) before running again.
 
 on:
   push:
@@ -20,12 +28,20 @@ on:
       tag:
         description: "Tag to release (e.g. v1.3.0). Created on main if it does not exist yet."
         required: true
+      draft:
+        description: "Draft only: tag, tests and a draft GitHub Release; no image, no PyPI until the draft is published."
+        type: boolean
+        default: false
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 env:
+  # On `release: published`, github.ref_name is the release's tag.
   TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
 
 jobs:
   tag:
@@ -88,6 +104,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Tag shape
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must look like vX.Y.Z, got '$TAG'"; exit 1
+          fi
       - name: Versions match the tag
         run: python3 scripts/check_release_version.py "$TAG"
       - name: Install
@@ -142,6 +163,8 @@ jobs:
 
   container:
     needs: verify
+    # Draft mode publishes nothing: the image is built once the draft is published.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -192,6 +215,11 @@ jobs:
 
   github-release:
     needs: [build-standard, container]
+    if: >-
+      ${{ !cancelled() && needs.build-standard.result == 'success'
+          && (needs.container.result == 'success'
+              || (github.event_name == 'workflow_dispatch' && inputs.draft
+                  && needs.container.result == 'skipped')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -204,17 +232,36 @@ jobs:
         with:
           name: standard-${{ env.TAG }}
           path: assets
-      - name: Create GitHub Release
+      - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ls -R assets
-          gh release create "$TAG" --verify-tag --title "odoo-tools $TAG" \
-            --notes-file assets/release-notes.md \
-            assets/server/dist/* assets/odoo-tools-standard-*.zip
+          files=(assets/server/dist/* assets/odoo-tools-standard-*.zip)
+          # `gh release view <tag>` does not see drafts; the list does.
+          existing=$(gh release list --limit 100 --json tagName,isDraft \
+            --jq ".[] | select(.tagName == \"$TAG\") | .isDraft")
+          if [ "$DRAFT" = "true" ]; then
+            if [ -n "$existing" ]; then
+              echo "::error::a release for $TAG already exists (draft: $existing); delete it first"; exit 1
+            fi
+            gh release create "$TAG" --verify-tag --draft --title "odoo-tools $TAG" \
+              --notes-file assets/release-notes.md "${files[@]}"
+            echo "Draft ready: $(gh release view "$TAG" --json url --jq .url 2>/dev/null || echo 'see the Releases page')"
+          elif [ "$existing" = "false" ]; then
+            # Published from a reviewed draft (or a re-run): the assets on the
+            # Release must be the files this run uploads to PyPI.
+            gh release upload "$TAG" --clobber "${files[@]}"
+          elif [ -n "$existing" ]; then
+            echo "::error::$TAG still has a draft release; publish or delete it"; exit 1
+          else
+            gh release create "$TAG" --verify-tag --title "odoo-tools $TAG" \
+              --notes-file assets/release-notes.md "${files[@]}"
+          fi
 
   mirror:
     needs: github-release
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
     permissions:
       contents: read
       packages: write
@@ -222,6 +269,7 @@ jobs:
 
   pypi:
     needs: github-release
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
