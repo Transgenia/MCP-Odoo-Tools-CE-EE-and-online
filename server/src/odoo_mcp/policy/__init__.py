@@ -11,7 +11,11 @@ Modules:
   * ``tiers``: the data (tiers, NEVER, delegation, outbound methods, fields);
   * ``classify``: method classes, argument shapes and field paths of a call;
   * ``model``: profiles, rules and the decision;
-  * ``loader``: the settings and the file, validated (E1-E20, W1-W7).
+  * ``loader``: the settings and the file, validated (E1-E20, W1-W7);
+  * ``check``: Layer A, a tool call decided from its declared accesses and its
+    arguments before any session exists;
+  * ``texts``: what the policy tells the agent (refusals, the instructions line,
+    the description suffix).
 
 Pure: no Odoo call, no session, and no I/O except reading the policy file once.
 """

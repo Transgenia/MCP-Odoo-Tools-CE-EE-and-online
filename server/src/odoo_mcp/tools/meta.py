@@ -7,7 +7,25 @@ from __future__ import annotations
 from typing import Any
 
 from ..compat import resolve_model
-from ..registry import ToolContext, obj, registry
+from ..compat.detect import EnvFacts
+from ..errors import CompatError, OdooFault, TransportError
+from ..policy.texts import ADMIN_WARNING
+from ..registry import NO_MODEL, Access, Internal, ToolContext, obj, registry
+
+
+def _administrator(ctx: ToolContext, facts: EnvFacts) -> bool | None:
+    """Whether the signed-in user is an administrator (base.group_system); ``None``
+    when that cannot be told: the policy closes res.users, or the call fails."""
+    if not ctx.policy.decide("inspect", "res.users").allowed:
+        return None
+    try:
+        if facts.version >= 18:  # a record method from 18.0
+            return bool(ctx.session.execute("res.users", "has_group", ["base.group_system"],
+                                            ids=[ctx.session.uid]))
+        # a model method before, which checks the current user
+        return bool(ctx.session.execute("res.users", "has_group", ["base.group_system"]))
+    except (OdooFault, TransportError, CompatError):
+        return None
 
 
 @registry.tool(
@@ -15,15 +33,25 @@ from ..registry import ToolContext, obj, registry
     "Check the connection end to end (signs in with the configured credentials) "
     "and return the target Odoo version, edition (community/enterprise), "
     "deployment (onprem/saas), the active transport (json2, jsonrpc or xmlrpc) and "
-    "transport_notice, set when the deprecated /xmlrpc or /jsonrpc is in use on Odoo 19+.",
+    "transport_notice, set when the deprecated /xmlrpc or /jsonrpc is in use on Odoo 19+. "
+    "'policy' describes the odoo-tools permission policy in force (profile, file, digest, "
+    "hidden tools, openings, warnings, or the error that locked it).",
     obj({}),
+    access=Access(
+        internal=(Internal("res.users", frozenset({"has_group"}),
+                           reason="W10: whether the Odoo user is an administrator"),),
+    ),
 )
 def odoo_version(ctx: ToolContext, args: dict[str, Any]) -> Any:
+    policy = ctx.policy
+    if policy is not None and policy.locked:
+        # Locked: say why without contacting Odoo (the server built no session).
+        return {"policy": policy.describe(registry.all()), "note": str(policy.lock_error())}
     # The version itself needs no credentials; signing in first makes this the
     # connection check the guided route and /odoo-doctor rely on.
     _ = ctx.session.uid
     facts = ctx.session.facts()
-    return {
+    result: dict[str, Any] = {
         "version": facts.version,
         "raw_version": facts.raw_version,
         "edition": facts.edition,
@@ -32,12 +60,19 @@ def odoo_version(ctx: ToolContext, args: dict[str, Any]) -> Any:
         # Odoo 19 deprecates the legacy endpoints and Odoo 22 removes them.
         "transport_notice": getattr(ctx.session.transport, "transport_notice", None),
     }
+    if policy is not None:
+        block = policy.describe(registry.all())
+        if _administrator(ctx, facts):
+            block["warnings"].append({"code": "W10", "text": ADMIN_WARNING})
+        result["policy"] = block
+    return result
 
 
 @registry.tool(
     "odoo_connections",
     "List the Odoo instances this server currently has active sessions for.",
     obj({}),
+    access=NO_MODEL,
 )
 def odoo_connections(ctx: ToolContext, args: dict[str, Any]) -> Any:
     return {"connections": ctx.manager.connections()}
@@ -45,13 +80,15 @@ def odoo_connections(ctx: ToolContext, args: dict[str, Any]) -> Any:
 
 @registry.tool(
     "odoo_list_models",
-    "List Odoo models, optionally filtered by a name fragment.",
+    "List Odoo models, optionally filtered by a name fragment. Models the odoo-tools "
+    "permission policy allows nothing on are left out; hidden_by_policy counts them.",
     obj(
         {
             "like": {"type": "string", "description": "case-insensitive fragment to match model name"},
             "limit": {"type": "integer", "default": 200},
         }
     ),
+    access=Access(fixed=(("read", "ir.model"),)),
 )
 def odoo_list_models(ctx: ToolContext, args: dict[str, Any]) -> Any:
     domain: list[Any] = []
@@ -60,7 +97,12 @@ def odoo_list_models(ctx: ToolContext, args: dict[str, Any]) -> Any:
     rows = ctx.session.execute(
         "ir.model", "search_read", [domain], {"fields": ["model", "name"], "limit": args.get("limit", 200)}
     )
-    return {"models": rows}
+    if ctx.policy is None:
+        return {"models": rows}
+    # A model the permission policy allows nothing on (the secrets tier) is left out.
+    kept = [row for row in rows or []
+            if isinstance(row, dict) and ctx.policy.decide("inspect", row.get("model")).allowed]
+    return {"models": kept, "hidden_by_policy": len(rows or []) - len(kept)}
 
 
 @registry.tool(
@@ -74,6 +116,7 @@ def odoo_list_models(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model"],
     ),
+    access=Access(arg_ops=("inspect",)),
 )
 def odoo_fields_get(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = ctx.session.facts()
@@ -86,6 +129,7 @@ def odoo_fields_get(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "odoo_module_info",
     "Look up an Odoo module's install state and metadata by technical name.",
     obj({"name": {"type": "string"}}, required=["name"]),
+    access=Access(fixed=(("read", "ir.module.module"),)),
 )
 def odoo_module_info(ctx: ToolContext, args: dict[str, Any]) -> Any:
     rows = ctx.session.execute(
@@ -103,6 +147,7 @@ def odoo_module_info(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "(or that telemetry is disabled). Read-only: renders the payload for human "
     "review, never transmits anything.",
     obj({}),
+    access=NO_MODEL,
 )
 def odoo_telemetry_preview(ctx: ToolContext, args: dict[str, Any]) -> Any:
     from ..telemetry import build_optin_payload, is_opted_in

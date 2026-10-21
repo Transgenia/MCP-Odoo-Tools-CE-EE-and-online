@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..errors import CompatError
-from ..registry import ToolContext, obj, registry
+from ..registry import Access, ToolContext, obj, registry
 
 
 @registry.tool(
@@ -31,6 +31,7 @@ from ..registry import ToolContext, obj, registry
         },
         required=["report_name", "ids"],
     ),
+    access=Access(stub=True),  # it never calls Odoo, so the policy has nothing to check
 )
 def odoo_report(ctx: ToolContext, args: dict[str, Any]) -> Any:
     raise CompatError(

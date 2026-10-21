@@ -28,7 +28,7 @@ from typing import Any
 from ..compat import has_capability, method_available, requires_edition, resolve_model
 from ..compat.detect import EnvFacts, parse_version
 from ..errors import CompatError, OdooFault, TransportError
-from ..registry import ToolContext, obj, registry
+from ..registry import Access, Internal, ToolContext, obj, registry
 from ..transport.json2_signatures import (
     JSON2_FIRST_SERIES,
     MODEL_SIGNATURES,
@@ -185,6 +185,12 @@ def _many2one(value: Any) -> Any:
     "plan, about 1 call/s, 5-200 e-mails/day, data modules only). Odoo 10-19; what a "
     "version lacks is null.",
     obj({}),
+    # A section the policy refuses is reported in "unavailable"; the rest still runs.
+    access=Access(
+        fixed=(("read", "res.users"), ("read", "res.company"), ("read", "res.users.apikeys"),
+               ("read", "ir.module.module"), ("inspect", "res.partner")),
+        degrade=True,
+    ),
 )
 def odoo_online_profile(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session
@@ -413,6 +419,7 @@ def builtin_methods(model: str, series: Series, facts: EnvFacts) -> list[dict[st
         },
         required=["model"],
     ),
+    access=Access(arg_ops=("inspect",)),
 )
 def odoo_api_catalog(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session
@@ -499,7 +506,8 @@ def odoo_api_catalog(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "may do on a model: read, write, create and unlink, or the subset in 'operations', plus "
     "export_allowed (group base.group_allow_export, Odoo 16+). Model level (access rights) "
     "by default; with 'ids' on Odoo 18+ the record rules of those records count too. Uses "
-    "has_access on Odoo 18+ and check_access_rights on 10-17. Changes nothing.",
+    "has_access on Odoo 18+ and check_access_rights on 10-17. 'policy' says what the "
+    "odoo-tools permission policy allows on top of that. Changes nothing.",
     obj(
         {
             "model": {"type": "string", "description": "technical model name, e.g. sale.order"},
@@ -517,6 +525,11 @@ def odoo_api_catalog(ctx: ToolContext, args: dict[str, Any]) -> Any:
             },
         },
         required=["model"],
+    ),
+    access=Access(
+        arg_ops=("inspect",),
+        internal=(Internal("res.users", frozenset({"has_group"}),
+                           reason="export_allowed: base.group_allow_export of this user"),),
     ),
 )
 def odoo_access_check(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -560,6 +573,16 @@ def odoo_access_check(ctx: ToolContext, args: dict[str, Any]) -> Any:
         notes.append("A refused operation comes from access rights (ir.model.access) or, at "
                      "record level, record rules (ir.rule) of this user's groups; an "
                      "administrator changes them in Settings > Users & Companies.")
+    policy_block: dict[str, bool] | None = None
+    if ctx.policy is not None:
+        # The odoo-tools permission policy is a second layer on top of Odoo's.
+        policy_block = {}
+        for operation in operations:
+            decision = ctx.policy.decide(operation, model)
+            policy_block[operation] = decision.allowed
+            if access[operation] and not decision.allowed:
+                notes.append(f"'{operation}' is allowed by Odoo for this user but refused by "
+                             f"the odoo-tools permission policy (rule {decision.rule})")
     result: dict[str, Any] = {
         "model": model,
         "uid": uid,
@@ -568,6 +591,8 @@ def odoo_access_check(ctx: ToolContext, args: dict[str, Any]) -> Any:
         "access": access,
         "export_allowed": export_allowed,
     }
+    if policy_block is not None:
+        result["policy"] = policy_block
     if ids:
         result["ids"] = ids
     if notes:
@@ -634,6 +659,22 @@ def _m2o_id(value: Any) -> int | None:
             },
         },
         required=["model", "res_id"],
+    ),
+    # The record's own attachments only, read through pinned calls.
+    access=Access(
+        arg_ops=("read",),
+        fixed=(("read", "ir.attachment"),),
+        internal=(
+            Internal("ir.attachment", frozenset({"search_read"}),
+                     reason="the attachments of this one record"),
+            Internal("ir.attachment", frozenset({"read"}),
+                     reason="the main attachment and invoice PDF the record points to"),
+            Internal("ir.attachment", frozenset({"read"}),
+                     reason="whether attachment_id belongs to this record"),
+            Internal("ir.attachment", frozenset({"read"}),
+                     reason="the content of attachment_id, once it is shown to be this "
+                     "record's"),
+        ),
     ),
 )
 def odoo_record_documents(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -819,7 +860,21 @@ _ROWS_NOTE = "rows.from and rows.to in messages are 0-based indexes into 'rows'"
         },
         required=["model", "fields", "rows"],
     ),
+    # load() upserts, so an import needs create and write.
+    access=Access(
+        arg_ops=("create", "write"),
+        columns_arg="fields",
+        internal=(
+            Internal("base_import.import", frozenset({"create"}),
+                     reason="the import wizard of this dry run"),
+            Internal("base_import.import", frozenset({"execute_import"}),
+                     reason="the dry run, on the wizard this call created"),
+            Internal("base_import.import", frozenset({"unlink"}),
+                     reason="removing the wizard this call created"),
+        ),
+    ),
     read_only=False,
+    destructive=False,
 )
 def odoo_import_preview(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session
@@ -894,7 +949,9 @@ def odoo_import_preview(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "fields", "rows"],
     ),
+    access=Access(arg_ops=("create", "write"), columns_arg="fields"),
     read_only=False,
+    destructive=True,
 )
 def odoo_import(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session

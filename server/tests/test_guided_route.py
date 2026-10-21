@@ -49,7 +49,10 @@ dl = _load_deploy_local()
 def test_initialize_sends_the_guided_route_instructions() -> None:
     result = McpServer(Settings()).initialize({"protocolVersion": "2025-06-18"})
     text = result["instructions"]
-    assert text == INSTRUCTIONS
+    # The guided route first, then the line of the permission policy (1.5.0).
+    assert text.startswith(INSTRUCTIONS)
+    assert text[len(INSTRUCTIONS):].strip().startswith(
+        "Permission policy for this connection: profile 'standard'")
     assert SETUP_ENTRY in text and "/odoo-tools:deploy-local" in text
     assert SUPPORT_EMAIL in text and SUPPORT_WHATSAPP_URL in text
     assert len(text) < 2000  # clients may truncate long server instructions

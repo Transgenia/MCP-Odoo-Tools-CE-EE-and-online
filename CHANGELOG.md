@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ## [Unreleased]
 
+### Changed (secure defaults)
+
+- **Permission policy.** The MCP server now applies a permission profile on top of the
+  Odoo user's own access rights. The default, `standard`, reads, creates, updates and runs
+  business methods, but does not delete, make Studio-style changes, send e-mail or SMS
+  (internal notes are fine), change users, rights, modules, settings, bank accounts, fiscal
+  sequences or chatter history, or read stored secrets (system parameters, mail-server,
+  payment-provider and CFDI certificate credentials). Credential-like fields (passwords,
+  tokens, keys) are refused in field lists, values, filters, grouping and sorting. The other
+  profiles are `readonly`, `builder` (adds fields, views and automations; for sandboxes and
+  staging, since automations run code on the server) and `full`, which keeps 1.4 behaviour:
+  set `ODOO_POLICY=full`. API-key changes and module uninstall stay refused in every
+  profile. An unknown profile or an invalid policy file (`ODOO_POLICY_FILE`) locks every
+  tool except `odoo_version`, which shows the error.
+- Tools the profile forbids on every model are no longer listed: `standard` lists 25 of the
+  28 (not `odoo_unlink`, `odoo_add_field` or `odoo_add_automation`). A hidden tool called by
+  name explains why. Every refusal names the profile, the rule and what changes it, and is
+  decided from the call's arguments before any session exists, so nothing reaches Odoo.
+- With Read-only mode on, the write tools are no longer listed (calling one still explains
+  why).
+- The write tools state `destructiveHint` in their annotations: false for `odoo_create`,
+  `odoo_add_field` and `odoo_import_preview`, true for the others.
+- `odoo_version` returns a `policy` block (profile, file, digest, hidden tools, openings,
+  warnings, or the error that locked it) and warns (W10) when the Odoo user is an
+  administrator. `odoo_access_check` returns `policy` next to Odoo's own answer, with a note
+  when Odoo allows what the policy refuses. `odoo_list_models` leaves out the models the
+  policy allows nothing on (`hidden_by_policy`). The server instructions gain one line with
+  the profile, its digest and the hidden tools.
+
 ### Changed
 
 - Release workflow: a manual run can now be a **draft** (`release.yml`, input
@@ -17,7 +46,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   `ir.actions.report._render_qweb_pdf`, which Odoo refuses over RPC on every
   version, so it could never succeed. Use `odoo_record_documents` for the PDFs Odoo
   already stored (for example an invoice PDF made when it was sent or printed). The
-  tool is deprecated and removed in 2.0.0.
+  tool is deprecated and removed in 2.0.0. It says so even before a connection is
+  configured, since it never asks for a session.
 
 ### Removed
 

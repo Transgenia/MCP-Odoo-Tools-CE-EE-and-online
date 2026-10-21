@@ -25,7 +25,7 @@ from typing import Any
 
 from ..compat import requires_edition, resolve_model
 from ..errors import CompatError, OdooFault
-from ..registry import ToolContext, obj, registry
+from ..registry import Access, Internal, ToolContext, obj, registry
 
 _FIELD_TYPES = (
     "char", "text", "html", "boolean", "integer", "float", "monetary",
@@ -90,6 +90,11 @@ def validate_safe_eval(code: str) -> None:
             )
 
 
+# The fixed calls the two tools make besides their schema change, each for a
+# reason; "$automation" is base.automation (base.action.rule on Odoo 10).
+_MODEL_ID = Internal("ir.model", frozenset({"search"}), reason="the id of the target model")
+
+
 def _model_id(ctx: ToolContext, model: str) -> int:
     ids = ctx.session.execute("ir.model", "search", [[["model", "=", model]]], {"limit": 1})
     if not ids:
@@ -127,7 +132,18 @@ def _model_id(ctx: ToolContext, model: str) -> int:
         },
         required=["model", "name", "label", "field_type"],
     ),
+    # A relation to a model whose fields the policy hides (secrets) is refused.
+    access=Access(
+        arg_ops=("schema",),
+        optional=(("inspect", "relation"),),
+        internal=(
+            _MODEL_ID,
+            Internal("ir.model.fields", frozenset({"create"}),
+                     reason="the new manual x_ field of the target model"),
+        ),
+    ),
     read_only=False,
+    destructive=False,
 )
 def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = ctx.session.facts()
@@ -245,7 +261,24 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "name", "code"],
     ),
+    access=Access(
+        arg_ops=("schema",),
+        fixed=(("create", "base.automation"), ("create", "ir.actions.server")),
+        internal=(
+            Internal("$automation", frozenset({"fields_get"}),
+                     reason="how the automation model links its code on this version"),
+            _MODEL_ID,
+            Internal("$automation", frozenset({"create"}),
+                     reason="the automation, on the target model"),
+            Internal("ir.actions.server", frozenset({"create"}),
+                     reason="the server action of a linked automation (before 16)"),
+            Internal("ir.actions.server", frozenset({"unlink"}),
+                     reason="removing the server action this call created, when the "
+                     "automation could not be created"),
+        ),
+    ),
     read_only=False,
+    destructive=True,
 )
 def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = ctx.session.facts()

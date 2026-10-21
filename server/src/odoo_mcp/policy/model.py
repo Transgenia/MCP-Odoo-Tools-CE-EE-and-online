@@ -287,6 +287,22 @@ class Policy:
 
         return load_policy(settings, tool_names)
 
+    # -- Layer A (policy/check.py) ---------------------------------------------
+    def check_tool(self, tool: Any) -> None:
+        """Refuse a tool ``tools/list`` hides (locked, unmapped, disabled, read-only,
+        a fixed touch refused, an operation allowed nowhere), whatever its arguments."""
+        from .check import check_tool
+
+        check_tool(self, tool)
+
+    def check(self, tool: Any, arguments: Mapping[str, Any]) -> Any:
+        """Layer A: decide a call from the tool's declared accesses and its arguments
+        alone, before any session exists. Returns the call's ``CallScope``; raises
+        :class:`~odoo_mcp.errors.PolicyDenied`."""
+        from .check import check
+
+        return check(self, tool, arguments)
+
     # -- decide -----------------------------------------------------------------
     def decide(self, op: str, model: Any, method: str | None = None,
                args: Mapping[str, Any] | None = None) -> Decision:
@@ -531,9 +547,32 @@ class Policy:
             return False
         if any((m, name) in WITHHELD_MODEL_FIELDS for m in names):
             return profile is None or profile.name != "builder"
-        if name in NOT_WITHHELD:
+        return _credential_like(name)
+
+    def field_withheld_everywhere(self, name: str) -> bool:
+        """Whether a field named ``name`` is withheld whatever its model is.
+
+        For a later segment of a path (``partner_id.signup_token``), whose model
+        is known only from field metadata: a credential-like name that no
+        ``fields.allow`` entry releases on any model, or a ``*.field`` entry of
+        ``fields.withhold``. What depends on the model is decided once the model
+        is known.
+        """
+        name = name.lower()
+        if f"*.{name}" in self.withhold:
+            return True
+        profile = self.profile
+        if profile is not None and profile.rules_off:
             return False
-        return name in WITHHELD_FIELD_NAMES or WITHHELD_FIELD_PATTERN.search(name) is not None
+        if any(released.rsplit(".", 1)[-1] == name for released in self._released):
+            return False
+        return _credential_like(name)
+
+    def field_withheld_by_file(self, model: str, name: str) -> bool:
+        """Whether ``fields.withhold`` names ``model.name`` (or ``*.name``)."""
+        name = name.lower()
+        names = model_aliases(model) if valid_model(model) else frozenset({model})
+        return f"*.{name}" in self.withhold or any(f"{m}.{name}" in self.withhold for m in names)
 
     # -- reporting --------------------------------------------------------------
     def opened_sensitive(self) -> list[dict[str, Any]]:
@@ -597,6 +636,13 @@ class Policy:
             "Every Odoo tool except odoo_version is disabled. Nothing was sent to Odoo.",
             remediation=remediation, rule="locked", layer="tool",
         )
+
+
+def _credential_like(name: str) -> bool:
+    """The built-in list: credential-like names (``name`` is lowercased)."""
+    if name in NOT_WITHHELD:
+        return False
+    return name in WITHHELD_FIELD_NAMES or WITHHELD_FIELD_PATTERN.search(name) is not None
 
 
 def _never(op: str, model: str, method: str | None) -> Never | None:

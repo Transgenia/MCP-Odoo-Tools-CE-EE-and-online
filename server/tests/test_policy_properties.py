@@ -7,8 +7,8 @@ and random ``x_`` names, with a random profile and, where the property allows,
 the read-only flag. Every test seeds its own ``random.Random(1729)``, so the
 cases are the same on every run and need no extra dependency.
 
-The letters follow the design's list (a, c, d, f to k, m); b, e and l need the
-tool mappings and the guard, which come with the server wiring.
+The letters follow the design's list (a to k, m); l needs the guarded session.
+Properties b and e run over the real tool mappings (``registry.Access``).
 """
 
 from __future__ import annotations
@@ -20,6 +20,10 @@ import random
 from collections.abc import Callable
 from typing import Any
 
+import pytest
+
+from odoo_mcp.config import Settings
+from odoo_mcp.errors import PolicyError
 from odoo_mcp.policy.loader import ERRORS, load_bytes, policy_from_document
 from odoo_mcp.policy.model import PROFILES, Policy, Rule, model_aliases
 from odoo_mcp.policy.tiers import (
@@ -30,6 +34,7 @@ from odoo_mcp.policy.tiers import (
     WRITE_OPERATIONS,
 )
 from odoo_mcp.registry import registry
+from odoo_mcp.server import McpServer
 from odoo_mcp.tools import crud  # noqa: F401  (registers the tools)
 
 SEED = 1729
@@ -182,6 +187,82 @@ def test_a_the_read_only_ceiling() -> None:
             d = p.decide(op, model, method, args)
             assert not d.allowed, (document, op, model, method)
             assert d.rule == "readonly" or d.rule.startswith("never:"), d
+
+
+def test_b_never_weaker_than_odoo_readonly() -> None:
+    """With read-only on, tools/list lists read-only tools only, whatever the profile
+    and the file, and every write tool is refused when called by name."""
+    tools = registry.all()
+    read_only = {tool.name for tool in tools if tool.read_only}
+    srv = McpServer(Settings(readonly=True), manager=object())  # type: ignore[arg-type]
+    rng = random.Random(SEED)
+    for _ in range(CASES):
+        p = build(random_document(rng), rng.choice(PROFILE_NAMES), readonly=True)
+        srv.policy = p
+        listed = {entry["name"] for entry in srv.list_tools()["tools"]}
+        assert listed <= read_only, listed - read_only
+        tool = rng.choice([t for t in tools if not t.read_only])
+        with pytest.raises(PolicyError):
+            p.check_tool(tool)
+
+
+# The methods odoo_execute samples: business, outbound and every method class.
+EXECUTE_METHODS = METHODS + ["unlink", "write", "create", "copy", "read", "search_read",
+                             "fields_get", "load", "action_archive"]
+
+
+def random_arguments(rng: random.Random, tool: Any, document: dict[str, Any]) -> dict[str, Any]:
+    """A call of ``tool`` with only what its touches read: the model, the method of
+    odoo_execute (with an internal note now and then) and the optional arguments."""
+    arguments: dict[str, Any] = {}
+    if "model" in tool.input_schema.get("properties", {}):
+        keys = [k for k in document.get("models", {}) if k != "*" and not k.endswith(".*")]
+        arguments["model"] = rng.choice(keys) if keys and rng.random() < 0.5 else (
+            random_model(rng))
+    if tool.name == "odoo_execute":
+        method = rng.choice(EXECUTE_METHODS)
+        arguments.update(method=method, ids=[1])
+        if method == "message_post" and rng.random() < 0.4:
+            arguments["kwargs"] = {"subtype_xmlid": "mail.mt_note"}
+    for _op, argument in tool.access.optional:
+        if rng.random() < 0.6:
+            arguments[argument] = random_model(rng)
+    return arguments
+
+
+def test_e_visibility_is_sound_and_complete() -> None:
+    """A hidden tool is refused for every sampled model and method; a call Layer A
+    allows comes from a listed tool. Visibility may only over-approximate."""
+    tools = registry.all()
+    rng = random.Random(SEED)
+    allowed_calls = refused_hidden = 0
+    for _ in range(CASES):
+        profile, readonly = rng.choice(PROFILE_NAMES), rng.random() < 0.15
+        document = random_document(rng)
+        p = build(document, profile, readonly)
+        for tool in rng.sample(tools, 8):
+            visible = p.tool_visible(tool)
+            try:
+                p.check_tool(tool)
+                runs = True
+            except PolicyError:
+                runs = False
+            assert runs is visible, (tool.name, document, profile, readonly)
+            for _ in range(3):
+                arguments = random_arguments(rng, tool, document)
+                try:
+                    p.check(tool, arguments)
+                    allowed = True
+                except PolicyError:
+                    allowed = False
+                exempt = tool.name in p.disabled or (p.readonly and not tool.read_only)
+                if allowed and not exempt:
+                    allowed_calls += 1
+                    assert visible, (tool.name, arguments, document, profile, readonly)
+                if not visible and not exempt:
+                    refused_hidden += 1
+                    assert not allowed, (tool.name, arguments, document, profile)
+    assert allowed_calls > 10000 and refused_hidden > 3000
 
 
 def test_c_patterns_never_open_a_tier_or_an_outbound_method() -> None:

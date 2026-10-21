@@ -1,12 +1,34 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
-"""Tool registry: declarative tool definitions the MCP server iterates."""
+"""Tool registry: declarative tool definitions the MCP server iterates.
+
+Every tool declares its permission mapping (:class:`Access`): the models it
+reads or changes, so the permission policy (``odoo_mcp.policy``) can decide a
+call before any session exists. A tool without one cannot be registered, and a
+definition placed in the registry by hand without one is never listed and is
+refused when called (fail closed).
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+from .policy.model import Touch
+
+__all__ = [
+    "NO_MODEL",
+    "Access",
+    "Internal",
+    "ToolContext",
+    "ToolDef",
+    "ToolRegistry",
+    "Touch",
+    "obj",
+    "registry",
+    "validate_arguments",
+]
 
 
 @dataclass
@@ -16,15 +38,63 @@ class ToolContext:
     ``session`` is the resolved :class:`odoo_mcp.session.OdooSession` for this
     call; ``manager`` is the :class:`odoo_mcp.tenancy.ConnectionManager` (needed
     by tools that operate above a single tenant, e.g. listing connections).
+    ``policy`` is the server's permission policy; only ``odoo_version``,
+    ``odoo_list_models`` and ``odoo_access_check`` read it, and a handler called
+    directly (tests) gets ``None`` and behaves as before the policy existed.
     """
 
     session: Any
     manager: Any
+    policy: Any = None
 
 
 # A tool handler receives (context, arguments) and returns a JSON-serialisable
 # result.
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Any]
+
+
+@dataclass(frozen=True)
+class Internal:
+    """A fixed call a tool makes that the agent does not choose (curated verb mechanics).
+
+    ``model`` is a literal model name, or ``"$automation"`` for the automation
+    model of the target version (``base.automation``, ``base.action.rule`` on
+    Odoo 10). ``check`` is a predicate on the actual call; ``reason`` says why
+    the tool needs the call.
+    """
+
+    model: str
+    methods: frozenset[str]
+    check: Callable[[Any, Any], bool] | None = None
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "methods", frozenset(self.methods))
+
+
+@dataclass(frozen=True)
+class Access:
+    """What a tool reads or changes, declared for the permission policy.
+
+    A tool declares every model whose data it returns or whose records it
+    leaves changed; the fixed mechanics calls it makes are ``internal``.
+    """
+
+    arg_ops: tuple[str, ...] = ()  # operations on the model in args["model"]
+    fixed: tuple[tuple[str, str], ...] = ()  # (op, model) on every call
+    optional: tuple[tuple[str, str], ...] = ()  # (op, argument): when that argument is given
+    dynamic: Callable[[dict[str, Any]], list[Touch]] | None = None  # odoo_execute
+    internal: tuple[Internal, ...] = ()
+    degrade: bool = False  # odoo_online_profile: a refused section degrades, the tool runs
+    columns_arg: str | None = None  # imports: args[columns_arg] are load() column paths
+    stub: bool = False  # odoo_report in 1.5.x: it never calls Odoo
+
+
+# The mapping of a tool that touches no model of the agent's choosing.
+NO_MODEL = Access()
+
+MISSING_MAPPING = ("tool '{name}' has no permission mapping: pass access=... to registry.tool "
+                   "(docs/policy.md#tool-mapping)")
 
 
 @dataclass
@@ -34,6 +104,11 @@ class ToolDef:
     input_schema: dict[str, Any]
     handler: ToolHandler
     read_only: bool = True
+    # None only for a definition built by hand: never listed, refused when called.
+    access: Access | None = None
+    # For a tool that is not read-only: whether it may overwrite or delete (MCP
+    # destructiveHint). MCP assumes true when a tool says nothing.
+    destructive: bool | None = None
 
 
 class ToolRegistry:
@@ -43,6 +118,8 @@ class ToolRegistry:
     def register(self, tool: ToolDef) -> None:
         if tool.name in self._tools:
             raise ValueError(f"duplicate tool name: {tool.name}")
+        if tool.access is None:
+            raise ValueError(MISSING_MAPPING.format(name=tool.name))
         self._tools[tool.name] = tool
 
     def tool(
@@ -51,7 +128,9 @@ class ToolRegistry:
         description: str,
         input_schema: dict[str, Any],
         *,
+        access: Access,
         read_only: bool = True,
+        destructive: bool | None = None,
     ) -> Callable[[ToolHandler], ToolHandler]:
         def deco(fn: ToolHandler) -> ToolHandler:
             self.register(
@@ -61,6 +140,8 @@ class ToolRegistry:
                     input_schema=input_schema,
                     handler=fn,
                     read_only=read_only,
+                    access=access,
+                    destructive=destructive,
                 )
             )
             return fn

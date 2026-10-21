@@ -277,6 +277,20 @@ def extract(method: str, args: Any = None, kwargs: Any = None, *, ids: Any = _NO
     return out
 
 
+def named_parts(label: str, arguments: Mapping[str, Any],
+                roles: Mapping[str, str | None]) -> CallArgs:
+    """The parts of a dedicated tool's arguments, read by the same parsers as an
+    RPC: ``roles`` maps the tool's argument names to what they hold (a domain, a
+    field list, values...). ``label`` names the tool in a ShapeError."""
+    out = CallArgs(label, "tool")
+    for name, value in arguments.items():
+        role = roles.get(name)
+        if role is not None:
+            out.named[name] = value
+            _collect(out, role, value)
+    return out
+
+
 def _collect(out: CallArgs, role: str | None, value: Any) -> None:
     method = out.method
     if role is None:
@@ -367,6 +381,37 @@ def domain_paths(domain: Any, *, method: str = "domain", prefix: tuple[str, ...]
                 raise ShapeError(method, "a having domain cannot hold any/not any")
             paths.extend(domain_paths(right, method=method, prefix=path, depth=depth + 1))
     return paths
+
+
+def domain_conjuncts(domain: Any) -> list[list[Any]] | None:
+    """The terms the top level of a prefix-notation domain ANDs together, nested
+    ``'&'`` opened: ``['&', A, '|', B, C]`` gives ``[[A], ['|', B, C]]``. ``None``
+    when the domain is not a well-formed list of terms."""
+    if not isinstance(domain, (list, tuple)):
+        return None
+    tokens = list(domain)
+    terms: list[list[Any]] = []
+    i = 0
+    while i < len(tokens):
+        start, need = i, 1
+        while need and i < len(tokens):
+            token = tokens[i]
+            i += 1
+            if isinstance(token, str) and token in ("&", "|"):
+                need += 1
+            elif not (isinstance(token, str) and token == "!"):
+                need -= 1
+        if need:
+            return None
+        term = tokens[start:i]
+        if isinstance(term[0], str) and term[0] == "&":
+            inner = domain_conjuncts(term[1:])
+            if inner is None:
+                return None
+            terms.extend(inner)
+        else:
+            terms.append(term)
+    return terms
 
 
 def field_paths(fields: Any, *, method: str = "fields") -> list[tuple[str, ...]]:

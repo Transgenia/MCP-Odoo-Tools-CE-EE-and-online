@@ -9,7 +9,7 @@ import pytest
 from odoo_mcp.config import Settings
 from odoo_mcp.errors import CompatError
 from odoo_mcp.registry import ToolContext, registry
-from odoo_mcp.server import check_readonly
+from odoo_mcp.server import McpServer, check_readonly
 from odoo_mcp.tools.crud import odoo_read_group
 
 
@@ -28,6 +28,26 @@ def test_readonly_blocks_writes_but_not_reads() -> None:
         check_readonly(settings, write_tool)
     check_readonly(settings, read_tool)  # no raise
     check_readonly(Settings(), write_tool)  # disabled by default: no raise
+
+
+WRITE_TOOLS = {t.name for t in registry.all() if not t.read_only}
+
+
+@pytest.mark.parametrize("profile", ["readonly", "standard", "builder", "full"])
+def test_readonly_hides_the_write_tools_and_keeps_the_message(profile: str) -> None:
+    # 1.5.0: the write tools are no longer listed under ODOO_READONLY=1, whatever
+    # the permission profile; calling one by name still gives the same message.
+    server = McpServer(Settings(readonly=True, policy_profile=profile))
+    listed = {t["name"] for t in server.list_tools()["tools"]}
+    assert len(WRITE_TOOLS) == 9 and not listed & WRITE_TOOLS
+    assert listed == {t.name for t in registry.all() if t.read_only}
+    for name in sorted(WRITE_TOOLS):
+        result = server.call_tool({"name": name, "arguments": {}})
+        assert result["isError"] is True
+        assert result["content"][0]["text"] == (
+            f"tool '{name}' is disabled: the server runs with ODOO_READONLY=1 \u2014 unset "
+            "ODOO_READONLY and restart for writes, or use a read-only tool (search/read/"
+            "fields_get/export/report/odoo_online_profile/odoo_access_check)")
 
 
 class _FakeSession:

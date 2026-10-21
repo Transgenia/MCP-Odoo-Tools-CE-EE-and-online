@@ -15,7 +15,8 @@ from typing import Any
 
 from ..compat import requires_edition, resolve_fields, resolve_method, resolve_model
 from ..errors import CompatError
-from ..registry import ToolContext, obj, registry
+from ..policy.check import execute_touches
+from ..registry import Access, ToolContext, obj, registry
 
 _DOMAIN = {
     "type": "array",
@@ -49,6 +50,7 @@ def _remap_fields(ctx: ToolContext, model: str, fields: list[str] | None) -> tup
         },
         required=["model"],
     ),
+    access=Access(arg_ops=("read",)),
 )
 def odoo_search(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -62,6 +64,7 @@ def odoo_search(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "odoo_search_count",
     "Count records matching a domain.",
     obj({"model": {"type": "string"}, "domain": _DOMAIN}, required=["model"]),
+    access=Access(arg_ops=("read",)),
 )
 def odoo_search_count(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -81,6 +84,7 @@ def odoo_search_count(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "ids"],
     ),
+    access=Access(arg_ops=("read",)),
 )
 def odoo_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -105,6 +109,7 @@ def odoo_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model"],
     ),
+    access=Access(arg_ops=("read",)),
 )
 def odoo_search_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -121,7 +126,9 @@ def odoo_search_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "odoo_create",
     "Create one record. Returns the new id. (write operation)",
     obj({"model": {"type": "string"}, "values": {"type": "object"}}, required=["model", "values"]),
+    access=Access(arg_ops=("create",)),
     read_only=False,
+    destructive=False,
 )
 def odoo_create(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -141,7 +148,9 @@ def odoo_create(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "ids", "values"],
     ),
+    access=Access(arg_ops=("write",)),
     read_only=False,
+    destructive=True,
 )
 def odoo_write(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -157,7 +166,9 @@ def odoo_write(ctx: ToolContext, args: dict[str, Any]) -> Any:
         {"model": {"type": "string"}, "ids": {"type": "array", "items": {"type": "integer"}}},
         required=["model", "ids"],
     ),
+    access=Access(arg_ops=("unlink",)),
     read_only=False,
+    destructive=True,
 )
 def odoo_unlink(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -195,7 +206,10 @@ def odoo_unlink(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "method"],
     ),
+    # call on the model for the method, plus the operations of its class
+    access=Access(dynamic=execute_touches),
     read_only=False,
+    destructive=True,
 )
 def odoo_execute(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], _facts(ctx))
@@ -232,6 +246,7 @@ def odoo_execute(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "fields", "groupby"],
     ),
+    access=Access(arg_ops=("read",)),
 )
 def odoo_read_group(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = _facts(ctx)
