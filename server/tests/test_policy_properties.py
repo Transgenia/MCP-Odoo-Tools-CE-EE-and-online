@@ -7,8 +7,9 @@ and random ``x_`` names, with a random profile and, where the property allows,
 the read-only flag. Every test seeds its own ``random.Random(1729)``, so the
 cases are the same on every run and need no extra dependency.
 
-The letters follow the design's list (a to k, m); l needs the guarded session.
-Properties b and e run over the real tool mappings (``registry.Access``).
+The letters follow the design's list (a to m). Properties b and e run over the
+real tool mappings (``registry.Access``), and l over the server and the guarded
+session (Layer B) with a scripted Odoo session.
 """
 
 from __future__ import annotations
@@ -21,9 +22,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from policy_fakes import ScriptedSession
+from policy_fakes import server as guarded_server
 
 from odoo_mcp.config import Settings
 from odoo_mcp.errors import PolicyError
+from odoo_mcp.policy.check import scope_for
 from odoo_mcp.policy.loader import ERRORS, load_bytes, policy_from_document
 from odoo_mcp.policy.model import PROFILES, Policy, Rule, model_aliases
 from odoo_mcp.policy.tiers import (
@@ -627,3 +631,106 @@ def test_m_an_expired_entry_never_allows_more_than_the_file_without_its_allowanc
                 checked += 1
                 assert baseline.decide(op, model, method, args).allowed, (entry, op, model, method)
     assert checked > 3000
+
+
+# --- l. no leak ------------------------------------------------------------------------------
+
+LEAK_MARKERS = ("SECRET-MARKER-{n}", "leak{n}@attacker.example", "line\nSECRET-MARKER-{n}",
+                "\x1b[31mSECRET-MARKER-{n}\x1b[0m", "SECRET-MARKER-{n}\r\nX-Injected: 1")
+LEAK_PROBES = ("SECRET-MARKER", "attacker.example", "\x1b", "X-Injected")
+
+
+def _marker(rng: random.Random) -> str:
+    return rng.choice(LEAK_MARKERS).format(n=rng.randint(0, 9999))
+
+
+def _marked_value(rng: random.Random, depth: int = 0) -> Any:
+    """A value with a marker somewhere inside: plain, in a command, in a dict."""
+    roll = rng.random()
+    if depth > 2 or roll < 0.4:
+        return _marker(rng)
+    if roll < 0.6:
+        return [[0, 0, {rng.choice(["name", "email", "acc_number"]): _marked_value(rng,
+                                                                                   depth + 1)}]]
+    if roll < 0.8:
+        return [[1, rng.randint(1, 9), {"name": _marked_value(rng, depth + 1)}]]
+    return {_marker(rng): 1}
+
+
+def _marked_arguments(rng: random.Random, tool: Any) -> dict[str, Any]:
+    """Arguments of ``tool`` that pass its schema, with markers where values go and,
+    now and then, where names go (models, methods, fields, keys)."""
+    props = tool.input_schema.get("properties", {})
+    marker = _marker(rng)
+    name = marker if rng.random() < 0.2 else None
+    arguments: dict[str, Any] = {}
+    if "model" in props:
+        arguments["model"] = name or rng.choice(BUSINESS + TIER_MODELS)
+    if "domain" in props:
+        left = name or rng.choice(["name", "email", "partner_id.name", "provider_id.name",
+                                   "res_model"])
+        arguments["domain"] = [[left, rng.choice(["=", "ilike", "any"]), marker]]
+    if "fields" in props:
+        arguments["fields"] = [name or rng.choice(["name", "email", "amount_total:sum"])]
+    if "groupby" in props:
+        arguments["groupby"] = [name or "name"]
+    if "order" in props or "orderby" in props:
+        arguments["order" if "order" in props else "orderby"] = name or "name desc"
+    if "values" in props:
+        key = name or rng.choice(["name", "email", "child_ids", "bank_ids", "user_ids"])
+        arguments["values"] = {key: _marked_value(rng)}
+    if "ids" in props:
+        arguments["ids"] = [rng.randint(1, 9)]
+    for key in ("id", "res_id", "attachment_id"):
+        if key in props:
+            arguments[key] = rng.randint(1, 9)
+    if "method" in props:
+        arguments["method"] = name or rng.choice(["write", "message_post", "action_confirm",
+                                                  "search_read", "create", "unlink"])
+        arguments["kwargs"] = rng.choice([
+            {"context": {_marker(rng): 1}}, {"body": marker, "partner_ids": [1]},
+            {"vals": {"name": marker}}, {"domain": [[name or "name", "=", marker]]},
+            {"context": {"default_name": marker, "tracking_disable": True}}])
+    for key in ("field", "lang", "value", "label", "code", "like", "name", "report_name"):
+        if key in props:
+            arguments[key] = name if key == "field" and name else marker
+    if "rows" in props:
+        arguments["rows"] = [[marker] * len(arguments.get("fields") or [1])]
+    if "relation" in props and rng.random() < 0.5:
+        arguments["relation"] = name or "res.country"
+    if "field_type" in props:
+        arguments["field_type"] = "char"
+    return arguments
+
+
+def test_l_no_value_of_a_call_leaks_into_a_refusal_or_the_log(
+        caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Random arguments carrying markers (values, keys, names; newlines and ANSI
+    escapes) never appear in a refusal text or on stderr, whatever the profile and
+    the layer that refuses. In about a third of the cases Layer A grants every
+    declared touch, so the guarded session alone refuses. (The audit file comes
+    with design step 6.)"""
+    check, check_tool = Policy.check, Policy.check_tool
+    layer_b_alone = {"on": False}
+    monkeypatch.setattr(Policy, "check", lambda self, tool, arguments: (
+        scope_for(self, tool, arguments) if layer_b_alone["on"]
+        else check(self, tool, arguments)))
+    monkeypatch.setattr(Policy, "check_tool", lambda self, tool: (
+        None if layer_b_alone["on"] else check_tool(self, tool)))
+    tools = registry.all()
+    rng = random.Random(SEED)
+    refused_by: dict[str, int] = {"A": 0, "B": 0}
+    with caplog.at_level("DEBUG"):
+        for _ in range(CASES):
+            layer_b_alone["on"] = rng.random() < 0.35
+            p = build(random_document(rng), rng.choice(PROFILE_NAMES), rng.random() < 0.1)
+            srv = guarded_server(ScriptedSession(version=rng.choice([16, 17, 18])), p=p)
+            tool = rng.choice(tools)
+            arguments = _marked_arguments(rng, tool)
+            result = srv.call_tool({"name": tool.name, "arguments": arguments})
+            text = result["content"][0]["text"]
+            if result["isError"] and "permission policy" in text:
+                refused_by["B" if "stopped before" in text else "A"] += 1
+                assert not any(probe in text for probe in LEAK_PROBES), (tool.name, text)
+    assert not any(probe in caplog.text for probe in LEAK_PROBES), caplog.text[-2000:]
+    assert refused_by["A"] > 800 and refused_by["B"] > 500, refused_by

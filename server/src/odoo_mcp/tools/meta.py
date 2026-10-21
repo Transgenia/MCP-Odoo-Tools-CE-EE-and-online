@@ -9,6 +9,7 @@ from typing import Any
 from ..compat import resolve_model
 from ..compat.detect import EnvFacts
 from ..errors import CompatError, OdooFault, TransportError
+from ..policy.guard import user_has_group
 from ..policy.texts import ADMIN_WARNING
 from ..registry import NO_MODEL, Access, Internal, ToolContext, obj, registry
 
@@ -39,6 +40,7 @@ def _administrator(ctx: ToolContext, facts: EnvFacts) -> bool | None:
     obj({}),
     access=Access(
         internal=(Internal("res.users", frozenset({"has_group"}),
+                           check=user_has_group("base.group_system"),
                            reason="W10: whether the Odoo user is an administrator"),),
     ),
 )

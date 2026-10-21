@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from . import texts
@@ -53,12 +53,16 @@ from .model import Policy, Touch, model_aliases
 from .tiers import INSPECT, SAFE_CONTEXT_KEYS
 
 __all__ = [
+    "EFFECTIVE_LIMIT",
     "FIELD_ARGUMENTS",
     "SEARCH_METHODS",
     "CallScope",
     "check",
+    "check_attachment_pin",
+    "check_context",
     "check_tool",
     "execute_touches",
+    "scope_for",
     "touches_for",
 ]
 
@@ -85,20 +89,58 @@ SEARCH_METHODS = frozenset({"search", "search_read", "search_count", "read_group
 ATTACHMENT = "ir.attachment"
 _PLAIN_VALUE = (str, int, float, bool, type(None))
 _FIELD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,127}")
+EFFECTIVE_LIMIT = 50  # the audit keeps at most 50 effective touches per call
 
 
 @dataclass
 class CallScope:
-    """What Layer A granted to one ``tools/call``: the tool, the model the agent
-    chose and the touches the tool declared for it (the audit's ``touches``)."""
+    """One ``tools/call`` as the policy sees it.
+
+    Layer A fills the first part: the tool, the model the agent chose and the
+    touches the tool declared for it (the audit's ``touches``), plus what the
+    guarded session (Layer B, ``policy/guard.py``) needs: the policy, the tool's
+    ``Access`` and the call's arguments, which only the internal predicates read
+    and which are never logged or written anywhere.
+
+    Layer B records the rest while the tool runs: ``effective``, the operations
+    it decided on the actual Odoo calls (``op:model[:method]``, the relational
+    ones included); ``withheld``, the ``model.field`` names it removed from the
+    results; ``n``, the rows read and the records changed; and the ids this call
+    created, the ids its searches found and the rows its reads returned, which
+    the internal predicates check (an unlink of a wizard this call created, the
+    content of an attachment this call showed to be the record's).
+    """
 
     tool: str
     model: str | None = None
     touches: tuple[Touch, ...] = ()
+    policy: Policy | None = field(default=None, repr=False, compare=False)
+    access: Any = field(default=None, repr=False, compare=False)
+    arguments: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    effective: list[str] = field(default_factory=list)
+    withheld: set[str] = field(default_factory=set)
+    n: int = 0
+    created: dict[str, list[int]] = field(default_factory=dict, repr=False, compare=False)
+    found: dict[str, list[int]] = field(default_factory=dict, repr=False, compare=False)
+    records: dict[str, dict[int, dict[str, Any]]] = field(default_factory=dict, repr=False,
+                                                          compare=False)
 
     def touch_strings(self) -> list[str]:
         """The touches in the audit form, ``op:model[:method]``."""
         return [str(touch) for touch in self.touches]
+
+    def record(self, op: str, model: str, method: str | None = None) -> None:
+        """Add ``op:model[:method]`` to ``effective`` once (``method`` for a call only)."""
+        text = str(Touch(op, model, method if op == "call" else None))
+        if text not in self.effective and len(self.effective) < EFFECTIVE_LIMIT:
+            self.effective.append(text)
+
+    def annotate(self, result: Any) -> Any:
+        """``result`` plus ``policy_withheld_fields`` when the guard removed fields, so
+        nothing disappears silently."""
+        if self.withheld and isinstance(result, dict):
+            return {**result, "policy_withheld_fields": sorted(self.withheld)}
+        return result
 
 
 def execute_touches(arguments: Mapping[str, Any]) -> list[Touch]:
@@ -160,21 +202,31 @@ def check_tool(policy: Policy, tool: Any) -> None:
             raise texts.hidden(tool.name, policy.profile_name, op)
 
 
+def scope_for(policy: Policy, tool: Any, arguments: Mapping[str, Any]) -> CallScope:
+    """The scope of a call as its tool declares it, before anything is decided."""
+    access = getattr(tool, "access", None)
+    if access is None or access.stub:
+        return CallScope(tool.name, policy=policy, access=access, arguments=dict(arguments))
+    takes_model = bool(access.arg_ops) or access.dynamic is not None
+    model = arguments.get("model") if takes_model else None
+    return CallScope(tool.name, model if isinstance(model, str) else None,
+                     tuple(touches_for(tool, arguments)), policy=policy, access=access,
+                     arguments=dict(arguments))
+
+
 def check(policy: Policy, tool: Any, arguments: Mapping[str, Any]) -> CallScope:
     """Layer A for one call; ``check_tool`` has passed. Raises PolicyDenied."""
     if policy.locked:
         if tool.name != "odoo_version":
             raise policy.lock_error()
-        return CallScope(tool.name)
+        return CallScope(tool.name, policy=policy, access=getattr(tool, "access", None))
     access = getattr(tool, "access", None)
     if access is None:
         raise texts.unmapped(tool.name)
+    scope = scope_for(policy, tool, arguments)
     if access.stub:
-        return CallScope(tool.name)
-    takes_model = bool(access.arg_ops) or access.dynamic is not None
-    model = arguments.get("model") if takes_model else None
-    touches = touches_for(tool, arguments)
-    scope = CallScope(tool.name, model if isinstance(model, str) else None, tuple(touches))
+        return scope
+    touches = list(scope.touches)
     # A degrading tool runs; a section whose fixed touch is refused degrades.
     sections = set(access.fixed) if access.degrade else set()
     note_args = _execute_args(arguments) if access.dynamic is not None else None
@@ -225,12 +277,12 @@ def _check_arguments(policy: Policy, tool: Any, access: Any, model: str,
     rules_on = policy.profile is not None and not policy.profile.rules_off
     if rules_on:
         for context in contexts:
-            _check_context(policy, model, context)
+            check_context(policy, model, context)
         if ATTACHMENT in model_aliases(model):
             searches = method in SEARCH_METHODS if method is not None else (
                 "domain" in tool.input_schema.get("properties", {}) and "read" in access.arg_ops)
             if searches:
-                _check_attachment_pin(policy, parts.named.get("domain"), method or tool.name)
+                check_attachment_pin(policy, parts.named.get("domain"), method or tool.name)
 
 
 def _check_fields(policy: Policy, model: str, parts: CallArgs, write_op: str) -> None:
@@ -268,43 +320,44 @@ def _context(context: Any, label: str) -> Mapping[str, Any]:
     return context
 
 
-def _check_context(policy: Policy, model: str, context: Mapping[str, Any]) -> None:
+def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op: str = "call",
+                  layer: str = "A") -> None:
     """Every key is a safe one, or ``default_<field>`` with a plain value for a field
     that is not withheld. The keys that silence chatter tracking are refused."""
     for key, value in context.items():
         if not isinstance(key, str):
-            raise texts.context(policy, "call", model, key)
+            raise texts.context(policy, op, model, key, layer=layer)
         if key in SAFE_CONTEXT_KEYS:
             continue
         name = key[len("default_"):]
         if (key.startswith("default_") and _FIELD_NAME.fullmatch(name)
                 and isinstance(value, _PLAIN_VALUE) and not policy.field_withheld(model, name)):
             continue
-        raise texts.context(policy, "call", model, key)
+        raise texts.context(policy, op, model, key, layer=layer)
 
 
-def _check_attachment_pin(policy: Policy, domain: Any, label: str) -> None:
+def check_attachment_pin(policy: Policy, domain: Any, label: str, *, layer: str = "A") -> None:
     """A generic ir.attachment search must AND ``res_model = X`` (or ``in [X, ...]``)
     at its top level, with every ``X`` readable (False: an orphan attachment), and
     must not filter on ``res_field``."""
     try:
         if any(path and path[0] == "res_field" for path in domain_paths(domain, method=label)):
-            raise texts.attachment_pin(policy)
+            raise texts.attachment_pin(policy, layer=layer)
     except ShapeError:  # the paths were read already; an unreadable domain is not pinned
-        raise texts.attachment_pin(policy) from None
+        raise texts.attachment_pin(policy, layer=layer) from None
     parents = _pinned_parents(domain)
     if parents is None:
-        raise texts.attachment_pin(policy)
+        raise texts.attachment_pin(policy, layer=layer)
     for parent in parents:
         if parent is False or parent is None:
             continue
         if not isinstance(parent, str):
-            raise texts.attachment_pin(policy)
+            raise texts.attachment_pin(policy, layer=layer)
         decision = policy.decide("read", parent)
         if not decision.allowed:
             if decision.rule == "invalid-name":
-                raise texts.invalid_name(policy, "read", parent)
-            raise texts.refused(policy, decision)
+                raise texts.invalid_name(policy, "read", parent, layer=layer)
+            raise texts.refused(policy, decision, layer=layer)
 
 
 def _pinned_parents(domain: Any) -> list[Any] | None:

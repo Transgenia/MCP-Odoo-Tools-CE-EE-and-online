@@ -19,6 +19,11 @@ policy forbids everywhere is not listed, and is refused when called by name),
 then the arguments' schema, then Layer A, which decides what the tool declares
 it touches from the arguments alone. A refusal there never signs in, never
 opens a transport and is not counted as a call.
+
+Then the handler runs with a guarded session (Layer B, ``policy/guard.py``), the
+only session it gets: every Odoo call it makes is checked, with its values and
+paths, before the transport is touched, and withheld fields are removed from
+what reads return (the result names them in ``policy_withheld_fields``).
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ from .errors import (
 )
 from .observability import Observability
 from .policy import Policy
+from .policy.guard import GuardedSession, ManagerView
 from .policy.texts import description_suffix, instructions_line
 from .registry import ToolContext, ToolDef, registry, validate_arguments
 from .support import INSTRUCTIONS, SETUP_HINT, SUPPORT_LINE
@@ -216,7 +222,7 @@ class McpServer:
         if problem:
             return _tool_result(f"Input validation error: {problem}", is_error=True)
         try:
-            self.policy.check(tool, arguments)  # Layer A: the arguments alone, no session
+            scope = self.policy.check(tool, arguments)  # Layer A: the arguments alone
         except PolicyError as exc:
             return _tool_result(str(exc), is_error=True)
         except Exception:
@@ -230,12 +236,19 @@ class McpServer:
         status = "ok"
         try:
             # stdio = single-tenant from env
-            session = self.manager.default() if self._needs_session(tool) else None
-            ctx = ToolContext(session=session, manager=self.manager, policy=self.policy)
+            raw = self.manager.default() if self._needs_session(tool) else None
+            # Layer B: the handler gets only the guarded session, which checks every
+            # Odoo call against the policy before the transport is touched.
+            session = GuardedSession(raw, scope) if raw is not None else None
+            ctx = ToolContext(session=session, manager=ManagerView(self.manager),
+                              policy=self.policy)
             with self.obs.span(name):
                 result = tool.handler(ctx, arguments)
-            text = json.dumps(result, default=str, ensure_ascii=False)
+            text = json.dumps(scope.annotate(result), default=str, ensure_ascii=False)
             return _tool_result(text, is_error=False)
+        except PolicyError as exc:  # Layer B: an actual Odoo call was refused
+            status = "refused"
+            return _tool_result(str(exc), is_error=True)
         except OdooMcpError as exc:
             status = "error"
             # Clean, actionable message; the client shows it as a tool error.

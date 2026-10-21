@@ -752,3 +752,52 @@ def test_odoo_report_never_asks_for_a_session_even_unconfigured() -> None:
     assert error is True and text.startswith("odoo_report cannot work over RPC")
     assert "ODOO_URL" not in text  # its own refusal, not the setup message
     assert manager.built == 0 and manager.calls == ["odoo_report"]
+
+
+# --- odoo_online_profile degrades a section the policy withholds (design 6.3) -----------
+
+def _profile_session() -> Any:
+    from policy_fakes import ScriptedSession
+
+    return ScriptedSession(version=19, results={
+        ("res.users", "context_get"): {"lang": "es_MX", "tz": "UTC"},
+        ("res.users", "read"): [{"id": 2, "login": "bot@example.com", "name": "Bot"}],
+        ("res.users.apikeys", "search_read"): [
+            {"name": "claude", "scope": "rpc", "create_date": "2026-09-27 12:00:00",
+             "expiration_date": False}],
+        ("ir.module.module", "search_read"): [],
+    })
+
+
+def test_odoo_online_profile_runs_whole_under_the_default_profile() -> None:
+    session = _profile_session()
+    payload = json.loads(call(server(Manager(session=session)), "odoo_online_profile")[1])
+    assert "unavailable" not in payload and payload["doc_bearer"] is True
+    assert payload["user"]["login"] == "bot@example.com"
+    assert [key["name"] for key in payload["api_keys"]] == ["claude"]
+
+
+def test_odoo_online_profile_degrades_under_a_deny_on_api_keys(tmp_path: Path) -> None:
+    path = write_policy(tmp_path, {"version": 1, "models": {
+        "res.users.apikeys": {"read": False}}})
+    session = _profile_session()
+    error, text = call(server(Manager(session=session), policy_file=path), "odoo_online_profile")
+    payload = json.loads(text)
+    assert error is False and payload["api_keys"] is None
+    assert payload["unavailable"] == {
+        "api_keys": "withheld by the odoo-tools permission policy (inspect on res.users.apikeys)"}
+    assert payload["user"]["login"] == "bot@example.com" and payload["doc_bearer"] is True
+    assert ("res.users.apikeys", "search_read") not in session.sent()
+
+
+def test_odoo_online_profile_degrades_under_a_deny_on_res_partner(tmp_path: Path) -> None:
+    path = write_policy(tmp_path, {"version": 1, "models": {"res.partner": {
+        "read": False, "create": False, "write": False, "call": False}}})
+    session = _profile_session()
+    error, text = call(server(Manager(session=session), policy_file=path), "odoo_online_profile")
+    payload = json.loads(text)
+    assert error is False and payload["doc_bearer"] is False
+    assert payload["unavailable"] == {
+        "doc_bearer": "withheld by the odoo-tools permission policy (inspect on res.partner)"}
+    assert payload["user"]["login"] == "bot@example.com" and payload["api_keys"]
+    assert ("res.partner", "api_doc") not in session.sent()

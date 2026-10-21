@@ -441,6 +441,71 @@ class Policy:
         return not (isinstance(args, Mapping) and is_internal_note(
             method, args.get("args"), args.get("kwargs"), ids_given="ids" in args))
 
+    # -- internal calls (registry.Internal) ---------------------------------------
+    def decide_internal(self, op: str, model: Any, method: str | None = None) -> Decision:
+        """A fixed call a tool makes for a curated verb (``registry.Internal``), whose
+        predicate pins it to the actual arguments.
+
+        The tiers, the outbound methods and the profile default do not apply: the
+        predicate is the pin. Every explicit refusal does: the name checks, NEVER,
+        Read-only mode, a locked policy, and a file rule that refuses ``op`` (the
+        exact entries of the alias closure, else the most specific pattern; for
+        every operation but ``read``, the delegation parent's too). ``inspect`` is
+        decided as usual, since no rule sets it.
+        """
+        if op == INSPECT:
+            return self.decide(op, model)
+        if op not in OPERATIONS:
+            raise ValueError(f"unknown operation {op!r}")
+        if not valid_model(model) or (method is not None and not valid_method(method)):
+            return Decision(False, "invalid-name", Touch(op, None, None))
+        touch = Touch(op, model, method if op == "call" else None)
+        never = _never(op, model, touch.method)
+        if never is not None:
+            return Decision(False, f"never:{never.id}", touch)
+        if self.readonly and op != "read":
+            return Decision(False, "readonly", touch)
+        if self.locked:
+            return Decision(False, "locked", touch)
+        refusal = self._file_refusal(touch)
+        return refusal if refusal is not None else Decision(True, "internal", touch)
+
+    def _file_refusal(self, touch: Touch) -> Decision | None:
+        """The file rule that refuses ``touch``, as ``decide()`` reads the file
+        (exact entries first, then the most specific pattern of each name), or None."""
+        model = touch.model
+        assert model is not None
+        names = (model, *sorted(model_aliases(model) - {model}))
+        exact = self._exact_value(touch.op, touch.method, names)
+        if exact is not None:
+            state, key, methods = exact
+            if state == "deny":
+                via, relation = (key, "alias") if key != model else (None, None)
+                return Decision(False, f"file:{key}", touch, via=via, relation=relation,
+                                methods=methods)
+        else:
+            for name in names:
+                rule = self._pattern(touch.op, name)
+                if rule is None:
+                    continue
+                value = rule.get(touch.op)
+                if value is False or (isinstance(value, frozenset)
+                                      and touch.method not in value):
+                    methods = tuple(sorted(value)) if isinstance(value, frozenset) else None
+                    via, relation = (name, "alias") if name != model else (None, None)
+                    return Decision(False, f"file:{rule.key}", touch, via=via,
+                                    relation=relation, methods=methods)
+        if touch.op != "read":
+            for name in names:
+                parent = DELEGATES.get(name)
+                if parent is None:
+                    continue
+                refused = self._file_refusal(Touch(touch.op, parent[0], touch.method))
+                if refused is not None:
+                    return Decision(False, refused.rule, touch, via=parent[0],
+                                    relation="delegation", methods=refused.methods)
+        return None
+
     def _inspect(self, touch: Touch) -> Decision:
         """``inspect`` is allowed wherever any operation is allowed on the model."""
         model = touch.model

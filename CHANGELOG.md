@@ -14,7 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   (internal notes are fine), change users, rights, modules, settings, bank accounts, fiscal
   sequences or chatter history, or read stored secrets (system parameters, mail-server,
   payment-provider and CFDI certificate credentials). Credential-like fields (passwords,
-  tokens, keys) are refused in field lists, values, filters, grouping and sorting. The other
+  tokens, keys) are refused in field lists, values, filters, grouping and sorting, and are
+  removed from what reads return (the result names them in `policy_withheld_fields`). The other
   profiles are `readonly`, `builder` (adds fields, views and automations; for sandboxes and
   staging, since automations run code on the server) and `full`, which keeps 1.4 behaviour:
   set `ODOO_POLICY=full`. API-key changes and module uninstall stay refused in every
@@ -22,8 +23,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   tool except `odoo_version`, which shows the error.
 - Tools the profile forbids on every model are no longer listed: `standard` lists 25 of the
   28 (not `odoo_unlink`, `odoo_add_field` or `odoo_add_automation`). A hidden tool called by
-  name explains why. Every refusal names the profile, the rule and what changes it, and is
+  name explains why. Every refusal names the profile, the rule and what changes it. Most are
   decided from the call's arguments before any session exists, so nothing reaches Odoo.
+- Every Odoo call a tool makes is checked again as it is sent, with its values and paths:
+  the records a write changes through one2many and many2many commands (a line a write
+  removes counts as a delete, and a link to users or groups as a change to them), the models
+  a filter, a read specification, a groupby, an order or an export or import column reaches,
+  and the parent of an attachment (a generic `ir.attachment` search must name the parent
+  model and never sees files stored in fields). A contact that is a user's login keeps its
+  e-mail, and the link field of a model that delegates to a closed one (`website.page`
+  `view_id`) cannot be set. Such a refusal comes after sign-in and says that Odoo did not
+  run the call. A call outside a tool's declared mapping is stopped as a bug.
+- `odoo_online_profile` reports a section the policy withholds in `unavailable` instead of
+  failing.
 - With Read-only mode on, the write tools are no longer listed (calling one still explains
   why).
 - The write tools state `destructiveHint` in their annotations: false for `odoo_create`,

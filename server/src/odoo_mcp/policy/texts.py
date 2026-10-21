@@ -56,6 +56,12 @@ REFUSED_UNNAMED = ("the odoo-tools permission policy refuses '{op}' on this mode
 ENVELOPE = ("internal error: {tool} tried {model}.{method}, which its permission mapping does "
             "not declare. The call was stopped before it reached Odoo. This is a bug in "
             "odoo-tools; please report it to " + SUPPORT_EMAIL + ".")
+GUARD_FAILURE = ("internal error: the odoo-tools permission policy could not check a call of "
+                 "{tool} ({kind}), so it was stopped before it reached Odoo (fail closed). This "
+                 "is a bug in odoo-tools; please report it to " + SUPPORT_EMAIL + ".")
+# odoo_online_profile reports a section the policy refuses instead of failing.
+WITHHELD_SECTION = "withheld by the odoo-tools permission policy ({op} on {model})"
+WITHHELD_SECTION_RULE = "withheld by the odoo-tools permission policy (rule {rule})"
 
 # --- hints, by rule ----------------------------------------------------------------
 NEVER_HINT = ("odoo-tools never creates, changes or revokes API keys and never uninstalls "
@@ -96,6 +102,20 @@ FIELD_FILE_HINT = ("field '{field}' of '{model}' is withheld by the policy file 
                    "through these tools; read other fields")
 RELATIONAL_HINT = ("this {method} on '{model}' also {op}s '{comodel}' through field '{field}' "
                    "(command {n}), and the policy refuses '{op}' on '{comodel}' ({rule})")
+# A field path (a domain leaf, a read specification, an export or import column,
+# a groupby or order term) that reaches another model.
+PATH_HINT = ("this {method} on '{model}' also {op}s '{comodel}' through '{path}', and the "
+             "policy refuses '{op}' on '{comodel}' ({rule})")
+UNVERIFIED_HINT = ("could not verify the related models of this call (fields_get failed); "
+                   "check that the Odoo user can read the field definitions of these models, "
+                   "then retry")
+ATTACHMENT_CREATE_HINT = ("an attachment created or changed through these tools cannot be "
+                          "public and cannot store a field of a record (res_field); use "
+                          "odoo_record_documents for a record's files")
+IDENTITY_IMPORT_HINT = ("an import that updates existing contacts (an 'id' or '.id' column) "
+                        "cannot set their 'email': a contact's e-mail can be the login identity "
+                        "of an Odoo user (it receives password-reset links); change e-mails with "
+                        "odoo_write, which checks each contact")
 ATTACHMENT_PIN_HINT = ("generic access to ir.attachment must name the parent model: add "
                        "[\"res_model\", \"=\", \"<model>\"] to the domain and do not filter on "
                        "res_field, or use odoo_record_documents")
@@ -171,6 +191,22 @@ def read_only_tool(tool: str) -> PolicyDenied:
 def envelope(tool: str, model: str, method: str) -> PolicyEnvelopeError:
     return PolicyEnvelopeError(ENVELOPE.format(tool=tool, model=model, method=method),
                                rule="envelope", layer="B")
+
+
+def guard_failure(tool: str, kind: str) -> PolicyEnvelopeError:
+    """The guarded session failed while checking a call: refused, never sent. ``kind``
+    is an exception class name, never its message (which could echo a value)."""
+    return PolicyEnvelopeError(GUARD_FAILURE.format(tool=tool, kind=kind), rule="guard",
+                               layer="B")
+
+
+def withheld_section(exc: Any) -> str:
+    """What ``odoo_online_profile`` reports for a section the policy refused."""
+    touches = getattr(exc, "touches", ()) or ()
+    parts = str(touches[0]).split(":") if touches else []
+    if len(parts) >= 2 and valid_model(parts[1]):
+        return WITHHELD_SECTION.format(op=parts[0], model=parts[1])
+    return WITHHELD_SECTION_RULE.format(rule=getattr(exc, "rule", "") or "policy")
 
 
 # --- refused checks --------------------------------------------------------------
@@ -256,6 +292,30 @@ def relational(policy: Policy, *, method: str, model: str, op: str, comodel: str
     return _check(policy, op, comodel, "relational", RELATIONAL_HINT.format(
         method=method, model=model, op=op, comodel=comodel, field=field, n=command, rule=rule),
         layer=layer)
+
+
+def path(policy: Policy, *, method: str, model: str, op: str, comodel: str, field_path: str,
+         rule: str, layer: str = "B") -> PolicyDenied:
+    """A field path of ``model`` that reaches ``comodel``, which the policy refuses."""
+    return _check(policy, op, comodel, "relational", PATH_HINT.format(
+        method=method, model=model, op=op, comodel=comodel, path=field_path, rule=rule),
+        layer=layer)
+
+
+def unverified(policy: Policy, op: str, model: str, *, layer: str = "B") -> PolicyDenied:
+    """The field metadata the checks need could not be read: refused, never sent."""
+    return _check(policy, op, model, "unverified", UNVERIFIED_HINT, layer=layer)
+
+
+def attachment_create(policy: Policy, op: str, *, layer: str = "B") -> PolicyDenied:
+    """An ir.attachment created or written as public, or as a field of a record."""
+    return _check(policy, op, "ir.attachment", "attachment-field", ATTACHMENT_CREATE_HINT,
+                  layer=layer)
+
+
+def identity_import(policy: Policy, model: str, *, layer: str = "B") -> PolicyDenied:
+    """An import that would update existing contacts' e-mails."""
+    return _check(policy, "write", model, "identity", IDENTITY_IMPORT_HINT, layer=layer)
 
 
 def attachment_pin(policy: Policy, *, layer: str = "A") -> PolicyDenied:

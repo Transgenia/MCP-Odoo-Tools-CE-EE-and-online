@@ -14,10 +14,14 @@ Modules:
   * ``loader``: the settings and the file, validated (E1-E20, W1-W7);
   * ``check``: Layer A, a tool call decided from its declared accesses and its
     arguments before any session exists;
+  * ``guard``: Layer B, the guarded session a tool handler gets, which checks
+    every actual Odoo call (its values and paths) before it is sent;
   * ``texts``: what the policy tells the agent (refusals, the instructions line,
     the description suffix).
 
-Pure: no Odoo call, no session, and no I/O except reading the policy file once.
+Everything but ``guard`` is pure: no Odoo call, no session, and no I/O except
+reading the policy file once. ``guard`` reads field metadata and pre-reads a
+few fields through the session it wraps (``guard.SYSTEM_CALLS``).
 """
 
 from .loader import load_policy

@@ -35,12 +35,15 @@ __all__ = [
 class ToolContext:
     """Per-call context handed to every tool handler.
 
-    ``session`` is the resolved :class:`odoo_mcp.session.OdooSession` for this
-    call; ``manager`` is the :class:`odoo_mcp.tenancy.ConnectionManager` (needed
-    by tools that operate above a single tenant, e.g. listing connections).
-    ``policy`` is the server's permission policy; only ``odoo_version``,
-    ``odoo_list_models`` and ``odoo_access_check`` read it, and a handler called
-    directly (tests) gets ``None`` and behaves as before the policy existed.
+    Through the server, ``session`` is the guarded session of this call
+    (``odoo_mcp.policy.guard.GuardedSession``), which checks every Odoo call
+    against the permission policy before it is sent, and ``manager`` is a view of
+    the connection manager with its connections and call counters only (needed by
+    tools that operate above a single tenant, e.g. listing connections). A handler
+    called directly (tests) may get a plain session and manager. ``policy`` is the
+    server's permission policy; only ``odoo_version``, ``odoo_list_models`` and
+    ``odoo_access_check`` read it, and a handler called directly gets ``None`` and
+    behaves as before the policy existed.
     """
 
     session: Any
