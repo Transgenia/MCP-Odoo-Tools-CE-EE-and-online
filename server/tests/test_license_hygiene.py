@@ -44,7 +44,10 @@ MANIFEST_LICENSE = re.compile(
     r"""["']license["']\s*[:=]\s*["'](OPL-1|OEEL-1|Other proprietary|A?GPL[^"']*|LGPL[^"']*)["']""",
     re.IGNORECASE)
 LICENSE_TITLES = re.compile(r"Odoo Proprietary License|GNU Affero General Public License")
-SPDX = re.compile(r"SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)")
+SPDX = re.compile(r"SPDX-License-Identifier:[ \t]*([^\r\n]*)")
+# License ids and exceptions start with a letter or digit; AND/OR/WITH join them.
+SPDX_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*")
+SPDX_OPERATORS = {"AND", "OR", "WITH"}
 OWN_CODE = ("hooks", "scripts", "server/src", "server/run_stdio.py")
 
 
@@ -72,7 +75,11 @@ def violations(text: str, name: str = "") -> list[str]:
     found = [m.group(0) for m in MANIFEST_LICENSE.finditer(text)]
     if not name.endswith(".md"):  # a copied LICENSE file or code header, not a doc sentence
         found += [m.group(0) for m in LICENSE_TITLES.finditer(text)]
-    found += [m.group(0) for m in SPDX.finditer(text) if m.group(1) not in COMPATIBLE_SPDX]
+    for m in SPDX.finditer(text):
+        # every id in a compound expression must be compatible ("MIT AND GPL-3.0-only" fails)
+        ids = [i for i in SPDX_ID.findall(m.group(1)) if i not in SPDX_OPERATORS]
+        if not ids or any(i not in COMPATIBLE_SPDX for i in ids):
+            found.append(m.group(0).strip())
     return found
 
 
@@ -116,6 +123,8 @@ def test_the_clean_room_rule_covers_proprietary_modules(name: str) -> None:
     "'license': 'LGPL-3',",
     "Odoo Proprietary License v1.0",
     "# SPDX-License-Identifier: AGPL-3.0-or-later",
+    "# SPDX-License-Identifier: MIT AND GPL-3.0-only",
+    "// SPDX-License-Identifier: (MIT OR Apache-2.0) AND LGPL-2.1-or-later",
     "This program is free software: you can redistribute it under the GNU Affero General Public License",
 ])
 def test_a_copied_declaration_is_caught(sample: str) -> None:
@@ -131,6 +140,9 @@ def test_a_license_title_in_markdown_is_a_mention() -> None:
 @pytest.mark.parametrize("sample", [
     "# SPDX-License-Identifier: MIT",
     "# SPDX-License-Identifier: Apache-2.0",
+    "# SPDX-License-Identifier: MIT OR Apache-2.0",
+    "<!-- SPDX-License-Identifier: MIT -->",
+    "/* SPDX-License-Identifier: BSD-3-Clause */",
     "Talk to the OPL-1 mcp_server module over the network only.",
     "AGPL projects inform ideas, never code.",
 ])

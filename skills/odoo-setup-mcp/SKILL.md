@@ -23,17 +23,21 @@ How to guide:
 
 ## Phase 0 — Where is the user?
 
-Run this and read it before asking anything:
+First look at your tool list, without running anything. If `odoo_version` is not
+in it, the MCP server is not running on this surface: go to **Phase 0b** now,
+before any shell command (Claude chat has neither the local server nor a shell).
+
+If it is there, call it once. If it succeeds, the plugin is already connected:
+say so, show the version/edition, and ask whether to go to **Phase 3
+(Training)**, **4 (Daily use)** or **5 (Deployment)**. (Do not read `ODOO_*`
+variables or credential files from the user's machine to find out.)
+
+Where you can run shell commands, this probe tells the later phases whether
+Python or the container route applies:
 
 ```bash
 echo "python3: $(python3 --version 2>/dev/null || echo missing)"; echo "docker: $(docker --version 2>/dev/null || echo missing)"
 ```
-
-Then call the `odoo_version` tool once. If it succeeds, the plugin is already
-connected: say so, show the version/edition, and ask whether to go to
-**Phase 3 (Training)**, **4 (Daily use)** or **5 (Deployment)**. (Do not read
-`ODOO_*` variables or credential files from the user's machine to find out.)
-If the tool does not exist (it is not in your tool list), go to Phase 0b first.
 
 ## Phase 0b — Are the Odoo tools loaded on this surface?
 

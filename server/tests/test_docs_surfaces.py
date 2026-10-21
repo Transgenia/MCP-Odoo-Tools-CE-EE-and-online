@@ -70,4 +70,8 @@ def test_guided_route_checks_the_surface_before_python() -> None:
     assert "Runs in each session" in frontmatter  # findable by the symptom users report
     triage = skill.index("Are the Odoo tools loaded on this surface?")
     assert triage < skill.index("### Step 1A")
+    # Phase 0 sends a surface without the tools to Phase 0b before any shell probe:
+    # Claude chat has no shell.
+    phase0 = skill.split("## Phase 0 ", 1)[1].split("## Phase 0b", 1)[0]
+    assert "Phase 0b" in phase0 and phase0.index("Phase 0b") < phase0.index("```bash")
     assert "claude plugin configure" in skill and "Cowork" in skill
