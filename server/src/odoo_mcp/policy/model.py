@@ -258,6 +258,13 @@ class Policy:
     _patterns: tuple[Rule, ...] = field(init=False, default=(), compare=False, repr=False)
     _released: frozenset[str] = field(init=False, default=frozenset(), compare=False,
                                       repr=False)
+    # The answers of field_withheld and field_withheld_everywhere, which redaction
+    # asks once per key of every row a read returns. They depend on nothing but
+    # the policy, which never changes, and on the names asked about.
+    _withheld_memo: dict[tuple[str, str], bool] = field(init=False, default_factory=dict,
+                                                       compare=False, repr=False)
+    _everywhere_memo: dict[str, bool] = field(init=False, default_factory=dict,
+                                              compare=False, repr=False)
 
     def __post_init__(self) -> None:
         profile = PROFILES.get(self.profile_name)
@@ -601,6 +608,14 @@ class Policy:
         (credential-like names, the code of automations). Profile ``full`` keeps
         only ``fields.withhold``; ``builder`` releases the automation code.
         """
+        key = (model, name)
+        withheld = self._withheld_memo.get(key)
+        if withheld is None:
+            withheld = self._field_withheld(model, name)
+            _remember(self._withheld_memo, key, withheld)
+        return withheld
+
+    def _field_withheld(self, model: str, name: str) -> bool:
         name = name.lower()
         names = model_aliases(model) if valid_model(model) else frozenset({model})
         if f"*.{name}" in self.withhold or any(f"{m}.{name}" in self.withhold for m in names):
@@ -623,6 +638,13 @@ class Policy:
         ``fields.withhold``. What depends on the model is decided once the model
         is known.
         """
+        withheld = self._everywhere_memo.get(name)
+        if withheld is None:
+            withheld = self._field_withheld_everywhere(name)
+            _remember(self._everywhere_memo, name, withheld)
+        return withheld
+
+    def _field_withheld_everywhere(self, name: str) -> bool:
         name = name.lower()
         if f"*.{name}" in self.withhold:
             return True
@@ -701,6 +723,17 @@ class Policy:
             "Every Odoo tool except odoo_version is disabled. Nothing was sent to Odoo.",
             remediation=remediation, rule="locked", layer="tool",
         )
+
+
+MEMO_LIMIT = 4096  # names remembered per policy; past it the memo starts again
+
+
+def _remember(memo: dict[Any, bool], key: Any, value: bool) -> None:
+    """Keep ``value`` under ``key``, never more than MEMO_LIMIT names: the field
+    names a call or a result carries are bounded by nothing but the call."""
+    if len(memo) >= MEMO_LIMIT:
+        memo.clear()
+    memo[key] = value
 
 
 def _credential_like(name: str) -> bool:

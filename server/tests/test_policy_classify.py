@@ -45,9 +45,10 @@ from odoo_mcp.transport.json2_signatures import MODEL_SIGNATURES, SERIES_VARIANT
 
 def test_the_policy_reads_exactly_what_the_transport_replays_as_reads() -> None:
     # Design 9.2 #9: equality, not only a subset. A read method added to the
-    # transport has to be classified here, and the other way round.
+    # transport has to be classified here, and the other way round. The design
+    # counted 22; copy_data, a read of the records, makes 23.
     assert INSPECT_METHODS | READ_METHODS == fallback.READ_METHODS
-    assert len(fallback.READ_METHODS) == 22
+    assert len(fallback.READ_METHODS) == 23
 
 
 def test_every_method_json2_marks_readonly_is_a_read_or_an_inspect() -> None:
@@ -70,9 +71,11 @@ def test_the_method_classes_are_disjoint() -> None:
     ("has_group", "inspect", ("inspect",)),
     ("search_read", "read", ("read",)),
     ("export_data", "read", ("read",)),
+    ("copy_data", "read", ("read",)),  # the values a duplicate would get
     ("create", "create", ("create",)),
     ("copy", "create", ("create",)),
     ("write", "write", ("write",)),
+    ("update", "write", ("write",)),  # BaseModel.update assigns the fields: a write
     ("action_archive", "write", ("write",)),
     ("load", "create_write", ("create", "write")),
     ("web_save", "create_write", ("create", "write")),
@@ -224,6 +227,11 @@ def test_every_shape_the_tools_send(where: str, method: str, call: dict[str, Any
     ("copy", {"args": [[1], {"name": "Copy"}]},
      {"ids": [1], "kwargs": {"default": {"name": "Copy"}}},
      {"values": [{"name": "Copy"}]}),
+    ("update", {"args": [[1], {"email": "x@example.com"}]},
+     {"ids": [1], "kwargs": {"values": {"email": "x@example.com"}}},
+     {"values": [{"email": "x@example.com"}]}),
+    ("copy_data", {"args": [[1], {"name": "Copy"}]},
+     {"ids": [1], "kwargs": {"default": {"name": "Copy"}}}, {}),  # it writes nothing
     ("unlink", {"args": [[4, 5]]}, {"ids": [4, 5]}, {}),
     ("web_read", {"args": [[1], {"partner_id": {"fields": {"display_name": {}}}}]},
      {"ids": [1], "kwargs": {"specification": {"partner_id": {"fields": {"display_name": {}}}}}},

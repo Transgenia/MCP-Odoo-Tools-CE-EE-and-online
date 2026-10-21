@@ -295,6 +295,12 @@ class _Plan:
     redact: bool = False
 
 
+def _values_command(item: Any) -> bool:
+    """An x2many command that carries the values of a line: (0, _, vals), (1, id, vals)."""
+    return (isinstance(item, (list, tuple)) and len(item) == 3 and _is_id(item[0])
+            and item[0] in (0, 1) and isinstance(item[2], Mapping))
+
+
 def _commands(value: Any) -> list[tuple[Any, ...]] | None:
     """The x2many commands of ``value`` as Odoo reads them; None when it cannot be
     read with certainty. ``False``/``None`` clear the field (command 5), a bare id
@@ -911,7 +917,9 @@ class GuardedSession:
                 scope.n += len(created)
         elif method == "search" and isinstance(result, list):
             scope.found.setdefault(plan.model, []).extend(i for i in result if _is_id(i))
-        if method == "read" and isinstance(result, list):
+        # Only internal predicates read the rows back (odoo_record_documents), so a
+        # tool without internal calls keeps no copy of what it read.
+        if method == "read" and self._internals and isinstance(result, list):
             rows = scope.records.setdefault(plan.model, {})
             for row in result:
                 if isinstance(row, Mapping) and _is_id(row.get("id")):
@@ -926,40 +934,67 @@ class GuardedSession:
         return result
 
     def _redact(self, model: str, method: str, result: Any) -> Any:
+        # The rows of one model share their keys: each key is decided once per call.
+        seen: dict[str | None, dict[Any, str]] = {}
         if isinstance(result, Mapping):
             for key in ("records", "groups"):  # web_search_read, web_read_group
                 if method.startswith("web_") and isinstance(result.get(key), list):
-                    return {**result, key: self._rows(model, model, result[key])}
-            return self._row(model, model, result)
+                    return {**result, key: self._rows(model, model, result[key], seen)}
+            return self._row(model, model, result, seen)
         if isinstance(result, list):
-            return self._rows(model, model, result)
+            return self._rows(model, model, result, seen)
         return result
 
-    def _rows(self, model: str | None, label: str, rows: list[Any]) -> list[Any]:
-        return [self._row(model, label, row) if isinstance(row, Mapping) else row
+    def _rows(self, model: str | None, label: str, rows: list[Any],
+              seen: dict[str | None, dict[Any, str]]) -> list[Any]:
+        return [self._row(model, label, row, seen) if isinstance(row, Mapping) else row
                 for row in rows]
 
-    def _row(self, model: str | None, label: str, row: Mapping[str, Any]) -> dict[str, Any]:
+    def _row(self, model: str | None, label: str, row: Mapping[str, Any],
+             seen: dict[str | None, dict[Any, str]]) -> dict[str, Any]:
         """``row`` of ``model`` (None: a nested row of a model this call did not need
         to know) without its withheld fields; ``label`` names it in
-        ``policy_withheld_fields``."""
-        policy, out = self._policy, {}
+        ``policy_withheld_fields``. ``seen`` holds, per model, the field name each
+        key withholds ("" for a key that is kept)."""
+        out, keys = {}, seen.setdefault(model, {})
         for key, value in row.items():
-            name = key.split(":")[0] if isinstance(key, str) else key
-            if isinstance(name, str) and (policy.field_withheld(model, name) if model
-                                          else policy.field_withheld_everywhere(name)):
-                self._scope.withheld.add(f"{label}.{name}")
+            withheld = keys.get(key)
+            if withheld is None:
+                withheld = keys[key] = self._withheld_key(model, key)
+            if withheld:
+                self._scope.withheld.add(f"{label}.{withheld}")
                 continue
+            if value is None or isinstance(value, (str, int, float)):  # most values
+                out[key] = value
+                continue
+            name = key.split(":")[0] if isinstance(key, str) else key
             if key == "__records" and isinstance(value, list):  # unfolded groups
-                value = self._rows(model, label, value)
+                value = self._rows(model, label, value, seen)
             elif isinstance(value, Mapping) or (isinstance(value, list) and any(
                     isinstance(item, Mapping) for item in value)):
                 nested = self._known_relation(model, name)
                 inner = f"{label}.{name}"
-                value = (self._row(nested, inner, value) if isinstance(value, Mapping)
-                         else self._rows(nested, inner, value))
+                value = (self._row(nested, inner, value, seen) if isinstance(value, Mapping)
+                         else self._rows(nested, inner, value, seen))
+            elif isinstance(value, list) and any(_values_command(item) for item in value):
+                # x2many lines as (0, 0, values) or (1, id, values) commands: what
+                # copy_data and default_get return for one2many fields
+                nested, inner = self._known_relation(model, name), f"{label}.{name}"
+                value = [[item[0], item[1], self._row(nested, inner, item[2], seen)]
+                         if _values_command(item) else item for item in value]
             out[key] = value
         return out
+
+    def _withheld_key(self, model: str | None, key: Any) -> str:
+        """The field name a result key withholds (``amount:sum`` names ``amount``), or
+        "" when the key is kept."""
+        name = key.split(":")[0] if isinstance(key, str) else key
+        if not isinstance(name, str):
+            return ""
+        policy = self._policy
+        withheld = (policy.field_withheld(model, name) if model
+                    else policy.field_withheld_everywhere(name))
+        return name if withheld else ""
 
     def _known_relation(self, model: str | None, name: Any) -> str | None:
         """The comodel of ``model.name`` from the metadata this call already read."""

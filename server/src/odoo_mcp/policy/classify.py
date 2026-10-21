@@ -42,14 +42,20 @@ def valid_method(name: Any) -> bool:
 # INSPECT_METHODS | READ_METHODS equals transport.fallback.READ_METHODS (a test
 # keeps them equal), so what the policy treats as a read is exactly what the
 # transport may replay as one.
+#
+# Two public BaseModel methods are classed by what they do to records, not by
+# their names: copy_data returns the values copy() would give a duplicate (rows
+# keyed by field name), so it is a read and its result is redacted as one;
+# update(values) assigns the fields of the records, which writes the stored
+# ones, so it is a write and its values are checked as write's are.
 INSPECT_METHODS = frozenset({"fields_get", "fields_view_get", "get_views", "check_access_rights",
                              "has_access", "has_group", "has_groups", "context_get"})
 READ_METHODS = frozenset({"search", "search_read", "search_count", "read", "read_group",
                           "formatted_read_group", "web_read_group", "web_search_read", "web_read",
                           "name_search", "name_get", "default_get", "get_field_translations",
-                          "export_data"})
+                          "export_data", "copy_data"})
 CREATE_METHODS = frozenset({"create", "name_create", "copy"})
-WRITE_METHODS = frozenset({"write", "update_field_translations", "action_archive",
+WRITE_METHODS = frozenset({"write", "update", "update_field_translations", "action_archive",
                            "action_unarchive", "toggle_active"})
 CREATE_WRITE_METHODS = frozenset({"load", "web_save"})
 UNLINK_METHODS = frozenset({"unlink"})
@@ -170,11 +176,14 @@ ARG_SHAPES: dict[str, ArgShape] = {
     "default_get": ArgShape(False, (("fields", FIELDS),), aliases={"fields_list": "fields"}),
     "get_field_translations": ArgShape(True, (("field_name", FIELD), ("langs", None))),
     "export_data": ArgShape(True, (("fields_to_export", EXPORT), ("raw_data", None))),
+    # ``default`` only overrides values of the answer: copy_data writes nothing.
+    "copy_data": ArgShape(True, (("default", None),)),
     # writes
     "create": ArgShape(False, (("vals_list", VALUES),), aliases={"vals": "vals_list"}),
     "name_create": ArgShape(False, (("name", None),)),
     "copy": ArgShape(True, (("default", VALUES),)),
     "write": ArgShape(True, (("vals", VALUES),), aliases={"values": "vals"}),
+    "update": ArgShape(True, (("values", VALUES),)),
     "update_field_translations": ArgShape(True, (("field_name", FIELD), ("translations", None),
                                                  ("source_lang", None))),
     "action_archive": ArgShape(True),

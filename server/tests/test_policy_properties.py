@@ -214,7 +214,7 @@ def test_b_never_weaker_than_odoo_readonly() -> None:
 
 # The methods odoo_execute samples: business, outbound and every method class.
 EXECUTE_METHODS = METHODS + ["unlink", "write", "create", "copy", "read", "search_read",
-                             "fields_get", "load", "action_archive"]
+                             "fields_get", "load", "action_archive", "update", "copy_data"]
 
 
 def random_arguments(rng: random.Random, tool: Any, document: dict[str, Any]) -> dict[str, Any]:

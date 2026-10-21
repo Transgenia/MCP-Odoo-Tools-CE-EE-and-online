@@ -76,7 +76,7 @@ READ_METHODS = frozenset(
         "name_search", "name_get", "default_get", "check_access_rights", "has_group",
         "web_search_read", "web_read", "get_views", "fields_view_get", "export_data",
         "formatted_read_group", "web_read_group", "context_get", "has_access",
-        "has_groups", "get_field_translations",
+        "has_groups", "get_field_translations", "copy_data",
     }
 )
 
