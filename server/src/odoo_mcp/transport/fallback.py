@@ -82,6 +82,8 @@ READ_METHODS = frozenset(
         # test_the_policy_reads_exactly_what_the_transport_replays_as_reads.
         "search_fetch", "fetch", "read_progress_bar",
         "search_panel_select_range", "search_panel_select_multi_range",
+        "web_name_search", "read_grouping_sets", "formatted_read_grouping_sets",
+        "filtered_domain",
     }
 )
 

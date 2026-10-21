@@ -61,7 +61,16 @@ READ_METHODS = frozenset({"search", "search_read", "search_count", "read", "read
                           # like search_read/read; search_panel_* and read_progress_bar are
                           # read oracles over a field's comodel.
                           "search_fetch", "fetch", "read_progress_bar",
-                          "search_panel_select_range", "search_panel_select_multi_range"})
+                          "search_panel_select_range", "search_panel_select_multi_range",
+                          # The open-class readers found by the full inventory: web_name_search
+                          # (16+, the web client's name_search: a domain oracle and a dotted
+                          # leaf that hops into a sealed comodel, returning field values),
+                          # read_grouping_sets / formatted_read_grouping_sets (18+ pivot
+                          # read_group, whose domain AND grouping sets are oracles), and
+                          # filtered_domain (BaseModel, every series: a domain over the held
+                          # records, a weaker oracle that still leaks a withheld field).
+                          "web_name_search", "read_grouping_sets", "formatted_read_grouping_sets",
+                          "filtered_domain"})
 CREATE_METHODS = frozenset({"create", "name_create", "copy"})
 WRITE_METHODS = frozenset({"write", "update", "update_field_translations", "action_archive",
                            "action_unarchive", "toggle_active"})
@@ -108,6 +117,7 @@ DOMAIN = "domain"  # a search domain: the field paths of its leaves
 HAVING = "having"  # a domain over aggregates ('amount:sum', '__count')
 FIELDS = "fields"  # a list of field names
 TERMS = "terms"  # groupby and aggregate terms: 'f', 'f:month', 'f:sum', 'name:sum(f)'
+GROUPING_SETS = "grouping_sets"  # read_grouping_sets: a list of groupby-term lists
 ORDER = "order"  # an order clause: 'name desc, partner_id.name'
 SPEC = "specification"  # a web_read specification, nested through "fields"
 GROUPBY_SPEC = "groupby_specification"  # {groupby field: specification of its records}
@@ -208,6 +218,33 @@ ARG_SHAPES: dict[str, ArgShape] = {
     # field is the same oracle read_group's groupby is (design 4.11).
     "read_progress_bar": ArgShape(False, (("domain", DOMAIN), ("group_by", TERMS),
                                           ("progress_bar", None))),
+    # web_name_search(name, domain/args[, specification], operator, limit): the web
+    # client's name_search. The domain is a withheld-field oracle and a dotted leaf
+    # hops into a sealed comodel; a specification (17/18+) reads field values. Only
+    # name and the domain are read positionally, because the parameters after the
+    # domain drift between series (16 has no specification; 17/18+ insert one), so a
+    # specification, operator or limit is read by name; an extra positional fails
+    # closed (rule ``shape``) rather than a specification being mistaken for an
+    # operator and skipped.
+    "web_name_search": ArgShape(False, (("name", None), ("domain", DOMAIN),
+                                        ("specification", SPEC), ("operator", None),
+                                        ("limit", None)),
+                                aliases={"args": "domain"}, positional=2),
+    # read_grouping_sets / formatted_read_grouping_sets (18+): read_group for pivots.
+    # The domain is an oracle, and every term of every grouping set is a groupby
+    # oracle over a withheld field (design 4.11), parsed by grouping_sets_paths.
+    "read_grouping_sets": ArgShape(False, (("domain", DOMAIN), ("grouping_sets", GROUPING_SETS),
+                                           ("aggregates", TERMS), ("having", HAVING)),
+                                   keywords={"offset": None, "limit": None, "order": ORDER}),
+    "formatted_read_grouping_sets": ArgShape(
+        False, (("domain", DOMAIN), ("grouping_sets", GROUPING_SETS), ("aggregates", TERMS),
+                ("having", HAVING)),
+        keywords={"offset": None, "limit": None, "order": ORDER}),
+    # filtered_domain(domain): a record method that returns the subset of the held
+    # records matching the domain, in memory. A weaker oracle (it filters only the
+    # ids the caller already holds) but it still leaks a withheld field one guess at
+    # a time, so its domain is read like any other.
+    "filtered_domain": ArgShape(True, (("domain", DOMAIN),)),
     # writes
     "create": ArgShape(False, (("vals_list", VALUES),), aliases={"vals": "vals_list"}),
     "name_create": ArgShape(False, (("name", None),)),
@@ -342,6 +379,8 @@ def _collect(out: CallArgs, role: str | None, value: Any) -> None:
         out.paths.extend(field_paths(value, method=method))
     elif role == TERMS:
         out.paths.extend(term_paths(value, method=method))
+    elif role == GROUPING_SETS:
+        out.paths.extend(grouping_sets_paths(value, method=method))
     elif role == ORDER:
         out.paths.extend(order_paths(value, method=method))
     elif role == SPEC:
@@ -484,6 +523,20 @@ def term_paths(terms: Any, *, method: str = "terms") -> list[tuple[str, ...]]:
             paths.append(_split(source))
         elif name != "__count":
             paths.append(_split(name))
+    return paths
+
+
+def grouping_sets_paths(sets: Any, *, method: str = "grouping_sets") -> list[tuple[str, ...]]:
+    """``read_grouping_sets``' ``grouping_sets``: a list of groupby-term lists. Every
+    term of every set reads a field, so the oracle is refused whatever set it hides in.
+    A term that is not ``'field[:function]'`` fails closed (rule ``shape``)."""
+    if sets is None or sets is False:
+        return []
+    if not isinstance(sets, (list, tuple)):
+        raise ShapeError(method, "the grouping sets are not a list")
+    paths: list[tuple[str, ...]] = []
+    for one in sets:
+        paths.extend(term_paths(one, method=method))
     return paths
 
 

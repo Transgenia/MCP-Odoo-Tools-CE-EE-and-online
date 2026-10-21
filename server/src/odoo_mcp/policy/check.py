@@ -82,10 +82,12 @@ FIELD_ARGUMENTS: dict[str, str] = {
 }
 
 # The search-class methods: a generic ir.attachment call of these must name the
-# parent model in its domain (design 4.5).
+# parent model in its domain (design 4.5). The pivot readers and the web
+# name_search take a domain over the model too, so they are pinned the same way.
 SEARCH_METHODS = frozenset({"search", "search_read", "search_count", "read_group",
                             "formatted_read_group", "web_search_read", "web_read_group",
-                            "name_search"})
+                            "name_search", "web_name_search", "read_grouping_sets",
+                            "formatted_read_grouping_sets"})
 ATTACHMENT = "ir.attachment"
 _PLAIN_VALUE = (str, int, float, bool, type(None))
 _FIELD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,127}")

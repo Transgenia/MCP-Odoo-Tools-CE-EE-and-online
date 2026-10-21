@@ -63,6 +63,7 @@ from .classify import (
     CallArgs,
     ShapeError,
     column_paths,
+    domain_paths,
     extract,
     method_class,
     valid_method,
@@ -115,6 +116,9 @@ AUTOMATION = "$automation"  # registry.Internal: base.automation (base.action.ru
 # Fields of ir.attachment that hold the file itself.
 CONTENT_FIELDS = frozenset({"datas", "raw", "db_datas"})
 _FIELD = re.compile(r"[A-Za-z0-9_]+")
+_FIELD_PATH = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*")
+_DOMAIN_OPERATORS = frozenset({"&", "|", "!"})
+MAX_ARG_DEPTH = 4  # how deep the call-class argument scan walks (as classify.MAX_DEPTH)
 # The value types redaction passes through as they are (JSON scalars).
 _SCALARS = frozenset({str, int, float, bool, type(None)})
 
@@ -339,6 +343,23 @@ def _commands(value: Any) -> list[tuple[Any, ...]] | None:
             return None
         out.append(tuple(command))
     return out
+
+
+def _domain_shaped(value: Any) -> bool:
+    """Whether ``value`` has the shape of a search domain: a non-empty list whose items
+    are each a domain operator or a ``[field, operator, value]`` term. It decides whether
+    a call-class argument goes through the domain-path analysis, so an ordinary list of
+    ids is not mistaken for a domain."""
+    if not isinstance(value, (list, tuple)) or not value:
+        return False
+    for term in value:
+        if isinstance(term, str):
+            if term not in _DOMAIN_OPERATORS:
+                return False
+        elif not (isinstance(term, (list, tuple)) and len(term) == 3
+                  and isinstance(term[0], str) and isinstance(term[1], str)):
+            return False
+    return True
 
 
 class GuardedSession:
@@ -576,6 +597,10 @@ class GuardedSession:
                                    ids=view.record_ids, depth=0)
         if parts.columns:
             self._check_columns(model, method, parts.columns, ops[0])
+        # A method that stays class "call" has no shape, so nothing above checked its
+        # arguments: scan them for a withheld-field oracle before the call is sent.
+        if rules_on and cls == "call":
+            self._check_call_arguments(model, method, view.args, view.kwargs)
         args, kwargs = view.args, view.kwargs
         if rules_on and ATTACHMENT in names and cls != INSPECT:
             args, kwargs = self._attachment_call(view, cls, parts, args, kwargs, ops[0])
@@ -659,6 +684,78 @@ class GuardedSession:
         relation = self._relation(model, field_name)
         if relation is not None:
             self._effect("read", model, method, relation[1], field_name)
+
+    # -- 6b. call-class backstop: the withheld-field oracle on an unlisted reader -------
+    def _check_call_arguments(self, model: str, method: str, args: Any, kwargs: Any) -> None:
+        """A method that stays class ``call`` (a business verb, or a method no inventory
+        lists) has no argument shape, so nothing checks what it names. A reader Odoo
+        adds later, or a module-specific one, could still carry a withheld-field oracle:
+        a field list, a groupby or a domain naming a credential-like field, or a domain
+        whose dotted leaf hops into a sealed model. This walks the arguments (never the
+        context, which ``check_context`` governs) and refuses such a value before the
+        call is sent. An ordinary business verb -- ids, a plain context, string
+        arguments that are not field names -- passes untouched; the design decision is
+        that ``standard`` keeps the business verbs (``action_confirm``, ``action_post``,
+        ``button_*``), and only an argument that is, or names through a path, a withheld
+        field now stops one."""
+        for value in args if isinstance(args, (list, tuple)) else ():
+            self._scan_call_value(model, method, value, 0)
+        if isinstance(kwargs, Mapping):
+            for key, value in kwargs.items():
+                if key != "context":
+                    self._scan_call_value(model, method, value, 0)
+
+    def _scan_call_value(self, model: str, method: str, value: Any, depth: int) -> None:
+        """Every string argument at any depth is checked as a field name; a domain-shaped
+        list goes through the read-path analysis instead of being walked term by term,
+        so the value a term compares against is not mistaken for a field reference."""
+        if depth > MAX_ARG_DEPTH:
+            return
+        if isinstance(value, str):
+            self._check_field_name(model, method, value)
+        elif isinstance(value, Mapping):
+            for item in value.values():
+                self._scan_call_value(model, method, item, depth + 1)
+        elif isinstance(value, (list, tuple)):
+            if _domain_shaped(value):
+                self._check_domain_argument(model, method, value)
+            else:
+                for item in value:
+                    self._scan_call_value(model, method, item, depth + 1)
+
+    def _check_field_name(self, model: str, method: str, text: str) -> None:
+        """A string that names a withheld field of ``model`` -- the whole name, the first
+        segment of a dotted path, or a later segment withheld on every model -- is a
+        field-name oracle and is refused. A string that is not a field path (free text,
+        an operator, an HTML body) is left alone."""
+        policy = self._policy
+        if not _FIELD_PATH.fullmatch(text):
+            return
+        path = text.split(".")
+        if policy.field_withheld(model, path[0]):
+            raise texts.field(policy, "read", model, text,
+                              by_file=policy.field_withheld_by_file(model, path[0])
+                              and len(path) == 1, layer="B")
+        for name in path[1:]:
+            if policy.field_withheld_everywhere(name):
+                raise texts.field(policy, "read", model, text,
+                                  by_file=f"*.{name.lower()}" in policy.withhold, layer="B")
+
+    def _check_domain_argument(self, model: str, method: str, value: Any) -> None:
+        """A domain-shaped argument: run the same read-path analysis a read's domain gets,
+        so a withheld leaf and a dotted leaf that reaches a tier model are both refused.
+        When the value only looks like a domain (``domain_paths`` cannot read it), fall
+        back to checking the field each top-level term names."""
+        try:
+            paths = domain_paths(value, method=method)
+        except ShapeError:
+            for term in value:
+                if (isinstance(term, (list, tuple)) and len(term) == 3
+                        and isinstance(term[0], str)):
+                    self._check_field_name(model, method, term[0])
+            return
+        for path in paths:
+            self._check_path(model, method, path)
 
     def _link_op(self, comodel: str) -> str:
         """A many2many link changes the relation, not the linked records: ``read`` on

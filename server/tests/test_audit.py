@@ -439,6 +439,37 @@ def test_verify_catches_a_cut_tail_and_a_new_chain_says_why(tmp_path: Path) -> N
     assert result.broken == 5 and "not a JSON line" in result.reason
 
 
+def test_verify_cannot_catch_whole_trailing_lines_removed(tmp_path: Path) -> None:
+    # The documented limit (docs/policy.md, README, CHANGELOG): verification of one
+    # file cannot, by itself, detect whole trailing lines removed at a line boundary,
+    # because the surviving prefix is still a valid chain. A mid-line cut IS caught
+    # (test_verify_catches_a_cut_tail_and_a_new_chain_says_why); whole-line removal is
+    # not. This is why the docs point to a remote append-only sink for prevention.
+    path = _filled(tmp_path)
+    lines = path.read_bytes().split(b"\n")[:-1]
+    path.write_bytes(b"".join(line + b"\n" for line in lines[:3]))  # drop the last two
+    result = verify(str(path))
+    assert result.ok and result.lines == 3  # the loss is invisible to one-file verify
+
+
+def test_the_docs_state_the_verify_audit_limit() -> None:
+    root = Path(__file__).resolve().parents[2]
+    docs = {
+        "docs/policy.md": (root / "docs" / "policy.md").read_text(encoding="utf-8"),
+        "README.md": (root / "README.md").read_text(encoding="utf-8"),
+        "CHANGELOG.md": (root / "CHANGELOG.md").read_text(encoding="utf-8"),
+    }
+    for name, text in docs.items():
+        flat = " ".join(text.split())
+        assert "--verify-audit" in flat, name
+        # each says, in its own words, that whole trailing lines removed / a deleted
+        # day file cannot be caught from one file alone.
+        assert ("whole trailing lines removed" in flat
+                or "whole trailing lines" in flat), name
+        assert ("deleted" in flat.lower() or "day file" in flat
+                or "a deleted day" in flat), name
+
+
 def test_a_restart_continues_the_chain(tmp_path: Path) -> None:
     path = _filled(tmp_path, 3)
     audit_in(tmp_path).call("odoo_read", status="ok")  # another process, same day

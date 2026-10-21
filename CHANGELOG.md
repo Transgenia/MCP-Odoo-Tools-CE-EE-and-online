@@ -45,13 +45,20 @@ new option **Permission profile** to `full`. The tool count stays 28.
   mapping is stopped as a bug.
 - Methods that return record data or filter it but are not search/read (`search_fetch`,
   `fetch`, `onchange`, `read_progress_bar`, `search_panel_select_range`,
-  `search_panel_select_multi_range`, `copy_data`) are read, not opaque `call`s, so their
-  domains, fields and groupby go through the withheld-field and comodel checks and their
-  results are redacted. As a backstop, a withheld name is removed from every result but a
-  field-definition one (`fields_get`), so a value-returning method Odoo adds later cannot
-  become a door around the rule. The bulk import engine (`base_import.import`) and the
-  language wizards are in the `customization` tier, reachable only through their tools, so
-  `odoo_execute` cannot drive the importer's `load()` into a closed model.
+  `search_panel_select_multi_range`, `copy_data`, the web `web_name_search`, the pivot
+  readers `read_grouping_sets` and `formatted_read_grouping_sets`, and `filtered_domain`)
+  are read, not opaque `call`s, so their domains, grouping sets, fields and specifications
+  go through the withheld-field and comodel checks and their results are redacted. As a
+  backstop, a method that stays a plain `call` (a business verb, or one no version lists)
+  has its result redacted at any depth too, and its arguments are scanned before it is
+  sent: a string that is, or is a dotted path whose first segment is, a withheld field, or
+  a domain-shaped argument that names one or hops into a sealed model, is refused, so a
+  value-returning method Odoo adds later cannot become a door around the rule. (A `call`
+  whose argument literally is a credential-like field name, such as the bare string
+  `"access_token"`, is now refused; business verbs with ids and an ordinary context are
+  not.) The bulk import engine (`base_import.import`) and the language wizards are in the
+  `customization` tier, reachable only through their tools, so `odoo_execute` cannot drive
+  the importer's `load()` into a closed model.
 - With Read-only mode on, the write tools are no longer listed (calling one still explains
   why).
 - `odoo_report` now refuses before calling Odoo: it called the private method
@@ -139,6 +146,10 @@ new option **Permission profile** to `full`. The tool count stays 28.
 - The audit `start` line is written even when a path, database or login carries
   non-UTF-8 bytes (surrogate escapes), and a pre-existing daily file with looser
   permissions is tightened to `0600` before it is appended to.
+- `odoo_add_automation` on Odoo 10 now fills `base.action.rule`'s required trigger field,
+  which that version names `kind` (not `trigger`); the automation was created without it
+  before. The value is the same one the tool already maps (`on_create`, `on_write`,
+  `on_create_or_write`, `on_unlink`).
 
 ### Removed
 

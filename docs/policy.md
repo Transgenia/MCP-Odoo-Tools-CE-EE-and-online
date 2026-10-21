@@ -231,7 +231,8 @@ keys, so a generic read of it could reach the `secrets` tier through the back
 door. A generic call on `ir.attachment` must name its parent:
 
 - **A search** (`search`, `search_read`, `search_count`, `read_group`,
-  `formatted_read_group`, `web_search_read`, `web_read_group`, `name_search`)
+  `formatted_read_group`, `web_search_read`, `web_read_group`, `name_search`,
+  `web_name_search`, `read_grouping_sets`, `formatted_read_grouping_sets`)
   needs a top-level `["res_model", "=", X]` or `["res_model", "in", [...]]`
   whose models all allow `read`, and no leaf on `res_field`. The guard adds
   `["res_field", "=", False]`, so a search never sees files stored in fields.
@@ -339,6 +340,22 @@ domain path. A filter on a secret would leak it one guess at a time. Reads lose
 withheld keys at any depth, and the tool result then names them in
 `policy_withheld_fields` (for example
 `["res.company.l10n_mx_edi_pac_password"]`), so nothing disappears silently.
+
+Every public method that reads record data or filters it goes through these
+checks, not only `search`/`read`: the web client's `web_name_search`, the pivot
+readers `read_grouping_sets` and `formatted_read_grouping_sets`, and
+`filtered_domain` are reads, so their domains, grouping sets and specifications
+are parsed and refused like any other. A method that stays a plain `call` (a
+business verb such as `action_confirm`, or a method no version of odoo-tools
+lists) has no such shape, so two backstops cover it. Its result is redacted at
+any depth, the same as a read's, so a value-returning method cannot become a
+door around the withheld-field rule. And its arguments are scanned before it is
+sent: a string argument that is, or is a dotted path whose first segment is, a
+withheld field, and a domain-shaped argument that names a withheld field or hops
+into a sealed model, are refused. The one cost is that a legitimate `call` whose
+argument literally is a credential-like field name (for example the bare string
+`"access_token"`, or `"partner_id.signup_token"`) is now refused; pass such a
+call another way.
 
 The policy file can change the list: `fields.withhold` adds names (`model.field`
 or `*.field`, for data minimisation), and `fields.allow` releases exact

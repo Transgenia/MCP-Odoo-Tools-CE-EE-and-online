@@ -251,6 +251,26 @@ def test_automation_v10_uses_legacy_model() -> None:
     assert base_vals["server_action_ids"] == [(6, 0, [555])]
 
 
+def test_automation_v10_sets_kind_not_trigger() -> None:
+    # The real Odoo 10 base.action.rule names its trigger field 'kind'. When the
+    # schema has 'kind' and no 'trigger', the tool sets kind from the trigger value
+    # (so the required field is filled), and never sends a 'trigger' key.
+    fake = FakeSession({"kind": {}, "model_id": {}, "server_action_ids": {}}, version=10)
+    res = odoo_add_automation(
+        _ctx(fake),
+        {"model": "crm.lead", "name": "Tag", "code": "pass", "trigger": "on_create"},
+    )
+    assert res["mode"] == "linked-server-action"
+    base_vals = next(c for c in fake.calls if c[0] == "base.action.rule")[2][0]
+    assert base_vals["kind"] == "on_create" and "trigger" not in base_vals
+    assert base_vals["server_action_ids"] == [(6, 0, [555])]
+    # the guard predicate for the automation allows the 'kind' key (without it the
+    # create would be stopped as outside the tool's declared envelope).
+    from odoo_mcp.tools.studio import _AUTOMATION_KEYS
+
+    assert "kind" in _AUTOMATION_KEYS
+
+
 def test_automation_linked_failure_cleans_orphan() -> None:
     class FailSecond(FakeSession):
         def execute(self, model, method, args=None, kwargs=None):

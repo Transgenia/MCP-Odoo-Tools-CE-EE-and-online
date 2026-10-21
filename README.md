@@ -345,8 +345,12 @@ adds per-model rules: method lists for `odoo_execute`, refusals, field rules and
 openings of sensitive models that need a reason and may expire. Check one
 offline with `python3 server/run_stdio.py --check-policy FILE --explain
 res.users:write`. Every tool call, refusals included, leaves one line in a local
-audit file (names and counts, never values or secrets). The full reference,
-with four example files: [`docs/policy.md`](docs/policy.md).
+audit file (names and counts, never values or secrets). The lines are
+hash-chained; `python3 server/run_stdio.py --verify-audit FILE` names the first
+edited, reordered or incomplete line, but cannot, from one file alone, catch
+whole trailing lines removed or a day file deleted outright (the surviving
+prefix still chains). The full reference, with four example files:
+[`docs/policy.md`](docs/policy.md).
 
 In the local (stdio) mode the permission policy limits what Claude can do
 **through the odoo-tools MCP tools**. It protects against mistakes and against

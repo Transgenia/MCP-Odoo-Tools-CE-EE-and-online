@@ -101,8 +101,9 @@ _SEARCH_KEYS = frozenset({"domain", "limit", "offset", "order"})
 _FIELD_KEYS = frozenset({"name", "field_description", "ttype", "model_id", "model", "state",
                          "required", "help", "relation", "relation_field", "currency_field",
                          "selection"})
-_AUTOMATION_KEYS = frozenset({"name", "model_id", "trigger", "filter_domain", "state", "code",
-                              "action_server_id", "action_server_ids", "server_action_ids"})
+_AUTOMATION_KEYS = frozenset({"name", "model_id", "trigger", "kind", "filter_domain", "state",
+                              "code", "action_server_id", "action_server_ids",
+                              "server_action_ids"})
 _LINK_KEYS = ("action_server_id", "action_server_ids", "server_action_ids")
 _SERVER_ACTION_KEYS = frozenset({"name", "model_id", "state", "code"})
 
@@ -390,6 +391,10 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     base_vals: dict[str, Any] = {"name": name, "model_id": model_id}
     if "trigger" in fg:
         base_vals["trigger"] = trigger
+    elif "kind" in fg:
+        # Odoo 10's base.action.rule names its required trigger field 'kind' and takes
+        # the same values (on_create, on_write, on_create_or_write, on_unlink).
+        base_vals["kind"] = trigger
     if args.get("filter_domain") is not None and "filter_domain" in fg:
         base_vals["filter_domain"] = repr(args["filter_domain"])
 
