@@ -40,7 +40,8 @@ def test_publishing_the_draft_runs_the_rest() -> None:
 def test_jobs_that_reach_users_are_skipped_in_a_draft_run() -> None:
     jobs = _jobs()
     for name in PUBLISHING_JOBS:
-        assert f"if: ${{{{ !({DRAFT_RUN}) }}}}" in jobs[name], name
+        condition = jobs[name].split("    if: ", 1)[1].split("\n", 1)[0]
+        assert f"!({DRAFT_RUN})" in condition, name
 
 
 def test_the_release_job_only_drafts_in_a_draft_run() -> None:
@@ -62,3 +63,15 @@ def test_a_pending_draft_stops_the_run_before_anything_is_published() -> None:
 def test_a_draft_tag_never_holds_latest_back() -> None:
     meta = _jobs()["container"].split("- name: Image tags", 1)[1].split("- uses:", 1)[0]
     assert "--exclude-drafts" in meta and "git tag -l" not in meta
+
+
+def test_a_skipped_tag_job_does_not_skip_the_rest() -> None:
+    # On a tag push or a release event `tag` is skipped. A job whose condition has no
+    # status function gets an implicit success(), which is false when any job up its
+    # `needs` chain was skipped: on 2026-10-21 publishing the v1.4.1 draft ran
+    # `verify` and skipped everything after it.
+    for name, job in _jobs().items():
+        if name == "tag":
+            continue
+        condition = job.split("    if: ", 1)[1].split("\n    runs-on", 1)[0] if "    if: " in job else ""
+        assert "!cancelled()" in condition, name
