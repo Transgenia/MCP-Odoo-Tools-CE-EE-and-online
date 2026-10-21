@@ -138,6 +138,9 @@ jobs:
 
   build-standard:
     needs: verify
+    # Explicit, like every job after `verify`: on a tag push or a release event the
+    # `tag` job is skipped, and an implicit success() would skip this job too.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -179,7 +182,7 @@ jobs:
   container:
     needs: verify
     # Draft mode publishes nothing: the image is built once the draft is published.
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
+    if: ${{ !failure() && !cancelled() && !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -283,7 +286,7 @@ jobs:
 
   mirror:
     needs: github-release
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
+    if: ${{ !failure() && !cancelled() && needs.github-release.result == 'success' && !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
     permissions:
       contents: read
       packages: write
@@ -291,7 +294,7 @@ jobs:
 
   pypi:
     needs: github-release
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
+    if: ${{ !failure() && !cancelled() && needs.github-release.result == 'success' && !(github.event_name == 'workflow_dispatch' && inputs.draft) }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
