@@ -18,9 +18,10 @@ Use this skill whenever the user wants an AI agent to read, write, export, or cu
 ## Install
 
 ```
-/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online
-/plugin install odoo-tools
+/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 ```
+
+On Claude Code older than 2.1.275, run `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then `/plugin install odoo-tools`.
 
 Then run `/odoo-tools:odoo-setup-mcp` (or `odoo-setup-cli` if you can't run the MCP server) to connect it to a real instance.
 

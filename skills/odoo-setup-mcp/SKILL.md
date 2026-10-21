@@ -234,9 +234,9 @@ Walk through this checklist, one item at a time, marking each ✓:
 3. **HTTPS URL** only; keep `auto` transport unless there is a reason.
 4. **Pilot first**: repeat the key workflows on the sandbox or a staging copy.
 5. **Backups** before bulk writes or Studio-style changes in production.
-6. **Every machine**: install the plugin (`/plugin marketplace add
-   Transgenia/MCP-Odoo-Tools-CE-EE-and-online`, then `/plugin install
-   odoo-tools`) and run this route; machines without Python use container mode.
+6. **Every machine**: install the plugin (`/plugin install odoo-tools
+   --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`; on Claude Code
+   older than 2.1.275, `/plugin marketplace add` first) and run this route; machines without Python use container mode.
 7. **Updates**: `/plugin` → **odoo-tools** → update; read the CHANGELOG before
    updating production users.
 8. **Odoo Online**: plan the API-key rotation (keys expire from Odoo 18;

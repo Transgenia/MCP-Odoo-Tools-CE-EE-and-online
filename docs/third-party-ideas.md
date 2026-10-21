@@ -7,7 +7,8 @@ honoring each repo's license. See the PR description's IP section.
 | Repo | License | Stars (verified 2026-09-20) | Verdict |
 |------|---------|-----------------------------|---------|
 | `erpipe-org/mcp-odoo` (PyPI `odoo-mcp`) | MIT | 413 | Adopt concepts selectively; three-step writes deferred |
-| `ivnvxd/mcp-server-odoo` (+ Apps Store `mcp_server` module) | MPL-2.0 | 388 | Adopt `read_group` idea; Apps module needs business decision |
+| `ivnvxd/mcp-server-odoo` | MPL-2.0 | 388 | Adopt `read_group` idea |
+| Odoo Apps `mcp_server` module (much. Consulting; corrected 2026-10-21, it was listed here under `ivnvxd` and MPL-2.0) | OPL-1 (proprietary) | n/a | Not open source: ideas from its public description only, never its code; interoperate over the network only |
 | `mart337i/odoo-dev-mcp` | MIT | — (not recorded) | Different angle (scaffolding); deferred |
 | `sameeroz/odoo-mcp-server` | MIT | — (not recorded) | i18n already covered; no action |
 | `altinkaya-opensource/odoo-mcp` | AGPL-3.0 | — (not recorded) | Concept only (`READONLY_MODE` idea), never code |
@@ -38,7 +39,9 @@ honoring each repo's license. See the PR description's IP section.
   a follow-up services-oriented pack, not in Standard 1.0.
 - **Entry-point plugins `ODOO_MCP_PLUGINS`** (`erpipe-org/mcp-odoo`, MIT):
   nice extensibility, but new API surface to maintain. Roadmap.
-- **Companion Odoo module + Apps Store listing** (`ivnvxd`, external module):
+- **Companion Odoo module + Apps Store listing** (the idea behind the Odoo Apps
+  `mcp_server` module by much. Consulting, OPL-1: a module of our own would be
+  written from scratch, never derived from that code):
   distribution advantage is real (reaches business owners, not just devs),
   but publishing a module is a **business decision for Saurat/Efraín**
   (maintenance, version matrix 10-19, store reviews). Not started.
@@ -80,5 +83,10 @@ facts (method names, parameters, access rules), never copied.
 
 - AGPL-3.0 (`altinkaya-opensource/odoo-mcp`): concept-level inspiration only.
 - MPL-2.0 (`ivnvxd/mcp-server-odoo`): no file copied, so no file-level copyleft triggered.
+- OPL-1 (Odoo Apps `mcp_server`, much. Consulting): proprietary. Its license forbids
+  publishing or distributing copies, modified or not, so nothing from it may enter
+  this repository; ideas come from its public description only.
+  `server/tests/test_license_hygiene.py` checks that no proprietary-license
+  marker appears in the shipped code.
 - MIT repos: attribution given here; code is ours.
 - Elastic-2.0 (`pantalytics/odoo-mcp-pro`): idea only (external-id upsert through `load()`), nothing copied.

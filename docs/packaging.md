@@ -20,8 +20,8 @@ push the tag `v<ver>` — or, without a local clone, run **Actions → Release �
 on `main` with tag `v<ver>`: the workflow creates the tag itself. `release.yml` refuses a tag
 that does not match the versions.
 
-Install: `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
-then `/plugin install odoo-tools` (see `docs/install.md`).
+Install: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
+(Claude Code 2.1.275 or later; older versions add the marketplace first, see `docs/install.md`).
 
 ## Enterprise / Teams (later, separate)
 

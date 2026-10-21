@@ -59,6 +59,11 @@ apps the plugin still installs and its skills and commands still load, but they
 cannot reach Odoo without the tools. That is the app working as designed, not a
 broken install.
 
+Cowork and Claude chat do accept **remote** MCP connectors: an MCP server
+reachable at an `https` URL, added under **Customize > Connectors** (on Team and
+Enterprise plans an Owner adds it for the organization). This plugin does not
+provide one: its Odoo tools need the local server above.
+
 ### If the Odoo tools do not appear
 
 The usual symptom, in Cowork or on claude.ai: the plugin installs and shows as on,
@@ -93,9 +98,16 @@ missing (whether Cowork shows that notice has not been verified yet).
 ## Install
 
 ```
+/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
+/odoo-tools:odoo-setup-mcp
+```
+
+The first line adds the marketplace and installs the plugin in one step (Claude
+Code 2.1.275 or later). On an older Claude Code, add the marketplace first:
+
+```
 /plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /plugin install odoo-tools
-/odoo-tools:odoo-setup-mcp
 ```
 
 **`/odoo-tools:odoo-setup-mcp` is the guided route**: it detects what is already

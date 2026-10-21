@@ -3,10 +3,13 @@
 ## As a Claude plugin (recommended)
 
 ```
-/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online
-/plugin install odoo-tools
+/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /odoo-tools:odoo-setup-mcp
 ```
+
+On Claude Code older than 2.1.275, which has no `--marketplace` flag, run
+`/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then
+`/plugin install odoo-tools` instead of the first line.
 
 Claude Code prompts for the connection options when the plugin is enabled
 (`/plugin` → **odoo-tools** → **Configure options** to change them). The API key
@@ -65,7 +68,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
 
 # container mode: the MCP server without a local Python
-docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.4.0
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.4.1
 ```
 
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the

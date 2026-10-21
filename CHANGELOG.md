@@ -4,7 +4,11 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.1] - 2026-10-21
+
+Documentation and diagnostics release: where the Odoo tools run, a notice when the
+connection options are missing, and a stricter clean-room rule. The MCP server's
+behaviour is unchanged (only its reported version moves to 1.4.1).
 
 ### Fixed
 - **Documentation: the Odoo tools do not run in Cowork or Claude chat.** v1.4.0
@@ -20,6 +24,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   works (Claude Code, including `claude plugin configure` for headless machines);
   and the guided route (`odoo-setup-mcp`, new Phase 0b) checks the surface before
   it troubleshoots Python. No server code changed.
+- `docs/third-party-ideas.md` listed the Odoo Apps `mcp_server` module under
+  `ivnvxd/mcp-server-odoo` and MPL-2.0. That module is much. Consulting's and is
+  under the Odoo Proprietary License (OPL-1); `ivnvxd/mcp-server-odoo` is a separate
+  MPL-2.0 project. Nothing from either was copied.
 
 ### Added
 - **Missing-options notice at session start** (`hooks/check_options.py`, a second
@@ -44,6 +52,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - `tests/test_docs_surfaces.py`: every `${user_config.KEY}` the server references
   is declared; the README does not promise the Odoo tools where the options cannot
   be entered; the guided route triages the surface before Python.
+- `tests/test_license_hygiene.py`: no proprietary or AGPL license marker in any
+  shipped file (including untracked ones, so a copied file is caught before it is
+  committed), MIT SPDX headers on our own Python code, MIT in the three manifests,
+  and the clean-room rule covering OPL-1 in `CONTRIBUTING.md` and `NOTICE`.
+
+### Changed
+- **One-step install.** The README, `docs/install.md`, `docs/packaging.md` and the
+  skills now install with `/plugin install odoo-tools --marketplace
+  Transgenia/MCP-Odoo-Tools-CE-EE-and-online` (Claude Code 2.1.275 or later, the
+  line `claude plugin validate` advises), keeping the two-step commands for older
+  versions.
+- README, "Where it works": Cowork and Claude chat accept remote MCP connectors by
+  `https` URL (Customize > Connectors); the plugin does not provide one.
+- Clean-room rule (`CONTRIBUTING.md`, `NOTICE`): besides AGPL projects, no code from
+  proprietary Odoo modules (OPL-1) or any license that does not allow
+  redistribution under MIT; such projects may inform ideas from their public
+  documentation only, and the plugin works with them only over the network.
+- The container image pinned in `/odoo-tools:deploy-local` and `docs/install.md`
+  is `ghcr.io/transgenia/odoo-mcp-tools:1.4.1`.
 
 ## [1.4.0] - 2026-09-29
 
