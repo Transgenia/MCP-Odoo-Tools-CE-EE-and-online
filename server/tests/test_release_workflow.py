@@ -49,3 +49,16 @@ def test_the_release_job_only_drafts_in_a_draft_run() -> None:
     draft_branch = script.split('if [ "$DRAFT" = "true" ]; then', 1)[1].split("elif", 1)[0]
     assert "--draft" in draft_branch
     assert script.count("--draft") == 1  # every other branch publishes or updates
+
+
+def test_a_pending_draft_stops_the_run_before_anything_is_published() -> None:
+    verify = _jobs()["verify"]
+    preflight = verify.split("- name: Release state for this tag", 1)[1].split("- name:", 1)[0]
+    assert "isDraft" in preflight and "exit 1" in preflight
+    assert verify.index("Release state for this tag") < verify.index("Pytest")
+    assert "needs: verify" in _jobs()["container"]
+
+
+def test_a_draft_tag_never_holds_latest_back() -> None:
+    meta = _jobs()["container"].split("- name: Image tags", 1)[1].split("- uses:", 1)[0]
+    assert "--exclude-drafts" in meta and "git tag -l" not in meta

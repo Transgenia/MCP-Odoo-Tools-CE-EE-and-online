@@ -109,6 +109,21 @@ jobs:
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::tag must look like vX.Y.Z, got '$TAG'"; exit 1
           fi
+      - name: Release state for this tag
+        # Before any publishing job starts: a draft run needs a tag with no
+        # release yet, and a full run must not push an image for a tag whose
+        # release still waits as a draft (publishing that draft runs the rest).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
+            --jq ".[] | select(.tagName == \"$TAG\") | .isDraft")
+          if [ "$DRAFT" = "true" ] && [ -n "$existing" ]; then
+            echo "::error::a release for $TAG already exists (draft: $existing); delete it first"; exit 1
+          fi
+          if [ "$DRAFT" != "true" ] && echo "$existing" | grep -qx true; then
+            echo "::error::$TAG has a draft release: publish it (that runs the rest) or delete it"; exit 1
+          fi
       - name: Versions match the tag
         run: python3 scripts/check_release_version.py "$TAG"
       - name: Install
@@ -183,13 +198,20 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Image tags
         id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           V="${TAG#v}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/odoo-mcp-tools"
           # Moving tags only move forward: re-running an older tag (manual
           # dispatch) must not point `latest` or `X.Y` back at an older image.
-          newest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
-          newest_minor=$(git tag -l "v${V%.*}.[0-9]*" --sort=-v:refname | head -n1)
+          # Compare with published releases plus this tag: a tag kept by an
+          # unpublished draft is not a release and must not hold `latest` back.
+          versions=$( { gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --exclude-drafts \
+                          --json tagName --jq '.[].tagName'; echo "$TAG"; } \
+                      | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -u -V -r)
+          newest=$(echo "$versions" | head -n1)
+          newest_minor=$(echo "$versions" | grep -F "v${V%.*}." | head -n1)
           {
             echo "tags<<EOF"
             echo "${IMAGE}:${V}"
