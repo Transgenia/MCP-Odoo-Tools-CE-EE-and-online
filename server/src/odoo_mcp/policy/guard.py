@@ -112,6 +112,8 @@ AUTOMATION = "$automation"  # registry.Internal: base.automation (base.action.ru
 # Fields of ir.attachment that hold the file itself.
 CONTENT_FIELDS = frozenset({"datas", "raw", "db_datas"})
 _FIELD = re.compile(r"[A-Za-z0-9_]+")
+# The value types redaction passes through as they are (JSON scalars).
+_SCALARS = frozenset({str, int, float, bool, type(None)})
 
 
 # --- helpers for the internal predicates (tools/*.py) --------------------------------
@@ -935,7 +937,7 @@ class GuardedSession:
 
     def _redact(self, model: str, method: str, result: Any) -> Any:
         # The rows of one model share their keys: each key is decided once per call.
-        seen: dict[str | None, dict[Any, str]] = {}
+        seen: dict[str | None, tuple[set[Any], dict[Any, str]]] = {}
         if isinstance(result, Mapping):
             for key in ("records", "groups"):  # web_search_read, web_read_group
                 if method.startswith("web_") and isinstance(result.get(key), list):
@@ -946,43 +948,53 @@ class GuardedSession:
         return result
 
     def _rows(self, model: str | None, label: str, rows: list[Any],
-              seen: dict[str | None, dict[Any, str]]) -> list[Any]:
+              seen: dict[str | None, tuple[set[Any], dict[Any, str]]]) -> list[Any]:
         return [self._row(model, label, row, seen) if isinstance(row, Mapping) else row
                 for row in rows]
 
     def _row(self, model: str | None, label: str, row: Mapping[str, Any],
-             seen: dict[str | None, dict[Any, str]]) -> dict[str, Any]:
-        """``row`` of ``model`` (None: a nested row of a model this call did not need
-        to know) without its withheld fields; ``label`` names it in
-        ``policy_withheld_fields``. ``seen`` holds, per model, the field name each
-        key withholds ("" for a key that is kept)."""
-        out, keys = {}, seen.setdefault(model, {})
-        for key, value in row.items():
-            withheld = keys.get(key)
-            if withheld is None:
-                withheld = keys[key] = self._withheld_key(model, key)
-            if withheld:
-                self._scope.withheld.add(f"{label}.{withheld}")
+             seen: dict[str | None, tuple[set[Any], dict[Any, str]]]) -> dict[str, Any]:
+        """A copy of ``row`` of ``model`` (None: a nested row of a model this call did
+        not need to know) without its withheld fields; ``label`` names it in
+        ``policy_withheld_fields``. ``seen`` holds, per model, the keys this call
+        kept and the field name each withheld key names."""
+        decided = seen.get(model)
+        if decided is None:
+            decided = seen[model] = (set(), {})
+        kept, hidden = decided
+        names = row.keys()
+        if not names <= kept:  # keys not decided yet
+            for key in names - kept - hidden.keys():
+                withheld = self._withheld_key(model, key)
+                if withheld:
+                    hidden[key] = withheld
+                else:
+                    kept.add(key)
+        out = dict(row)
+        if hidden:
+            for key in names & hidden.keys():
+                self._scope.withheld.add(f"{label}.{hidden[key]}")
+                del out[key]
+        for key, value in out.items():  # values only change below, so iterating is safe
+            if type(value) in _SCALARS:  # most values
                 continue
-            if value is None or isinstance(value, (str, int, float)):  # most values
-                out[key] = value
-                continue
+            if type(value) is list and all(type(item) in _SCALARS for item in value):
+                continue  # ids, or a many2one's [id, name]: nothing nested to redact
             name = key.split(":")[0] if isinstance(key, str) else key
             if key == "__records" and isinstance(value, list):  # unfolded groups
-                value = self._rows(model, label, value, seen)
+                out[key] = self._rows(model, label, value, seen)
             elif isinstance(value, Mapping) or (isinstance(value, list) and any(
                     isinstance(item, Mapping) for item in value)):
                 nested = self._known_relation(model, name)
                 inner = f"{label}.{name}"
-                value = (self._row(nested, inner, value, seen) if isinstance(value, Mapping)
-                         else self._rows(nested, inner, value, seen))
+                out[key] = (self._row(nested, inner, value, seen) if isinstance(value, Mapping)
+                            else self._rows(nested, inner, value, seen))
             elif isinstance(value, list) and any(_values_command(item) for item in value):
                 # x2many lines as (0, 0, values) or (1, id, values) commands: what
                 # copy_data and default_get return for one2many fields
                 nested, inner = self._known_relation(model, name), f"{label}.{name}"
-                value = [[item[0], item[1], self._row(nested, inner, item[2], seen)]
-                         if _values_command(item) else item for item in value]
-            out[key] = value
+                out[key] = [[item[0], item[1], self._row(nested, inner, item[2], seen)]
+                            if _values_command(item) else item for item in value]
         return out
 
     def _withheld_key(self, model: str | None, key: Any) -> str:

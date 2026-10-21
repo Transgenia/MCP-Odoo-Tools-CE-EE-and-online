@@ -175,6 +175,34 @@ def test_the_memo_is_per_policy_and_bounded() -> None:
     assert not standard.field_withheld("res.partner", "payment_token_id")
 
 
+def test_redacted_rows_are_copies_and_nested_rows_are_still_redacted() -> None:
+    row = {"id": 3, "name": "Acme", "signup_token": "T", "category_id": [1, 2],
+           "parent_id": [9, "Parent"], "child_ids": [{"id": 4, "name": "Kid",
+                                                     "signup_token": "T2"}]}
+    raw = ScriptedSession(results={("res.partner", "search_read"): [row]})
+    error, text = call(server(raw, audit_dir="off"), "odoo_search_read", model="res.partner")
+    payload = json.loads(text)
+    assert error is False and payload["records"] == [
+        {"id": 3, "name": "Acme", "category_id": [1, 2], "parent_id": [9, "Parent"],
+         "child_ids": [{"id": 4, "name": "Kid"}]}]
+    assert payload["policy_withheld_fields"] == ["res.partner.child_ids.signup_token",
+                                                 "res.partner.signup_token"]
+    # what the session returned is left as it was: the tool gets copies
+    assert row["signup_token"] == "T" and row["child_ids"][0]["signup_token"] == "T2"
+    # the records of unfolded groups (web_read_group) are rows of the model too
+    groups = {"length": 1, "groups": [{"stage_id": [1, "New"], "__count": 1, "__records": [
+        {"id": 3, "name": "A", "signup_token": "T"}]}]}
+    raw = ScriptedSession(results={("res.partner", "web_read_group"): groups})
+    error, text = call(server(raw, audit_dir="off"), "odoo_execute", model="res.partner",
+                       method="web_read_group",
+                       kwargs={"domain": [], "groupby": ["stage_id"], "aggregates": ["__count"]})
+    payload = json.loads(text)
+    assert error is False, text
+    assert payload["result"]["groups"][0] == {"stage_id": [1, "New"], "__count": 1,
+                                              "__records": [{"id": 3, "name": "A"}]}
+    assert payload["policy_withheld_fields"] == ["res.partner.signup_token"]
+
+
 def test_only_a_tool_with_internal_calls_keeps_the_rows_it_read() -> None:
     raw = ScriptedSession()
     session, scope = guarded("odoo_read", {"model": "res.partner", "ids": [3],
