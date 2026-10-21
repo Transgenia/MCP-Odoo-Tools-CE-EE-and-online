@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 from odoo_mcp.config import Settings
@@ -48,3 +49,46 @@ def test_from_env_does_not_leak(monkeypatch) -> None:
     s = Settings.from_env()
     assert SECRET not in repr(s)
     assert s.secret == SECRET  # still accessible programmatically
+
+
+def _policy_settings() -> Settings:
+    s = _settings()
+    s.policy_profile = "builder"
+    s.policy_file = "/home/someone/.config/odoo-tools/policy.json"
+    s.audit_dir = "/data/odoo-tools/audit"
+    s.audit_retention_days = 30
+    return s
+
+
+def test_the_policy_fields_leak_nothing() -> None:
+    s = _policy_settings()
+    for text in (repr(s), str(s), f"{s}", json.dumps(s.redacted())):
+        assert SECRET not in text
+        assert PASSWORD not in text
+    red = s.redacted()
+    # the profile and the file path are not secrets; the audit folder is reduced to a flag
+    assert red["policy_profile"] == "builder"
+    assert red["policy_file"] == "/home/someone/.config/odoo-tools/policy.json"
+    assert red["audit"] is True and "audit_dir" not in red
+    assert "policy_profile" in repr(s) and "audit" in repr(s)
+
+
+def test_the_policy_fields_from_env_leak_nothing(monkeypatch) -> None:
+    monkeypatch.setenv("ODOO_API_KEY", SECRET)
+    monkeypatch.setenv("ODOO_POLICY", "Standard")
+    monkeypatch.setenv("ODOO_POLICY_FILE", "/etc/odoo-tools/policy.json")
+    monkeypatch.setenv("ODOO_AUDIT_DIR", "off")
+    s = Settings.from_env()
+    assert SECRET not in repr(s)
+    assert (s.policy_profile, s.policy_file, s.redacted()["audit"]) == (
+        "standard", "/etc/odoo-tools/policy.json", False)
+
+
+def test_the_policy_never_sees_a_credential() -> None:
+    # The policy is built from the settings, but keeps nothing of the connection.
+    from odoo_mcp.policy import load_policy
+
+    p = load_policy(_policy_settings(), ["odoo_version"])
+    assert p.locked and p.error_code == "E3"  # the file does not exist here
+    for text in (repr(p), json.dumps(p.describe()), str(p.lock_error())):
+        assert SECRET not in text and PASSWORD not in text

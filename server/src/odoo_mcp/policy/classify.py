@@ -1,0 +1,551 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
+"""How the policy reads an Odoo call: method classes, argument shapes, field paths.
+
+Pure functions over the arguments a tool or ``odoo_execute`` sends, with no Odoo
+metadata, so a call is read the same way before it is sent (Layer A, the
+declared accesses) and while it is sent (Layer B, the guarded session).
+
+``ARG_SHAPES`` names each argument as Odoo binds it. The names are those of
+``transport/json2_signatures.SIGNATURES`` (the base definitions), plus the older
+keywords some series still take (``args`` for a domain, ``fields_list``,
+``orderby``, ``lazy``). A call the table cannot read with certainty (an unknown
+keyword, too many positional arguments, a domain that is not a domain) raises
+:class:`ShapeError`, which the guard turns into the ``shape`` refusal: the
+policy never guesses what an argument means.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from .tiers import INSPECT, NOTE_SUBTYPE
+
+# Checked for every transport, as Odoo does: lowercase model names, and public
+# methods only (a leading "_" is private and refused over RPC).
+MODEL_NAME = re.compile(r"[a-z0-9_.]{1,128}")
+METHOD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,127}")
+
+
+def valid_model(name: Any) -> bool:
+    return isinstance(name, str) and MODEL_NAME.fullmatch(name) is not None
+
+
+def valid_method(name: Any) -> bool:
+    return isinstance(name, str) and METHOD_NAME.fullmatch(name) is not None
+
+
+# --- method classes ------------------------------------------------------------
+# INSPECT_METHODS | READ_METHODS equals transport.fallback.READ_METHODS (a test
+# keeps them equal), so what the policy treats as a read is exactly what the
+# transport may replay as one.
+INSPECT_METHODS = frozenset({"fields_get", "fields_view_get", "get_views", "check_access_rights",
+                             "has_access", "has_group", "has_groups", "context_get"})
+READ_METHODS = frozenset({"search", "search_read", "search_count", "read", "read_group",
+                          "formatted_read_group", "web_read_group", "web_search_read", "web_read",
+                          "name_search", "name_get", "default_get", "get_field_translations",
+                          "export_data"})
+CREATE_METHODS = frozenset({"create", "name_create", "copy"})
+WRITE_METHODS = frozenset({"write", "update_field_translations", "action_archive",
+                           "action_unarchive", "toggle_active"})
+CREATE_WRITE_METHODS = frozenset({"load", "web_save"})
+UNLINK_METHODS = frozenset({"unlink"})
+# Any other public method is "call" only.
+
+METHOD_CLASSES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("inspect", INSPECT_METHODS),
+    ("read", READ_METHODS),
+    ("create", CREATE_METHODS),
+    ("write", WRITE_METHODS),
+    ("create_write", CREATE_WRITE_METHODS),
+    ("unlink", UNLINK_METHODS),
+)
+CLASS_OPS: dict[str, tuple[str, ...]] = {
+    "inspect": (INSPECT,),
+    "read": ("read",),
+    "create": ("create",),
+    "write": ("write",),
+    "create_write": ("create", "write"),
+    "unlink": ("unlink",),
+    "call": ("call",),
+}
+# The classes whose arguments are checked: every method in them has a shape.
+VALUE_CHECKED = frozenset({"read", "create", "write", "create_write", "unlink"})
+
+
+def method_class(method: str) -> str:
+    for name, methods in METHOD_CLASSES:
+        if method in methods:
+            return name
+    return "call"
+
+
+def method_ops(method: str) -> tuple[str, ...]:
+    """The operations a method needs, besides ``call`` when ``odoo_execute`` sends it."""
+    return CLASS_OPS[method_class(method)]
+
+
+# --- argument shapes -----------------------------------------------------------
+# What an argument holds. None: nothing the policy checks (limit, offset, a name).
+DOMAIN = "domain"  # a search domain: the field paths of its leaves
+HAVING = "having"  # a domain over aggregates ('amount:sum', '__count')
+FIELDS = "fields"  # a list of field names
+TERMS = "terms"  # groupby and aggregate terms: 'f', 'f:month', 'f:sum', 'name:sum(f)'
+ORDER = "order"  # an order clause: 'name desc, partner_id.name'
+SPEC = "specification"  # a web_read specification, nested through "fields"
+GROUPBY_SPEC = "groupby_specification"  # {groupby field: specification of its records}
+EXPORT = "export"  # export_data paths: 'partner_id/name', 'id'
+COLUMNS = "columns"  # load() columns, the same syntax as export paths
+VALUES = "values"  # a dict of field values, or a list of them (create)
+FIELD = "field"  # one field name (the translation methods)
+
+
+@dataclass(frozen=True)
+class ArgShape:
+    """How Odoo binds the arguments of one method."""
+
+    record: bool  # a record method: the legacy positional form passes the ids first
+    params: tuple[tuple[str, str | None], ...] = ()  # (name, role) after the ids, in order
+    keywords: Mapping[str, str | None] = field(default_factory=dict)  # by name only
+    aliases: Mapping[str, str] = field(default_factory=dict)  # older keyword -> a name above
+    # The positional arguments read: fewer than params where the positions differ
+    # between series (read_group on 20.0, web_read_group from saas~18.4).
+    positional: int | None = None
+
+    def role(self, name: str) -> str | None:
+        for param, role in self.params:
+            if param == name:
+                return role
+        return self.keywords.get(name)
+
+    def knows(self, name: str) -> bool:
+        return name in self.keywords or any(param == name for param, _role in self.params)
+
+
+ARG_SHAPES: dict[str, ArgShape] = {
+    # reads
+    "search": ArgShape(False, (("domain", DOMAIN), ("offset", None), ("limit", None),
+                               ("order", ORDER)),
+                       keywords={"count": None}, aliases={"args": "domain"}),
+    "search_count": ArgShape(False, (("domain", DOMAIN), ("limit", None)),
+                             aliases={"args": "domain"}),
+    "search_read": ArgShape(False, (("domain", DOMAIN), ("fields", FIELDS), ("offset", None),
+                                    ("limit", None), ("order", ORDER)),
+                            keywords={"load": None}),
+    "read": ArgShape(True, (("fields", FIELDS), ("load", None))),
+    # The classic signature; 20.0 reuses the name with (domain, groupby, aggregates,
+    # having, ...), so only the first three positions (all field references) are read.
+    "read_group": ArgShape(False, (("domain", DOMAIN), ("fields", TERMS), ("groupby", TERMS),
+                                   ("offset", None), ("limit", None), ("orderby", ORDER),
+                                   ("lazy", None)),
+                           keywords={"aggregates": TERMS, "having": HAVING, "order": ORDER},
+                           positional=3),
+    "formatted_read_group": ArgShape(False, (("domain", DOMAIN), ("groupby", TERMS),
+                                             ("aggregates", TERMS), ("having", HAVING),
+                                             ("offset", None), ("limit", None),
+                                             ("order", ORDER))),
+    # Positions after the domain differ: (fields, groupby, ...) up to 18.0,
+    # (groupby, aggregates, ...) from saas~18.4.
+    "web_read_group": ArgShape(False, (("domain", DOMAIN), ("groupby", TERMS),
+                                       ("aggregates", TERMS), ("limit", None), ("offset", None),
+                                       ("order", ORDER)),
+                               keywords={"fields": TERMS, "orderby": ORDER, "lazy": None,
+                                         "expand": None, "expand_limit": None,
+                                         "expand_orderby": ORDER, "auto_unfold": None,
+                                         "unfold_read_specification": SPEC,
+                                         "unfold_read_default_limit": None,
+                                         "groupby_read_specification": GROUPBY_SPEC},
+                               positional=1),
+    "web_search_read": ArgShape(False, (("domain", DOMAIN), ("specification", SPEC),
+                                        ("offset", None), ("limit", None), ("order", ORDER),
+                                        ("count_limit", None))),
+    "web_read": ArgShape(True, (("specification", SPEC),)),
+    "name_search": ArgShape(False, (("name", None), ("domain", DOMAIN), ("operator", None),
+                                    ("limit", None)),
+                            aliases={"args": "domain"}),
+    "name_get": ArgShape(True),
+    "default_get": ArgShape(False, (("fields", FIELDS),), aliases={"fields_list": "fields"}),
+    "get_field_translations": ArgShape(True, (("field_name", FIELD), ("langs", None))),
+    "export_data": ArgShape(True, (("fields_to_export", EXPORT), ("raw_data", None))),
+    # writes
+    "create": ArgShape(False, (("vals_list", VALUES),), aliases={"vals": "vals_list"}),
+    "name_create": ArgShape(False, (("name", None),)),
+    "copy": ArgShape(True, (("default", VALUES),)),
+    "write": ArgShape(True, (("vals", VALUES),), aliases={"values": "vals"}),
+    "update_field_translations": ArgShape(True, (("field_name", FIELD), ("translations", None),
+                                                 ("source_lang", None))),
+    "action_archive": ArgShape(True),
+    "action_unarchive": ArgShape(True),
+    "toggle_active": ArgShape(True),
+    "load": ArgShape(False, (("fields", COLUMNS), ("data", None))),
+    "web_save": ArgShape(True, (("vals", VALUES), ("specification", SPEC), ("next_id", None))),
+    "unlink": ArgShape(True),
+}
+
+
+class ShapeError(ValueError):
+    """The arguments of a call cannot be read with certainty (rule ``shape``).
+
+    ``detail`` names only validated tokens (method and parameter names), never
+    an argument value.
+    """
+
+    def __init__(self, method: str, detail: str) -> None:
+        super().__init__(f"{method}: {detail}")
+        self.method = method
+        self.detail = detail
+
+
+@dataclass
+class CallArgs:
+    """The parts of one call the policy checks, named as Odoo binds them."""
+
+    method: str
+    cls: str
+    ids: Any = None  # the records of a record method, as given
+    named: dict[str, Any] = field(default_factory=dict)  # parameter name -> value
+    # Every field path the call filters, reads, groups or sorts on, or names
+    # (the translation field), as segments: ("partner_id", "country_id").
+    paths: list[tuple[str, ...]] = field(default_factory=list)
+    values: list[dict[str, Any]] = field(default_factory=list)  # the values it writes
+    # load() columns as (segments, reference): "order_line/product_id/id" is
+    # (("order_line", "product_id"), True), a reference to an existing record.
+    columns: list[tuple[tuple[str, ...], bool]] = field(default_factory=list)
+    # kwargs["context"] and the contexts nested in a specification.
+    contexts: list[Any] = field(default_factory=list)
+
+
+_NO_IDS = object()
+_KEYWORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+
+
+def _token(name: Any) -> str:
+    """An argument name for a message: echoed only when it is a plain identifier."""
+    return f"'{name}'" if isinstance(name, str) and _KEYWORD.fullmatch(name) else "of that name"
+
+
+def extract(method: str, args: Any = None, kwargs: Any = None, *, ids: Any = _NO_IDS) -> CallArgs:
+    """Name the arguments of ``model.method(*args, **kwargs)`` by ``ARG_SHAPES``.
+
+    ``ids`` is the separate record-ids argument (``odoo_execute``'s ``ids``, the
+    JSON-2 ``ids``); without it the first positional argument of a record method
+    is the ids, as in ``execute_kw``. A method outside the table (an inspect or a
+    business method) has nothing to check and comes back with no parts.
+    """
+    if args is None:
+        args = []
+    if kwargs is None:
+        kwargs = {}
+    if not isinstance(args, (list, tuple)):
+        raise ShapeError(method, "the positional arguments are not a list")
+    if not isinstance(kwargs, Mapping):
+        raise ShapeError(method, "the keyword arguments are not an object")
+    positional, keywords = list(args), dict(kwargs)
+    out = CallArgs(method, method_class(method))
+    if "context" in keywords:
+        out.contexts.append(keywords.pop("context"))
+    shape = ARG_SHAPES.get(method)
+    if shape is None:
+        if out.cls in VALUE_CHECKED:  # every such method has a row (a test checks it)
+            raise ShapeError(method, "has no argument table")
+        out.ids = None if ids is _NO_IDS else ids
+        return out
+    if ids is not _NO_IDS:
+        if not shape.record:
+            raise ShapeError(method, "is a model method and takes no ids")
+        out.ids = ids
+    elif shape.record and positional:
+        out.ids = positional.pop(0)
+    limit = len(shape.params) if shape.positional is None else shape.positional
+    if len(positional) > limit:
+        raise ShapeError(method, f"takes at most {limit} positional argument(s) after the ids; "
+                         "pass the others by name")
+    for (name, _role), value in zip(shape.params, positional):
+        out.named[name] = value
+    for key, value in keywords.items():
+        name = shape.aliases.get(key, key)
+        if not isinstance(name, str) or not shape.knows(name):
+            raise ShapeError(method, f"takes no keyword {_token(key)}")
+        if name in out.named:
+            raise ShapeError(method, f"argument '{name}' is given twice")
+        out.named[name] = value
+    for name, value in out.named.items():
+        _collect(out, shape.role(name), value)
+    return out
+
+
+def _collect(out: CallArgs, role: str | None, value: Any) -> None:
+    method = out.method
+    if role is None:
+        return
+    if role == DOMAIN:
+        out.paths.extend(domain_paths(value, method=method))
+    elif role == HAVING:
+        out.paths.extend(domain_paths(value, method=method, aggregates=True))
+    elif role == FIELDS:
+        out.paths.extend(field_paths(value, method=method))
+    elif role == TERMS:
+        out.paths.extend(term_paths(value, method=method))
+    elif role == ORDER:
+        out.paths.extend(order_paths(value, method=method))
+    elif role == SPEC:
+        out.paths.extend(specification_paths(value, method=method, contexts=out.contexts))
+    elif role == GROUPBY_SPEC:
+        out.paths.extend(groupby_specification_paths(value, method=method,
+                                                     contexts=out.contexts))
+    elif role == EXPORT:
+        out.paths.extend(names for names, _reference in column_paths(value, method=method))
+    elif role == COLUMNS:
+        out.columns.extend(column_paths(value, method=method))
+    elif role == FIELD:
+        if not isinstance(value, str):
+            raise ShapeError(method, "the field name is not text")
+        out.paths.extend(field_paths([value], method=method))
+    elif role == VALUES:
+        out.values.extend(value_dicts(value, method=method))
+    else:  # pragma: no cover - a role without a parser is a bug in the table
+        raise ShapeError(method, f"no parser for '{role}'")
+
+
+# --- path parsers ----------------------------------------------------------------
+MAX_DEPTH = 4  # nested any/not any sub-domains and specifications
+_SEGMENT = re.compile(r"[A-Za-z0-9_]+")
+_PATH = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*")
+_AGGREGATE_PATH = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*(?::[A-Za-z0-9_]+)?")
+# 'f', 'f:agg' or 'name:agg(f)', dotted paths allowed. Matched at the start only,
+# as Odoo's own read_group parser does: Odoo reads that prefix and ignores the rest.
+_TERM = re.compile(r"([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)"
+                   r"(?::([A-Za-z0-9_]+)(?:\(([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\))?)?")
+_ORDER_REF = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*(?::[A-Za-z0-9_]+)?")
+_ORDER_WORDS = frozenset({"asc", "desc", "nulls", "first", "last"})
+_DOMAIN_OPERATORS = frozenset({"&", "|", "!"})
+_SUBDOMAIN_OPERATORS = frozenset({"any", "not any", "any!", "not any!"})
+_SPEC_KEYS = frozenset({"fields", "context", "limit", "order"})
+
+
+def _split(path: str) -> tuple[str, ...]:
+    return tuple(path.split("."))
+
+
+def domain_paths(domain: Any, *, method: str = "domain", prefix: tuple[str, ...] = (),
+                 depth: int = 0, aggregates: bool = False) -> list[tuple[str, ...]]:
+    """Every field path a domain filters on; ``any`` / ``not any`` sub-domains
+    are read on the comodel, so their paths continue the leaf's path.
+
+    ``aggregates``: a ``having`` domain, whose leaves name aggregates
+    (``amount:sum``, ``__count``).
+    """
+    if domain is None or domain is False:
+        return []
+    if not isinstance(domain, (list, tuple)):
+        raise ShapeError(method, "a domain is not a list")
+    if depth > MAX_DEPTH:
+        raise ShapeError(method, "a domain nests any/not any too deeply")
+    paths: list[tuple[str, ...]] = []
+    for term in domain:
+        if isinstance(term, str):
+            if term in _DOMAIN_OPERATORS:
+                continue
+            raise ShapeError(method, "a domain holds an unknown operator")
+        if not isinstance(term, (list, tuple)) or len(term) != 3:
+            raise ShapeError(method, "a domain term is not [field, operator, value]")
+        left, operator, right = term
+        if isinstance(left, int) and not isinstance(left, bool) and left in (0, 1):
+            continue  # Odoo's TRUE_LEAF (1, '=', 1) and FALSE_LEAF (0, '=', 1)
+        pattern = _AGGREGATE_PATH if aggregates else _PATH
+        if not isinstance(left, str) or not pattern.fullmatch(left):
+            raise ShapeError(method, "a domain term does not start with a field path")
+        if not isinstance(operator, str):
+            raise ShapeError(method, "a domain operator is not text")
+        path = prefix + _split(left.split(":")[0])
+        paths.append(path)
+        if operator.strip().lower() in _SUBDOMAIN_OPERATORS:
+            if aggregates:
+                raise ShapeError(method, "a having domain cannot hold any/not any")
+            paths.extend(domain_paths(right, method=method, prefix=path, depth=depth + 1))
+    return paths
+
+
+def field_paths(fields: Any, *, method: str = "fields") -> list[tuple[str, ...]]:
+    if fields is None or fields is False:
+        return []
+    if not isinstance(fields, (list, tuple)):
+        raise ShapeError(method, "a field list is not a list")
+    paths = []
+    for name in fields:
+        if not isinstance(name, str) or not _PATH.fullmatch(name):
+            raise ShapeError(method, "a field list holds something that is not a field name")
+        paths.append(_split(name))
+    return paths
+
+
+def term_paths(terms: Any, *, method: str = "terms") -> list[tuple[str, ...]]:
+    """groupby and aggregate terms: the field each one reads (``__count`` reads none)."""
+    if terms is None or terms is False:
+        return []
+    if isinstance(terms, str):
+        terms = [terms]  # read_group takes one groupby as a string
+    if not isinstance(terms, (list, tuple)):
+        raise ShapeError(method, "a groupby or aggregate list is not a list")
+    paths = []
+    for term in terms:
+        match = _TERM.match(term) if isinstance(term, str) else None
+        if match is None:
+            raise ShapeError(method, "a groupby or aggregate term is not 'field[:function]'")
+        name, _function, source = match.groups()
+        if source:
+            paths.append(_split(source))
+        elif name != "__count":
+            paths.append(_split(name))
+    return paths
+
+
+def order_paths(order: Any, *, method: str = "order") -> list[tuple[str, ...]]:
+    """``'name desc, partner_id.name asc nulls last'`` -> the field path of each term."""
+    if order is None or order is False or order == "":
+        return []
+    if not isinstance(order, str):
+        raise ShapeError(method, "an order is not text")
+    paths = []
+    for term in order.split(","):
+        words = term.split()
+        if not words:
+            raise ShapeError(method, "an order has an empty term")
+        ref = words[0]
+        if len(ref) > 2 and ref.startswith('"') and ref.endswith('"'):
+            ref = ref[1:-1]
+        if not _ORDER_REF.fullmatch(ref) or any(w.lower() not in _ORDER_WORDS for w in words[1:]):
+            raise ShapeError(method, "an order term is not 'field [asc|desc] [nulls first|last]'")
+        paths.append(_split(ref.split(":")[0]))
+    return paths
+
+
+def specification_paths(spec: Any, *, method: str = "specification",
+                        prefix: tuple[str, ...] = (), depth: int = 0,
+                        contexts: list[Any] | None = None) -> list[tuple[str, ...]]:
+    """A web_read specification ``{field: {"fields": {...}, "order": ..., "context": ...}}``,
+    walked at every depth; the nested contexts are appended to ``contexts``."""
+    if spec is None:
+        return []
+    if not isinstance(spec, Mapping):
+        raise ShapeError(method, "a specification is not an object")
+    if depth > MAX_DEPTH:
+        raise ShapeError(method, "a specification nests too deeply")
+    paths: list[tuple[str, ...]] = []
+    for name, sub in spec.items():
+        if not isinstance(name, str) or not _SEGMENT.fullmatch(name):
+            raise ShapeError(method, "a specification key is not a field name")
+        path = prefix + (name,)
+        paths.append(path)
+        if sub is None:
+            continue
+        if not isinstance(sub, Mapping) or set(sub) - _SPEC_KEYS:
+            raise ShapeError(method, "a specification entry holds keys other than fields, "
+                             "context, limit and order")
+        if "fields" in sub:
+            paths.extend(specification_paths(sub["fields"], method=method, prefix=path,
+                                             depth=depth + 1, contexts=contexts))
+        if "order" in sub:
+            paths.extend(path + term for term in order_paths(sub["order"], method=method))
+        if "context" in sub and contexts is not None:
+            contexts.append(sub["context"])
+    return paths
+
+
+def groupby_specification_paths(spec: Any, *, method: str = "groupby_specification",
+                                contexts: list[Any] | None = None) -> list[tuple[str, ...]]:
+    """``{groupby field: specification of the grouped records}``."""
+    if spec is None:
+        return []
+    if not isinstance(spec, Mapping):
+        raise ShapeError(method, "a groupby specification is not an object")
+    paths: list[tuple[str, ...]] = []
+    for name, sub in spec.items():
+        heads = term_paths([name], method=method)
+        if len(heads) != 1:
+            raise ShapeError(method, "a groupby specification key is not a field")
+        paths.extend(heads)
+        paths.extend(specification_paths(sub, method=method, prefix=heads[0], depth=1,
+                                         contexts=contexts))
+    return paths
+
+
+def column_paths(columns: Any, *, method: str = "columns") -> list[tuple[tuple[str, ...], bool]]:
+    """export_data and load() column paths: ``'order_line/product_id/id'`` is
+    ``(("order_line", "product_id"), True)``; a trailing ``id`` or ``.id`` is a
+    reference to an existing record, not a field."""
+    if columns is None:
+        return []
+    if not isinstance(columns, (list, tuple)):
+        raise ShapeError(method, "the column paths are not a list")
+    out = []
+    for column in columns:
+        if not isinstance(column, str) or not column:
+            raise ShapeError(method, "a column path is not text")
+        segments = column.split("/")
+        reference = segments[-1] in ("id", ".id")
+        names = tuple(segments[:-1] if reference else segments)
+        if not all(_SEGMENT.fullmatch(name) for name in names):
+            raise ShapeError(method, "a column path segment is not a field name")
+        out.append((names, reference))
+    return out
+
+
+def value_dicts(value: Any, *, method: str = "values") -> list[dict[str, Any]]:
+    """The values a write sends: a dict, a list of dicts (create), or nothing (copy)."""
+    if value is None or value is False:
+        return []
+    items = [value] if isinstance(value, Mapping) else value
+    if not isinstance(items, (list, tuple)) or not all(isinstance(v, Mapping) for v in items):
+        raise ShapeError(method, "the values are not an object or a list of objects")
+    out = []
+    for item in items:
+        if not all(isinstance(key, str) and _SEGMENT.fullmatch(key) for key in item):
+            raise ShapeError(method, "a values key is not a field name")
+        out.append(dict(item))
+    return out
+
+
+# --- the internal-note allowance (4.7) -------------------------------------------
+
+def _ids_only(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, (list, tuple)) and all(
+        isinstance(i, int) and not isinstance(i, bool) for i in value)
+
+
+def is_internal_note(method: str, args: Any = None, kwargs: Any = None, *,
+                     ids_given: bool = False) -> bool:
+    """``message_post`` as a plain internal note, which notifies nobody by e-mail.
+
+    All of these must hold: ``subtype_xmlid`` (13+) or ``subtype`` (10-12) is
+    ``mail.mt_note`` and no ``subtype_id`` is given; there are no
+    ``partner_ids``; ``message_type`` is absent or ``comment``; and no
+    positional argument is given besides the record ids, which come first in
+    the legacy positional form.
+    """
+    if method != "message_post":
+        return False
+    if args is None:
+        args = []
+    if kwargs is None:
+        kwargs = {}
+    if not isinstance(args, (list, tuple)) or not isinstance(kwargs, Mapping):
+        return False
+    positional = list(args)
+    if not ids_given and positional and _ids_only(positional[0]):
+        positional.pop(0)
+    if positional:
+        return False
+    subtypes = [kwargs[key] for key in ("subtype_xmlid", "subtype") if key in kwargs]
+    if not subtypes or any(subtype != NOTE_SUBTYPE for subtype in subtypes):
+        return False
+    if "subtype_id" in kwargs or kwargs.get("partner_ids"):
+        return False
+    return kwargs.get("message_type", "comment") == "comment"

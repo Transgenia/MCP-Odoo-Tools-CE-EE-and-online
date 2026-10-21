@@ -80,6 +80,18 @@ class Settings:
     readonly: bool = False
     # Optional bearer expected on the HTTP transport (multi-tenant deployments).
     http_bearer: str = ""
+    # Permission policy (odoo_mcp.policy). The profile is kept as given, only
+    # stripped and lowercased: an unknown name locks the server (E1) instead of
+    # falling back to something looser, as ODOO_TRANSPORT_PREF falls back to auto.
+    policy_profile: str = "standard"
+    # The optional JSON policy file, "~" expanded; it must be an absolute path
+    # (E2). Empty: the profile alone. No default location is ever searched.
+    policy_file: str = ""
+    # The audit trail: a folder, "" for the odoo_mcp.audit logger on stderr, or
+    # "off" for none.
+    audit_dir: str = ""
+    # Days a daily audit file is kept (0 keeps them forever), clamped to 0..3650.
+    audit_retention_days: int = 90
 
     extra: dict = field(default_factory=dict)
 
@@ -108,6 +120,10 @@ class Settings:
             otel_endpoint=_env("ODOO_OTEL_ENDPOINT"),
             readonly=_get_bool("ODOO_READONLY", False),
             http_bearer=_env("ODOO_HTTP_BEARER"),
+            policy_profile=_env("ODOO_POLICY").strip().lower() or "standard",
+            policy_file=os.path.expanduser(_env("ODOO_POLICY_FILE").strip()),
+            audit_dir=_env("ODOO_AUDIT_DIR").strip(),
+            audit_retention_days=min(max(_get_int("ODOO_AUDIT_RETENTION_DAYS", 90), 0), 3650),
         )
 
     def redacted(self) -> dict:
@@ -124,6 +140,9 @@ class Settings:
             "otel": bool(self.otel_endpoint),
             "readonly": self.readonly,
             "has_secret": bool(self.secret),
+            "policy_profile": self.policy_profile,
+            "policy_file": self.policy_file,  # a path, not a secret
+            "audit": self.audit_dir.strip().lower() != "off",
         }
 
     def __repr__(self) -> str:
