@@ -93,6 +93,15 @@ new option **Permission profile** to `full`. The tool count stays 28.
 - The SessionStart hook also checks the two policy options (and reads no other new
   variable): when the server would start locked, it tells the user once a day and tells
   Claude why. It still never reads the API key or password option.
+- The sandbox matrix (`sandbox-matrix.yml`, Odoo 10.0 to 19.0) also checks the permission
+  policy against each live series (`scripts/sandbox_smoke.py`): the `policy` block of
+  `odoo_version` against `--check-policy`; the `standard` refusals that need Odoo's own
+  metadata (a company's or a contact's user links, a user's contact e-mail, credential-like
+  fields in field lists, filters and full reads, `ir.attachment` pinned to `certificate.key`);
+  the link field of each delegating model that is installed; `odoo_add_field` and
+  `odoo_add_automation` under `builder` (`base.action.rule` on 10.0); and `--verify-audit`
+  on the audit trail of the run. It prints which tier model names exist on each series. A
+  check whose model or field a series lacks is skipped with its reason.
 - Release workflow: a manual run can now be a **draft** (`release.yml`, input
   `draft`). It creates the tag, runs the tests and leaves a draft GitHub Release with
   the artifacts, but builds no container image and uploads nothing to PyPI.

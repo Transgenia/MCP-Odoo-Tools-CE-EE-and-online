@@ -3,6 +3,8 @@ name: Sandbox matrix
 # Starts every Odoo Community series offered by /odoo-tools:deploy-local and
 # checks it end to end through the plugin's own MCP server, so a broken image,
 # PostgreSQL pairing or RPC change shows up here and not on a user's machine.
+# The smoke test also checks the permission policy against the live metadata of
+# each series (profiles standard and builder) and verifies the audit trail.
 
 on:
   pull_request:
@@ -43,10 +45,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: sandbox up
         run: python3 scripts/deploy_local.py sandbox up --odoo "${{ matrix.odoo }}" --no-demo --dir "$RUNNER_TEMP/sandbox" --timeout 600
-      - name: MCP smoke test (odoo_version + odoo_search_read)
+      - name: MCP smoke test (odoo_version, odoo_search_read, permission policy, audit)
         run: |
           V="${{ matrix.odoo }}"
-          python3 scripts/sandbox_smoke.py --dir "$RUNNER_TEMP/sandbox" --expect "${V%%.*}"
+          python3 scripts/sandbox_smoke.py --dir "$RUNNER_TEMP/sandbox" --expect "${V%%.*}" --install-automation
       - name: Odoo logs (on failure)
         if: failure()
         run: python3 scripts/deploy_local.py sandbox logs --dir "$RUNNER_TEMP/sandbox" --tail 200 || true
