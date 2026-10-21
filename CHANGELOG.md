@@ -4,7 +4,100 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.1] - 2026-10-21
+
+Documentation and diagnostics release: where the Odoo tools run, a notice when the
+connection options are missing, and a stricter clean-room rule. The MCP server's
+behaviour is unchanged (only its reported version moves to 1.4.1).
+
+### Fixed
+- **Documentation: the Odoo tools do not run in Cowork or Claude chat.** v1.4.0
+  said the MCP server works in a local Cowork session. Anthropic's plugin support
+  matrix (https://claude.com/docs/plugins/platform-support) says Cowork does not
+  prompt for plugin options and ignores an MCP server that references an option
+  without a default (this plugin's URL, database, login and credentials have
+  none), and that chat ignores a plugin's local MCP server. A user who installed the plugin
+  from Cowork saw **odoo — Runs in each session** with an empty panel and no way
+  to enter the connection options. The README support table, `docs/install.md`,
+  `SUPPORT.md`, the plugin description and the `odoo-mcp-tools` skill now say
+  where the tools run; the README explains the empty panel and the route that
+  works (Claude Code, including `claude plugin configure` for headless machines);
+  and the guided route (`odoo-setup-mcp`, new Phase 0b) checks the surface, from
+  its tool list and before any shell command, before it troubleshoots Python. No
+  server code changed.
+- `docs/third-party-ideas.md` listed the Odoo Apps `mcp_server` module, which
+  `ivnvxd/mcp-server-odoo` requires in its standard mode, as MPL-2.0. The module is
+  a proprietary third-party module under the Odoo Proprietary License (OPL-1);
+  `ivnvxd/mcp-server-odoo` itself is MPL-2.0. Nothing from either was copied.
+
+### Added
+- **Missing-options notice at session start** (`hooks/check_options.py`, a second
+  SessionStart hook). When the Odoo URL, database or login has no saved value it
+  emits hook JSON: `systemMessage` for the user, on a new session and at most once
+  a day (timestamp file in the plugin's data folder), and `additionalContext` for
+  Claude on every SessionStart; with the container mode's
+  `~/.odoo-tools/mcp/odoo.env` present only Claude is told. It checks the
+  `CLAUDE_PLUGIN_OPTION_*` variables of those three non-sensitive options for
+  presence only. It keeps the v1.2.0 rule that no hook reads the API key or
+  password option (a directory finding), never prints, stores or sends a value,
+  and always exits 0. `hooks.json` starts it in shell form only when `python3` is
+  3.9 or newer, so a missing or old Python shows no error from this hook (the first
+  hook explains a missing `python3`; an older one is caught by the guided route's
+  Step 1A). That holds on macOS, Linux and Windows with Git Bash: without Git Bash,
+  Windows runs shell-form hooks in PowerShell, where both hooks fail (README,
+  Requirements). A shell-form hook cannot reference `${user_config.*}`, so the
+  script reads the environment. It reads the event as bytes, so a Windows code page
+  cannot garble a non-ASCII working directory, and a timestamp dated in the future
+  (clock set back, restored backup) counts as due. Known limit: a non-interactive
+  session (`claude -p`, the Agent SDK) started that day also uses up the daily
+  notice. Tests: `tests/test_session_start_hook.py`, including a run with a
+  recording `os.environ` that fails if the hook looks up a credential variable or
+  scans the environment, and checks that no value reaches stdout, stderr or the
+  timestamp file.
+- `PRIVACY.md`: Claude Code also exports saved options to the plugin's hook
+  processes (the hooks do not read the sensitive ones), and the hook's timestamp
+  file is listed under local storage.
+- `tests/test_docs_surfaces.py`: every `${user_config.KEY}` the server references
+  is declared; the README does not promise the Odoo tools where the options cannot
+  be entered; the guided route triages the surface before Python.
+- `tests/test_license_hygiene.py`: no file in the repository, tracked or not (so a
+  copied file is caught before it is committed), declares a license MIT cannot
+  absorb: an Odoo manifest `license` such as OPL-1 or (L/A)GPL, the OPL-1 or AGPL
+  title in a file that is not Markdown (a copied LICENSE or code header), or an
+  SPDX expression with any id MIT cannot absorb (`MIT AND GPL-3.0-only` included).
+  Mentions in Markdown documentation stay allowed, and
+  five files that discuss these licenses on purpose are listed by name. Also MIT
+  SPDX headers on our own Python code (including `server/run_stdio.py`), MIT in the
+  three manifests, and the clean-room rule covering OPL-1 in `CONTRIBUTING.md` and
+  `NOTICE`.
+
+### Changed
+- **One-step install.** The README, `docs/install.md`, `docs/packaging.md` and the
+  skills now install with `/plugin install odoo-tools --marketplace
+  Transgenia/MCP-Odoo-Tools-CE-EE-and-online` (Claude Code 2.1.275 or later, the
+  line `claude plugin validate` advises), keeping the two-step commands for older
+  versions.
+- README, "Where it works": Cowork and Claude chat accept MCP connectors you add
+  yourself (a remote server by `https` URL, added by an Owner in Organization
+  settings > Connectors on Team and Enterprise, or under Customize > Connectors; or
+  a desktop extension in the Claude desktop app); the plugin provides neither.
+- "If the Odoo tools do not appear" and the guided route: synced plugins need a
+  claude.ai sign-in in Claude Code 2.1.273 or later; `claude plugin configure`
+  needs 2.1.285 or later and a restart, and its `unconfigured` list keeps the
+  unused credential and the options with defaults on a working setup; the CLI
+  fallback is offered for Cowork only (Claude chat has no safe place for the key);
+  the container image is for Claude Code without Python. README Requirements: on
+  Windows the session-start hooks need Git Bash.
+- Clean-room rule (`CONTRIBUTING.md`, `NOTICE`): besides AGPL projects, no code from
+  proprietary Odoo modules (OPL-1) or any license that does not allow
+  redistribution under MIT; such projects may inform ideas from their public
+  documentation only, and the plugin works with them only over the network.
+- The container image pinned in `/odoo-tools:deploy-local` and `docs/install.md`
+  is `ghcr.io/transgenia/odoo-mcp-tools:1.4.1`; `docs/packaging.md` now says to cut
+  the release right after the merge, because the directory may publish the merge
+  before the image exists.
+- CI and the release workflow also lint `hooks/`, and the release zip ships
+  `CONTRIBUTING.md`.
 
 ## [1.4.0] - 2026-09-29
 

@@ -12,7 +12,9 @@
 
 **Links:** [Homepage](https://transgenia.org/mcp-transgenia-odoo.html) · [Documentation](https://docs.transgenia.org/odoo-tools/) · [Support](SUPPORT.md) (dev@transgenia.org, WhatsApp +52 55 8034 0405) · [Privacy policy](PRIVACY.md) · [Terms of use](TERMS-OF-USE.en.md) · [License: MIT](LICENSE)
 
-A **Claude Code / Cowork plugin** that unifies Odoo tooling into one install:
+A **Claude Code plugin** that unifies Odoo tooling into one install. Its skills and
+commands also load in Cowork and Claude chat, but the Odoo tools themselves run in
+Claude Code only (see [Where it works](#where-it-works)):
 
 - **MCP server (primary)** — a clean-room, MIT-licensed Python server exposing
   native Odoo tools (`odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`,
@@ -39,25 +41,81 @@ you don't hand-branch per version.
 
 ## Where it works
 
-| Surface | MCP server (the Odoo tools) | Skills, commands | Agents |
+| Surface | MCP server (the Odoo tools) | Skills, commands | Agents, hook |
 |---|---|---|---|
-| Claude Code (CLI, VS Code, JetBrains, Desktop) | Yes | Yes | Yes |
-| Cowork, session on your computer (Claude Desktop) | Yes | Yes | Yes |
-| Cowork on the web | No | Yes | No |
-| Claude apps chat (claude.ai web, desktop, mobile) | No | Yes | No |
+| Claude Code (CLI, VS Code, JetBrains, Desktop **Code** tab) | **Yes** | Yes | Yes |
+| Cowork (Claude Desktop) | **No** | Yes | Yes |
+| Claude chat (claude.ai web, desktop, mobile) | **No** | Yes | No |
 
 The Odoo tools run as a local stdio MCP server (`python3`, 3.9+) on the machine
-where the session runs, so they need Claude Code or a local Cowork session.
-Surfaces that ignore local MCP servers load only the skills and commands, which
-cannot reach Odoo without the tools. Source:
-[plugin component support](https://claude.com/docs/plugins/platform-support).
+where Claude Code runs, and the connection options (URL, database, login, API
+key) are entered through Claude Code's plugin options (`userConfig` in
+`plugin.json`). Per
+[Anthropic's plugin support matrix](https://claude.com/docs/plugins/platform-support)
+(checked 2026-10-20), Cowork "doesn't prompt for values" and ignores an MCP
+server that references an option without a default (the URL, database, login and
+credentials here have none), and chat ignores a plugin's local MCP server. In those
+apps the plugin still installs and its skills and commands still load, but they
+cannot reach Odoo without the tools. That is the app working as designed, not a
+broken install.
+
+Cowork and Claude chat do accept MCP connectors you add yourself: a remote MCP
+server reachable at an `https` URL (on Team and Enterprise plans an Owner adds it in
+**Organization settings > Connectors** and each member connects it under
+**Customize > Connectors**; on other plans you add it under **Customize >
+Connectors**) or, in the Claude desktop app, a desktop extension. This plugin
+provides neither: its Odoo tools need the local server above.
+
+### If the Odoo tools do not appear
+
+The usual symptom, in Cowork or on claude.ai: the plugin installs and shows as on,
+its **Connectors** tab lists **odoo — Runs in each session**, and opening that row
+shows an empty panel with no fields to fill in. Anthropic's docs say that on the
+web the Connectors tab marks a local MCP server that way while chat does not start
+it, and there is no form because those apps do not prompt for plugin options.
+In Claude Code the plugin also says at session start which required options are
+missing (whether Cowork shows that notice has not been verified yet).
+
+1. **Use Claude Code** (terminal, VS Code or JetBrains, or the **Code** tab of
+   Claude Desktop). A plugin installed on your Claude account appears there as a
+   synced plugin at the next session start when you sign in to Claude Code (2.1.273
+   or later) with that claude.ai account; if it does not show, run
+   `/reload-plugins`, or install it with the commands under [Install](#install).
+2. **Enter the options there.** `<id>` below is the plugin's full `name@marketplace`
+   id as `claude plugin list` shows it (for example `odoo-tools@synced` for a
+   plugin synced from your Claude account). Run `/plugin configure <id>` in a
+   session, or `/plugin` → **odoo-tools** → **Configure options** (VS Code: the
+   gear icon on the plugin's row). On a headless or scripted machine (Claude Code
+   2.1.285 or later), `claude plugin configure <id> --json` lists the options
+   without a saved value, and `claude plugin configure <id> --values-stdin` saves
+   values read from stdin as a JSON object of single-line strings; restart Claude
+   Code afterwards. Only `odoo_url`, `odoo_db`, `odoo_login` and one credential
+   must be set: the unused one of API key and password, and the options that have
+   defaults, stay in that list on a working setup. Pipe the JSON from a protected
+   file or your secret manager; never type the key in the command line or in the
+   chat.
+3. **No Claude Code on that machine?** In Cowork, the Node-only CLI fallback
+   (`/odoo-tools:odoo-setup-cli`) can work when the session can run Node, reach
+   your Odoo, and you can edit the CLI's `.env` file yourself; use a dedicated,
+   least-privilege, short-lived API key. Claude chat has no safe place to enter the
+   key, so use Claude Code there. (On Claude Code without Python, use the container
+   mode of `/odoo-tools:deploy-local`.)
+4. Still blocked? See [`SUPPORT.md`](SUPPORT.md). Transgenia never asks for your
+   API key or password in a chat or by email.
 
 ## Install
 
 ```
+/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
+/odoo-tools:odoo-setup-mcp
+```
+
+The first line adds the marketplace and installs the plugin in one step (Claude
+Code 2.1.275 or later). On an older Claude Code, add the marketplace first:
+
+```
 /plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /plugin install odoo-tools
-/odoo-tools:odoo-setup-mcp
 ```
 
 **`/odoo-tools:odoo-setup-mcp` is the guided route**: it detects what is already
@@ -66,7 +124,8 @@ daily use → deployment** to your team or production, one question at a time.
 No Odoo to practise with? It offers a local sandbox (below).
 
 Claude Code prompts for the connection options when the plugin is enabled
-(change them later in `/plugin` → **odoo-tools** → **Configure options**). The
+(change them later in `/plugin` → **odoo-tools** → **Configure options**; these
+options exist only in Claude Code, see [Where it works](#where-it-works)). The
 API key and password are `sensitive` options stored in the OS secure credential
 store — never in `settings.json` or your shell profile. The setup skill then
 verifies the connection with `odoo_version`.
@@ -85,6 +144,9 @@ verifies the connection with `odoo_version`.
     on `PATH` (e.g. a copy of or hard link to `python.exe` in the Python folder).
     A PowerShell or `doskey` alias is not enough: Claude Code starts the command
     directly, not through your shell.
+  - **Windows, session-start hooks:** they are shell commands, so they need Git for
+    Windows (Git Bash). Without it Claude Code runs them in PowerShell, where they
+    fail with a SessionStart hook error. The MCP server itself is not affected.
 - **CLI fallback (optional):** Node.js 18+.
 
 ### What runs on your machine
@@ -93,9 +155,21 @@ verifies the connection with `odoo_version`.
   Python source shipped in this plugin, with zero third-party runtime
   dependencies. It talks only to the Odoo URL you configure (plus your own
   OTLP collector, if you opt in with `ODOO_OTEL_ENDPOINT`).
-- **SessionStart hook** — runs `python3 --version` and prints a warning only
-  when `python3` is not runnable (the MCP server could not start). It reads no
-  plugin option or secret and contacts nothing.
+- **SessionStart hooks** — two, and neither contacts anything:
+  - runs `python3 --version` and prints a warning only when `python3` is not
+    runnable (the MCP server could not start);
+  - `hooks/check_options.py`, started only when `python3` is 3.9 or newer, checks
+    whether the three required, non-sensitive options (URL, database, login) have a
+    saved value. It never reads the API key or password option and never prints,
+    stores or sends a value. When some are missing it tells you, at most once a day
+    at the start of a session, and tells Claude why the Odoo tools are off; when
+    the container mode's `~/.odoo-tools/mcp/odoo.env` exists (it checks that the
+    file exists, without opening it) it tells only Claude. Its only state is a
+    timestamp file in the plugin's data folder; a non-interactive session started
+    that day (`claude -p`, the Agent SDK) also uses up the daily notice.
+  - Claude Code exports every saved plugin option, sensitive ones included, to
+    the environment of each plugin hook process as `CLAUDE_PLUGIN_OPTION_*`. The
+    plugin's hooks do not read the sensitive ones.
 - **Local infrastructure (only if you run `/odoo-tools:deploy-local` and
   confirm)** — Docker containers on your machine: the sandbox (PostgreSQL + Odoo
   on `127.0.0.1`, files in `~/.odoo-tools/sandbox`) or the MCP server image.

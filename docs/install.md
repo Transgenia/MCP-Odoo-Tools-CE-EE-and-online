@@ -3,14 +3,33 @@
 ## As a Claude plugin (recommended)
 
 ```
-/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online
-/plugin install odoo-tools
+/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /odoo-tools:odoo-setup-mcp
 ```
+
+On Claude Code older than 2.1.275, which has no `--marketplace` flag, run
+`/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then
+`/plugin install odoo-tools` instead of the first line.
 
 Claude Code prompts for the connection options when the plugin is enabled
 (`/plugin` → **odoo-tools** → **Configure options** to change them). The API key
 and password are `sensitive` options, kept in the OS secure credential store.
+
+These options are a Claude Code feature. Cowork does not prompt for plugin options
+and ignores this plugin's MCP server because its connection options have no
+default, and Claude chat ignores a plugin's local MCP server, so the Odoo tools are
+not available in either (the plugin's skills and
+commands still load). See [Where it works](../README.md#where-it-works) and
+[If the Odoo tools do not appear](../README.md#if-the-odoo-tools-do-not-appear).
+
+Without the interactive dialog (scripts, remote or headless machines; Claude Code
+2.1.285 or later), `claude plugin configure <id> --json` lists the options without
+a saved value (the unused credential and the options with defaults stay listed on
+a working setup), and `claude plugin configure <id> --values-stdin` saves values
+read from stdin as a JSON object of single-line strings; restart Claude Code
+afterwards. `<id>` is the full `name@marketplace` id shown
+by `claude plugin list` (for example `odoo-tools@synced`). Pipe the JSON from a
+protected file or a secret manager; never put the key in the command line.
 
 The `mcpServers` entry launches the server with:
 
@@ -35,7 +54,10 @@ download, at install time or at start-up.
   Microsoft Store instead of printing a version, that is the Windows "App
   execution alias" stub: install the Store Python, or turn off the
   `python3.exe` entry under **App execution aliases** in Windows Settings so
-  your own `python3.exe` is found.
+  your own `python3.exe` is found. The session-start hooks are shell commands and need Git for Windows (Git Bash);
+  without it Claude Code runs them in PowerShell and shows a SessionStart hook
+  error (set `CLAUDE_CODE_GIT_BASH_PATH` if Git Bash is installed but not found).
+  The MCP server is not affected.
 
 The skill `/odoo-tools:odoo-setup-mcp` is the guided route from there on:
 setup, verification, hands-on training, daily use and deployment.
@@ -52,7 +74,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
 
 # container mode: the MCP server without a local Python
-docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.4.0
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.4.1
 ```
 
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
