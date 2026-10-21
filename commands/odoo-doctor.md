@@ -12,6 +12,14 @@ Diagnose the current Odoo connection.
    `transport_notice`: Odoo 19 deprecates `/xmlrpc` and `/jsonrpc` and Odoo 22
    (Odoo Online saas~21.1) removes them, so show the notice with its fix
    (usually: create an API key and set it in the plugin options).
+   Also report its `policy` block: the `profile` (`standard` unless the user
+   chose another), whether a policy `file` is set, the `digest`, the
+   `hidden_tools`, any `opened_sensitive` entries with their reason and expiry,
+   and every `warnings` entry. Show W10 (the Odoo user is an administrator)
+   prominently and recommend a dedicated, least-privilege user. When `error` is
+   set the policy is locked: show the error, say that every other Odoo tool is
+   disabled until the user fixes the file or the **Permission profile** /
+   **Permission policy file** options and reconnects (`/mcp`), and stop here.
 2. Call `odoo_connections` and list active sessions.
 3. Do a bounded sanity read to confirm data access:
    `odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 1 }`.

@@ -1,7 +1,7 @@
 {
   "name": "odoo-tools",
   "displayName": "Odoo Tools",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer. The Odoo tools run in Claude Code; Cowork and Claude chat load the skills and commands without the tools.",
   "author": {
     "name": "Transgenia",
@@ -77,8 +77,20 @@
     "odoo_readonly": {
       "type": "boolean",
       "title": "Read-only mode",
-      "description": "When on, the server refuses every write/delete/Studio tool before touching Odoo.",
+      "description": "When on, the write, delete, import and Studio tools are not listed, and calling one is refused before anything reaches Odoo.",
       "default": false
+    },
+    "odoo_policy": {
+      "type": "string",
+      "title": "Permission profile",
+      "description": "What the Odoo tools may do, on top of the Odoo user's own access rights. standard (default): read, create, update and run business methods; no deletes, no Studio-style changes, no e-mails out except internal notes, no users, rights, modules, settings or bank accounts, no stored secrets. readonly: reads only. builder: standard plus fields, views and automations (sandboxes and staging: automations run code on the server). full: everything the Odoo user may do, as in 1.4.",
+      "default": "standard"
+    },
+    "odoo_policy_file": {
+      "type": "string",
+      "title": "Permission policy file (optional)",
+      "description": "Absolute path to a JSON file with per-model rules on top of the profile (docs/policy.md), e.g. ~/.config/odoo-tools/policy.json. Keep it outside your projects. Read once when the server starts. Empty: the profile alone.",
+      "default": ""
     }
   },
   "mcpServers": {
@@ -96,6 +108,8 @@
         "ODOO_TRANSPORT_PREF": "${user_config.odoo_transport_pref}",
         "ODOO_TIMEOUT": "${user_config.odoo_timeout}",
         "ODOO_READONLY": "${user_config.odoo_readonly}",
+        "ODOO_POLICY": "${user_config.odoo_policy}",
+        "ODOO_POLICY_FILE": "${user_config.odoo_policy_file}",
         "ODOO_AUDIT_DIR": "${CLAUDE_PLUGIN_DATA}/audit"
       }
     }

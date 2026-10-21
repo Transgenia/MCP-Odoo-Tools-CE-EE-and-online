@@ -51,6 +51,17 @@ Odoo Online installs data modules only (no custom Python), takes API calls on Cu
 
 Pace bulk work on Online (about 1 call per second, no parallel calls) and use `odoo_import` (at most 500 rows per call) instead of one `odoo_create` per record. An `id` column in an import holds external ids and updates the records that already have them.
 
+## Permission profile
+
+Since 1.5.0 the MCP server applies a permission profile on top of the Odoo user's
+own rights (plugin option **Permission profile**). The default `standard` reads,
+creates, updates and runs business methods, but does not delete, make
+Studio-style changes, send e-mail out (internal notes are fine) or read stored
+secrets; `odoo-studio-style` needs `builder`, and `full` keeps the 1.4 behaviour.
+A refusal that names the permission policy is final: tell the user which option
+changes it, and do not try another tool or the shell. Reference:
+`docs/policy.md` in the plugin.
+
 ## What this is not
 
 This plugin talks to Odoo's existing data model and configuration surface. It does not replace real module development for anything beyond small, low-code changes (see `odoo-studio-style` for exactly where that line is drawn), and it does not vendor Odoo-side logic — it authenticates with credentials you provide and respects Odoo's own access rights and record rules.

@@ -135,18 +135,73 @@
   removed or cut line. Locally this is evidence, not prevention: whoever can
   write the folder can rewrite it. A failure to write never breaks a tool call.
 
+## Permission policy (1.5.0)
+
+In the local (stdio) mode the permission policy limits what Claude can do
+**through the odoo-tools MCP tools**. It protects against mistakes and against
+instructions hidden in data Claude reads. It does not limit the person who holds
+the API key, and it is not a sandbox for an agent that has unrestricted shell
+access on the same machine. The boundary that holds against everyone is the Odoo
+user itself: give the agent a dedicated, least-privilege Odoo user (not an
+administrator) and an API key with an expiry. In a future remote mode, where the
+server keeps the Odoo credential, the same policy becomes real enforcement.
+
+- **What it is.** A ceiling on top of Odoo's access rights, record rules and
+  field groups, set by the plugin options **Permission profile** (`readonly`,
+  `standard` by default, `builder`, `full`) and an optional **Permission policy
+  file** read once at start from an explicit absolute path (never from a default
+  location). It never grants what Odoo refuses and is never weaker than
+  Read-only mode. `full` keeps the 1.4 behaviour; reference:
+  [`docs/policy.md`](docs/policy.md).
+- **What `standard` closes.** Stored secrets (system parameters, mail-server,
+  LDAP and payment-provider credentials, IAP and bank-sync tokens, CFDI
+  certificates and keys, the outgoing mail queue) cannot be read; users, groups,
+  access rules, modules, bank accounts, partner merges, chatter history and
+  fiscal sequences are read-only; models that send e-mail, SMS, letters or share
+  links, and the outbound methods (`message_post` except internal notes,
+  `message_subscribe`, `send_mail`, ...), are closed; server actions,
+  automations, views and other `ir.*` records are read-only; deletes are
+  refused; credential-like fields are withheld from reads and refused in
+  arguments. `full` still refuses creating, changing or revoking API keys and
+  uninstalling modules.
+- **Two layers.** The declared accesses of each tool are decided from its
+  arguments before any session exists (nothing reaches Odoo). Then every Odoo call
+  the tool makes goes through a guarded session that checks it again with its
+  values and paths (x2many commands, domain and export paths, the parent of an
+  attachment, a user's contact e-mail) before it is sent, and stops as a bug any
+  call the tool did not declare. A tool without a permission mapping cannot be
+  registered, listed or called.
+- **An invalid policy locks the server**: only `odoo_version` works, and it
+  explains the error without contacting Odoo.
+- **Seatbelt, not sandbox.** In stdio an agent with an unrestricted shell can
+  read the server's environment, edit the policy file or the plugin options, or
+  call Odoo directly. Claude Code `permissions.deny` rules on the policy folder,
+  Bash approval prompts and the instructions line (a policy refusal is final)
+  make that harder, not impossible. `odoo_version` warns when the Odoo user is an
+  administrator, since Odoo then narrows nothing.
+- **Known limits** (documented in `docs/policy.md`): side effects inside
+  business methods (a confirmation e-mail, existing automations) are Odoo's;
+  strings returned by methods (a portal URL with a token) are not redacted;
+  pointer models other than `ir.attachment` matter only once a file refuses
+  business reads; related fields with harmless names can carry withheld data;
+  many2one links are not checked as touches; published content is an outbound
+  channel by effect; counts and aggregates allow inference; `builder` equals
+  `full` for confidentiality, because automations run code on the server.
+
 ## Read-only mode
 
-- Set `ODOO_READONLY=1` for demos or safe exploration: the server refuses every
-  non-read-only tool (`odoo_create/write/unlink/execute`, `odoo_translate_set`,
-  both Studio tools, and both import tools: `odoo_import_preview` too, because
-  its rolled-back dry run can still consume sequence numbers and fire webhooks)
-  with a clear error before touching Odoo. Reads, exports, reports,
+- Set `ODOO_READONLY=1` for demos or safe exploration: the server no longer
+  lists the non-read-only tools (`odoo_create/write/unlink/execute`,
+  `odoo_translate_set`, both Studio tools, and both import tools:
+  `odoo_import_preview` too, because its rolled-back dry run can still consume
+  sequence numbers and fire webhooks), and refuses them with a clear error before
+  touching Odoo when one is called by name. Reads, exports,
   `odoo_telemetry_preview` and the read-only Online tools (`odoo_online_profile`,
   `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`) keep
-  working. Unset + restart to re-enable writes. (The CLI fallback has no
-  equivalent gate: its `write` command always attempts the RPC — use a
-  least-privilege Odoo user there.)
+  working. No permission profile or policy file can bring a write back while it
+  is on. Unset + restart to re-enable writes. (The CLI fallback has no
+  equivalent gate, nor a permission policy: its `write` command always attempts
+  the RPC. Use a least-privilege Odoo user there.)
 - `odoo_online_profile` lists the user's API keys by name, scope and dates
   only: Odoo keeps no key material in a readable field, and the plugin never
   mints, rotates or revokes keys. `odoo_record_documents` returns a file only

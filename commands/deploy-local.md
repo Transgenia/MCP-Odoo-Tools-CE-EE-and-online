@@ -84,7 +84,7 @@ Ask (single choice):
 1. Download the image built and published by Transgenia (ask first):
 
    ```bash
-   docker pull ghcr.io/transgenia/odoo-mcp-tools:1.4.1
+   docker pull ghcr.io/transgenia/odoo-mcp-tools:1.5.0
    ```
 
 2. Create a credentials file with **placeholders only**, readable by the user
@@ -99,9 +99,18 @@ Ask (single choice):
    ODOO_API_KEY=<api-key>
    # ODOO_PASSWORD=<password>   # Odoo < 14 instead of the API key
    # ODOO_READONLY=1            # recommended for first steps
+   # ODOO_POLICY=standard       # permission profile: readonly, standard, builder or full
+   # ODOO_POLICY_FILE=/policy/policy.json   # optional, mounted read-only (below)
+   # ODOO_AUDIT_DIR=/audit      # without it the audit lines go to docker logs
    ENVEOF
    )
    ```
+
+   The permission profile defaults to `standard` (no deletes, no Studio-style
+   changes, no secrets); `full` keeps the 1.4 behaviour. With a policy file or an
+   audit folder, add `-v <absolute path of the policy file>:/policy/policy.json:ro`
+   and `-v <absolute path of an audit folder>:/audit` before the image name in the
+   command of step 3 (see `docs/policy.md`).
 
    On Windows use `%USERPROFILE%\.odoo-tools\mcp\odoo.env` and create it from
    the user's editor. Ask the user to fill it in their own editor.
@@ -109,7 +118,7 @@ Ask (single choice):
    the absolute path of the file:
 
    ```bash
-   claude mcp add odoo-tools-docker --scope user -- docker run -i --rm --env-file "$HOME/.odoo-tools/mcp/odoo.env" ghcr.io/transgenia/odoo-mcp-tools:1.4.1
+   claude mcp add odoo-tools-docker --scope user -- docker run -i --rm --env-file "$HOME/.odoo-tools/mcp/odoo.env" ghcr.io/transgenia/odoo-mcp-tools:1.5.0
    ```
 
 4. Restart Claude and call `odoo_version` from the `odoo-tools-docker` server.

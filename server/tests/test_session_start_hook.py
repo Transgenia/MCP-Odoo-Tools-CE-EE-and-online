@@ -144,17 +144,30 @@ with open(sys.argv[2], "w") as fh:
 """
 
 
-@pytest.mark.parametrize(("source", "configured", "container"), [
-    ("startup", False, False), ("resume", False, False),
-    ("startup", False, True), ("startup", True, False),
+# Every variable the hook may look up: the three connection options, the two policy
+# options (1.5.0), the plugin data folder and what Path.home() reads.
+READABLE = {"CLAUDE_PLUGIN_OPTION_ODOO_URL", "CLAUDE_PLUGIN_OPTION_ODOO_DB",
+            "CLAUDE_PLUGIN_OPTION_ODOO_LOGIN", "CLAUDE_PLUGIN_OPTION_ODOO_POLICY",
+            "CLAUDE_PLUGIN_OPTION_ODOO_POLICY_FILE", "CLAUDE_PLUGIN_DATA", "HOME",
+            "USERPROFILE", "HOMEDRIVE", "HOMEPATH"}
+
+
+@pytest.mark.parametrize(("source", "configured", "container", "policy"), [
+    ("startup", False, False, None), ("resume", False, False, None),
+    ("startup", False, True, None), ("startup", True, False, None),
+    ("startup", True, False, "valid"), ("startup", True, False, "broken"),
+    ("resume", False, False, "broken"),
 ])
 def test_never_reads_a_credential_variable(tmp_path: Path, source: str, configured: bool,
-                                           container: bool) -> None:
+                                           container: bool, policy: str | None) -> None:
     # The v1.2.0 directory rule, checked by behaviour on every branch of the hook: it may
-    # look up only the variables it needs, by name, and never scan the environment.
+    # look up only the variables it needs, by name, and never scan the environment. The
+    # policy check (1.5.0) imports the server's loader, which must not read any either.
     report = tmp_path / "env-access.json"
     options = dict(REQUIRED_SET if configured else {"ODOO_URL": "https://odoo.invalid"})
     options.update({"ODOO_API_KEY": "sk-CANARY", "ODOO_PASSWORD": "pw-CANARY"})
+    if policy is not None:
+        options.update(_policy_options(tmp_path, VALID_FILE if policy == "valid" else BAD_FILE))
     env = _env(tmp_path, options)
     if container:
         env_file = tmp_path / "home" / ".odoo-tools" / "mcp" / "odoo.env"
@@ -167,6 +180,89 @@ def test_never_reads_a_credential_variable(tmp_path: Path, source: str, configur
     assert any(key.endswith("ODOO_URL") for key in access["seen"])  # the spy works
     for key in access["seen"]:
         assert "API_KEY" not in key.upper() and "PASSWORD" not in key.upper(), key
+    assert set(access["seen"]) <= READABLE
+    if policy is not None:
+        assert "CLAUDE_PLUGIN_OPTION_ODOO_POLICY_FILE" in access["seen"]
+
+
+# --- the permission policy check (1.5.0) ----------------------------------------------
+
+VALID_FILE = '{"version": 1, "models": {"*": {"call": false}}}'
+BAD_FILE = '{"version": 1, "modelz": {}}'
+
+
+def _policy_options(tmp_path: Path, content: str | None = None,
+                    profile: str | None = None) -> dict[str, str]:
+    options: dict[str, str] = {}
+    if content is not None:
+        path = tmp_path / "policy.json"
+        path.write_text(content, encoding="utf-8")
+        path.chmod(0o600)
+        options["ODOO_POLICY_FILE"] = str(path)
+    if profile is not None:
+        options["ODOO_POLICY"] = profile
+    return options
+
+
+def test_a_valid_policy_is_silent(tmp_path: Path) -> None:
+    options = dict(REQUIRED_SET, **_policy_options(tmp_path, VALID_FILE, profile=" Builder "))
+    assert _run(tmp_path, options) == (0, "")
+    assert not (tmp_path / "data" / "policy-notice").exists()
+
+
+def test_a_broken_policy_file_tells_the_user_and_claude(tmp_path: Path) -> None:
+    options = dict(REQUIRED_SET, **_policy_options(tmp_path, BAD_FILE))
+    code, out, err = _run_full(tmp_path, options)
+    assert code == 0 and err == ""
+    payload = json.loads(out)
+    message = payload["systemMessage"]
+    context = payload["hookSpecificOutput"]["additionalContext"]
+    assert message.startswith("odoo-tools: the permission policy file has an error, so the "
+                              "Odoo tools are locked: policy file ")
+    assert "unknown key 'modelz' at the top level" in message and "(E8)" in message
+    assert "E8" in context and "only odoo_version works" in context
+    assert "never edit the policy file" in context
+    assert "odoo_url" not in message  # the connection options are set
+
+
+def test_an_unknown_profile_is_reported(tmp_path: Path) -> None:
+    options = dict(REQUIRED_SET, **_policy_options(tmp_path, profile="readonyl"))
+    payload = json.loads(_run(tmp_path, options)[1])
+    assert payload["systemMessage"].startswith(
+        "odoo-tools: the permission profile is not valid, so the Odoo tools are locked: "
+        "unknown permission profile 'readonyl'")
+
+
+def test_a_relative_policy_path_is_reported(tmp_path: Path) -> None:
+    options = dict(REQUIRED_SET, ODOO_POLICY_FILE="policy.json")
+    payload = json.loads(_run(tmp_path, options)[1])
+    assert "the policy file path must be absolute" in payload["systemMessage"]
+
+
+def test_the_policy_notice_is_shown_once_a_day_and_only_on_startup(tmp_path: Path) -> None:
+    options = dict(REQUIRED_SET, **_policy_options(tmp_path, BAD_FILE))
+    first = json.loads(_run(tmp_path, options)[1])
+    second = json.loads(_run(tmp_path, options)[1])
+    resumed = json.loads(_run(tmp_path, options, source="resume")[1])
+    assert "systemMessage" in first and "systemMessage" not in second
+    for payload in (second, resumed):
+        assert "E8" in payload["hookSpecificOutput"]["additionalContext"]  # Claude knows
+    assert "systemMessage" not in resumed
+
+
+def test_both_notices_together(tmp_path: Path) -> None:
+    options = _policy_options(tmp_path, BAD_FILE)  # no connection options either
+    payload = json.loads(_run(tmp_path, options)[1])
+    message = payload["systemMessage"]
+    assert "odoo_url" in message and "(E8)" in message
+    context = payload["hookSpecificOutput"]["additionalContext"]
+    assert "odoo_url" in context and "E8" in context
+
+
+def test_an_unresolved_policy_option_counts_as_unset(tmp_path: Path) -> None:
+    options = dict(REQUIRED_SET, ODOO_POLICY="${user_config.odoo_policy}",
+                   ODOO_POLICY_FILE="${user_config.odoo_policy_file}")
+    assert _run(tmp_path, options) == (0, "")
 
 
 def test_unresolved_placeholders_count_as_unset(tmp_path: Path) -> None:

@@ -133,8 +133,12 @@ If it is missing, too old, or prints no version, give the fix for their OS:
 
 Optional: **Transport preference** = `auto` (default; JSON-2 on Odoo 19+ with an
 API key), `json2`, `jsonrpc`, or `xmlrpc`,
-**Request timeout** (seconds, default 120) and **Read-only mode** — recommended
-for the first days and for demos.
+**Request timeout** (seconds, default 120), **Read-only mode** (recommended
+for the first days and for demos), **Permission profile** (`standard` by
+default: no deletes, no Studio-style changes, no e-mail out except internal
+notes, no users, rights or stored secrets; `readonly`, `builder` for sandboxes
+and staging, or `full` to keep the 1.4 behaviour) and **Permission policy file**
+(optional; an absolute path to per-model rules, see `docs/policy.md`).
 
 ### Step 1C — Enter them in the plugin's options
 
@@ -203,10 +207,15 @@ only on the sandbox or a test database, and ask before each write.
 5. **Export** — "Export active products to CSV" → `/odoo-export`
    (`odoo_export_records_csv`).
 6. **Write with confirmation** (sandbox/test only) — create a test contact,
-   change its phone, delete it → `odoo_create`, `odoo_write`, `odoo_unlink`;
-   show the exact values before each call.
+   change its phone, then archive it → `odoo_create`, `odoo_write` (with
+   `{"active": false}` to archive); show the exact values before each call.
+   Under the default profile `standard` deletes are refused and `odoo_unlink` is
+   not listed: archiving is the reversible path. To practise a delete, the user
+   sets **Permission profile** to `full` on the sandbox (never on production)
+   and reconnects (`/mcp`); then `odoo_unlink` removes the contact.
 7. **Low-code, Studio style** (sandbox/test only) — add a custom field or an
-   automation → skill `/odoo-tools:odoo-studio-style`.
+   automation → skill `/odoo-tools:odoo-studio-style`. It needs the
+   **Permission profile** `builder` (sandboxes and staging only).
 8. **Bulk import with a dry run** (sandbox/test only) — "Import these 3
    contacts" → `odoo_import_preview` (Odoo checks every row and saves nothing),
    then, after the user confirms, `odoo_import` (all rows or none). Explain that
@@ -237,7 +246,10 @@ Show this map and offer to try any item:
 | Parameter names of a method (JSON-2, `odoo_execute`) | `odoo_api_catalog` |
 
 Good habits: keep Read-only mode on unless a task needs writes; confirm every
-write; test bulk changes on the sandbox first.
+write; test bulk changes on the sandbox first. When a call is refused by the
+odoo-tools permission policy, the refusal is final: explain it to the user and
+which option changes it, and do not look for another way (another tool, the CLI
+fallback or the shell). `/odoo-doctor` shows the active profile.
 
 ## Phase 5 — Deployment (team or production)
 
@@ -246,6 +258,12 @@ Walk through this checklist, one item at a time, marking each ✓:
 1. **One Odoo user per person**, least privilege, with its own API key. Never
    share keys; revoke a key when someone leaves.
 2. **Read-only by default**; enable writes only for the people who need them.
+   Keep the **Permission profile** at `standard` (or `readonly`) in production,
+   `builder` only on sandboxes and staging, and `full` only where the user
+   deliberately keeps every right of the Odoo user. With an administrator Odoo
+   user in production, start from `docs/policy-examples/production-hardened.json`
+   (an absolute path in **Permission policy file**) and check it first with
+   `python3 server/run_stdio.py --check-policy <file>`.
 3. **HTTPS URL** only; keep `auto` transport unless there is a reason.
 4. **Pilot first**: repeat the key workflows on the sandbox or a staging copy.
 5. **Backups** before bulk writes or Studio-style changes in production.

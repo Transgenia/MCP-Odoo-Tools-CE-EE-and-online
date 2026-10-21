@@ -154,7 +154,9 @@ verifies the connection with `odoo_version`.
 - **MCP server** — `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: readable
   Python source shipped in this plugin, with zero third-party runtime
   dependencies. It talks only to the Odoo URL you configure (plus your own
-  OTLP collector, if you opt in with `ODOO_OTEL_ENDPOINT`).
+  OTLP collector, if you opt in with `ODOO_OTEL_ENDPOINT`). It writes one audit
+  line per tool call to daily files in the plugin's data folder, kept 90 days
+  (see [Permissions](#permissions)).
 - **SessionStart hooks** — two, and neither contacts anything:
   - runs `python3 --version` and prints a warning only when `python3` is not
     runnable (the MCP server could not start);
@@ -164,9 +166,12 @@ verifies the connection with `odoo_version`.
     stores or sends a value. When some are missing it tells you, at most once a day
     at the start of a session, and tells Claude why the Odoo tools are off; when
     the container mode's `~/.odoo-tools/mcp/odoo.env` exists (it checks that the
-    file exists, without opening it) it tells only Claude. Its only state is a
-    timestamp file in the plugin's data folder; a non-interactive session started
-    that day (`claude -p`, the Agent SDK) also uses up the daily notice.
+    file exists, without opening it) it tells only Claude. When **Permission
+    profile** or **Permission policy file** is set, it also checks them with the
+    server's own loader (reading the policy file, which holds rules, not
+    credentials) and says when the server would start locked. Its only state is
+    two timestamp files in the plugin's data folder; a non-interactive session
+    started that day (`claude -p`, the Agent SDK) also uses up the daily notice.
   - Claude Code exports every saved plugin option, sensitive ones included, to
     the environment of each plugin hook process as `CLAUDE_PLUGIN_OPTION_*`. The
     plugin's hooks do not read the sensitive ones.
@@ -214,6 +219,11 @@ standalone (`python3 server/run_stdio.py` from a checkout, `odoo-mcp` after
 | `ODOO_PASSWORD` | yes* | use on Odoo < 14 (no API keys) |
 | `ODOO_TRANSPORT_PREF` | no | `auto` (default) / `json2` / `jsonrpc` / `xmlrpc` (see [Transports](#transports)) |
 | `ODOO_TIMEOUT` | no | seconds per Odoo call (default 120; plugin option **Request timeout**) |
+| `ODOO_READONLY` | no | `1` lists and runs the read tools only (plugin option **Read-only mode**) |
+| `ODOO_POLICY` | no | permission profile: `readonly`, `standard` (default), `builder` or `full` (plugin option **Permission profile**, see [Permissions](#permissions)) |
+| `ODOO_POLICY_FILE` | no | absolute path to an optional policy file (plugin option **Permission policy file**, [`docs/policy.md`](docs/policy.md)) |
+| `ODOO_AUDIT_DIR` | no | audit folder; `stderr` (the default outside the plugin) or `off` |
+| `ODOO_AUDIT_RETENTION_DAYS` | no | days an audit file is kept (default 90, `0` keeps them) |
 | `ODOO_CACHE_TTL` | no | int (seconds) |
 | `ODOO_METRICS`, `ODOO_OTEL_ENDPOINT` | no | optional observability |
 
@@ -221,16 +231,19 @@ standalone (`python3 server/run_stdio.py` from a checkout, `odoo-mcp` after
 
 ### Tools
 
-28 MCP tools. With Read-only mode (`ODOO_READONLY=1`) every write tool is
-refused before anything reaches Odoo.
+28 MCP tools; with the default permission profile (`standard`) 25 are listed:
+`odoo_unlink`, `odoo_add_field` and `odoo_add_automation` need another profile
+(see [Permissions](#permissions)). With Read-only mode (`ODOO_READONLY=1`) the 9
+write tools are not listed, and calling one is refused before anything reaches
+Odoo.
 
 | Group | Tools |
 |-------|-------|
 | Connection | `odoo_version`, `odoo_connections`, `odoo_telemetry_preview` |
 | Read | `odoo_search`, `odoo_search_count`, `odoo_read`, `odoo_search_read`, `odoo_read_group`, `odoo_fields_get`, `odoo_list_models`, `odoo_module_info`, `odoo_translate_get` |
 | Export | `odoo_export_records_json`, `odoo_export_records_csv` |
-| Write | `odoo_create`, `odoo_write`, `odoo_unlink`, `odoo_execute`, `odoo_translate_set` |
-| Studio-style (write) | `odoo_add_field`, `odoo_add_automation` |
+| Write | `odoo_create`, `odoo_write`, `odoo_unlink` (profiles `builder` and `full`), `odoo_execute`, `odoo_translate_set` |
+| Studio-style (write; profiles `builder` and `full`) | `odoo_add_field`, `odoo_add_automation` |
 | Odoo Online (useful on any Odoo) | read: `odoo_online_profile`, `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`; write: `odoo_import_preview`, `odoo_import` |
 | Deprecated | `odoo_report`: returns an error without calling Odoo, because Odoo does not render reports over RPC on any version. Use `odoo_record_documents` for stored PDFs. Removed in 2.0.0 |
 
@@ -303,6 +316,44 @@ modules or billing. No schedules, no boot hooks, no background sends.
 remain separate explicit opt-ins for local Prometheus/OTLP observability.)
 Details: [`SECURITY.md`](SECURITY.md#opt-in-telemetry-disabled-by-default).
 
+## Permissions
+
+Since 1.5.0 the MCP server applies a **permission profile** on top of the Odoo
+user's own access rights. It only removes rights; Odoo's access rules, record
+rules and field groups always apply too. Choose it in `/plugin` → **odoo-tools**
+→ **Configure options** → **Permission profile**:
+
+| Profile | What the Odoo tools may do |
+|---------|----------------------------|
+| `readonly` | reads only, no stored secrets |
+| `standard` (default) | read, create, update and run business methods; no deletes, no Studio-style changes, no e-mail or SMS out except internal notes, no users, rights, modules, settings, bank accounts, fiscal sequences or chatter history, no stored secrets |
+| `builder` | `standard` plus fields, views and automations: for sandboxes and staging, because automations run code on the Odoo server (for confidentiality it equals `full`) |
+| `full` | everything the Odoo user may do, as in 1.4, except creating, changing or revoking API keys and uninstalling modules |
+
+**To keep the 1.4 behaviour, choose `full`.** That is the documented escape, for
+example on your own company instance where you keep every right the Odoo user
+has. Credential-like fields (passwords, tokens, keys) are withheld outside
+`full`, and a tool the profile forbids on every model is not listed. Every
+refusal names its rule and the option that changes it, and the agent is told
+that a policy refusal is final.
+
+An optional **Permission policy file** (an absolute path, read once at start)
+adds per-model rules: method lists for `odoo_execute`, refusals, field rules and
+openings of sensitive models that need a reason and may expire. Check one
+offline with `python3 server/run_stdio.py --check-policy FILE --explain
+res.users:write`. Every tool call, refusals included, leaves one line in a local
+audit file (names and counts, never values or secrets). The full reference,
+with four example files: [`docs/policy.md`](docs/policy.md).
+
+In the local (stdio) mode the permission policy limits what Claude can do
+**through the odoo-tools MCP tools**. It protects against mistakes and against
+instructions hidden in data Claude reads. It does not limit the person who holds
+the API key, and it is not a sandbox for an agent that has unrestricted shell
+access on the same machine. The boundary that holds against everyone is the Odoo
+user itself: give the agent a dedicated, least-privilege Odoo user (not an
+administrator) and an API key with an expiry. In a future remote mode, where the
+server keeps the Odoo credential, the same policy becomes real enforcement.
+
 ## Privacy
 
 **[Privacy policy](PRIVACY.md)** · Transgenia receives and retains no data from
@@ -333,14 +384,16 @@ Details and the delta table: [`docs/compat-matrix.md`](docs/compat-matrix.md).
 
 See [`docs/architecture.md`](docs/architecture.md). In short: transport
 (json2/jsonrpc/xmlrpc, selected per version and credential) → session (auth + version/edition facts + schema
-cache) → compat (resolve model/field/capability) → tools → MCP stdio.
+cache) → compat (resolve model/field/capability) → tools → MCP stdio, with the
+permission policy deciding each call before any session exists and a guarded
+session checking every Odoo call a tool makes.
 
 ## Scope
 
-This is the **public generic core**: it talks to Odoo and nothing else. Any
-localization-, governance- or tenant-specific engines (e.g. country e-invoicing,
-approval workflows, backups, document AI) are intentionally **out of scope** and
-are not part of this repository.
+This is the **public generic core**: it talks to Odoo and nothing else. A
+generic, declarative permission policy is part of the public core; approval
+workflows, localization engines (e.g. country e-invoicing), backups, document AI
+and other tenant-specific engines are not, and are not part of this repository.
 
 ## Support — Transgenia
 

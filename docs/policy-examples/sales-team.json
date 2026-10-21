@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "comment": "Sales team, with profile standard: CRM and quotations, replies to customers from the chatter, no accounting changes, no HR data",
+  "models": {
+    "*":          {"call": false},
+    "crm.lead":   {"call": ["action_set_won", "action_set_lost", "message_post"],
+                   "reason": "Sales agents answer leads from the chatter"},
+    "sale.order": {"call": ["action_confirm", "action_cancel", "message_post"],
+                   "reason": "Sales agents answer questions on their quotations from the chatter"},
+    "account.*":  {"create": false, "write": false, "call": false},
+    "hr.*":       {"read": false, "create": false, "write": false, "call": false}
+  },
+  "fields": {
+    "allow": [{"field": "sale.order.access_token",
+               "reason": "Portal links the sales agent sends to customers"}]
+  },
+  "tools": {"disabled": ["odoo_import", "odoo_import_preview", "odoo_translate_set"]}
+}

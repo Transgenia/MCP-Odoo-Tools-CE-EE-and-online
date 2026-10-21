@@ -15,6 +15,13 @@ Claude Code prompts for the connection options when the plugin is enabled
 (`/plugin` → **odoo-tools** → **Configure options** to change them). The API key
 and password are `sensitive` options, kept in the OS secure credential store.
 
+Two more options set the permission policy (1.5.0), both with defaults:
+**Permission profile** (`standard`; `readonly`, `builder` or `full`) and
+**Permission policy file** (empty, or an absolute path to a JSON file of
+per-model rules). To keep the 1.4 behaviour, set the profile to `full`. See
+[`policy.md`](policy.md). The server also writes an audit line per tool call to
+the plugin's data folder (`${CLAUDE_PLUGIN_DATA}/audit`, kept 90 days).
+
 These options are a Claude Code feature. Cowork does not prompt for plugin options
 and ignores this plugin's MCP server because its connection options have no
 default, and Claude chat ignores a plugin's local MCP server, so the Odoo tools are
@@ -74,7 +81,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
 
 # container mode: the MCP server without a local Python
-docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.4.1
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.5.0
 ```
 
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
@@ -94,7 +101,16 @@ pip install ./server && odoo-mcp
 
 Environment when running the server outside the plugin (see the root README for
 the full table): `ODOO_URL`, `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY` (or
-`ODOO_PASSWORD`). Inside the plugin these are filled from the plugin options.
+`ODOO_PASSWORD`), and optionally `ODOO_POLICY` (default `standard`),
+`ODOO_POLICY_FILE`, `ODOO_AUDIT_DIR` (a folder, `stderr` by default, or `off`) and
+`ODOO_AUDIT_RETENTION_DAYS` (default 90). Inside the plugin these are filled from
+the plugin options.
+
+Check a policy file before you configure it (offline, nothing is sent to Odoo):
+
+```bash
+python3 server/run_stdio.py --check-policy ~/.config/odoo-tools/policy.json --explain res.users:write
+```
 
 Optional extras:
 
@@ -115,7 +131,22 @@ Requires Node.js 18+. Installs the CLI to `~/.claude/tools/odoo-cli`.
 
 See [`../docker/`](../docker/). The image runs the same stdio server (attach
 with `docker run -i --env-file ./odoo.env`, a file you create with the `ODOO_*`
-variables and keep out of version control). A remote HTTP mode, where the
+variables and keep out of version control). The env file may also set the
+permission policy and the audit folder; mount the policy file read-only and the
+audit folder writable by the container's user (`mcp`):
+
+```
+# in odoo.env
+# ODOO_POLICY=standard
+# ODOO_POLICY_FILE=/policy/policy.json
+# ODOO_AUDIT_DIR=/audit
+
+docker run -i --rm --env-file ./odoo.env \
+  -v ~/.config/odoo-tools/policy.json:/policy/policy.json:ro \
+  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.5.0
+```
+
+Without an audit folder the audit lines go to `docker logs`. A remote HTTP mode, where the
 server keeps the Odoo credential and clients authenticate to it, is on the
 roadmap and needs its own design.
 

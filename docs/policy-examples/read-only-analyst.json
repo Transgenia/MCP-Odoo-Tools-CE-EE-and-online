@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "comment": "Reporting analyst, with profile readonly: aggregates and exports, without HR data, chatter or contact details",
+  "models": {
+    "hr.*":          {"read": false},
+    "mail.message":  {"read": false},
+    "mail.activity": {"read": false}
+  },
+  "fields": {
+    "withhold": ["res.partner.email", "res.partner.phone", "res.partner.mobile", "*.vat"]
+  },
+  "tools": {"disabled": ["odoo_record_documents"]}
+}

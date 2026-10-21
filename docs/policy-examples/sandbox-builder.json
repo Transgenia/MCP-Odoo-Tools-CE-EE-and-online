@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "comment": "Training sandbox, with profile builder: Studio-style changes, deleting the practice records, test users. Never on production data",
+  "models": {
+    "*":         {"unlink": true},
+    "res.users": {"create": true, "write": true,
+                  "reason": "Training: create and adjust the practice users of this sandbox"}
+  }
+}

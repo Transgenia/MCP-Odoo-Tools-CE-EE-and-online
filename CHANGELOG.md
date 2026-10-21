@@ -4,7 +4,12 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] - 2026-10-21
+
+Secure defaults: a permission policy on top of the Odoo user's own access rights,
+checked before and while each tool calls Odoo, and a local audit trail. The
+default tightens inside this minor release; to keep the 1.4 behaviour, set the
+new option **Permission profile** to `full`. The tool count stays 28.
 
 ### Changed (secure defaults)
 
@@ -15,12 +20,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   sequences or chatter history, or read stored secrets (system parameters, mail-server,
   payment-provider and CFDI certificate credentials). Credential-like fields (passwords,
   tokens, keys) are refused in field lists, values, filters, grouping and sorting, and are
-  removed from what reads return (the result names them in `policy_withheld_fields`). The other
-  profiles are `readonly`, `builder` (adds fields, views and automations; for sandboxes and
-  staging, since automations run code on the server) and `full`, which keeps 1.4 behaviour:
-  set `ODOO_POLICY=full`. API-key changes and module uninstall stay refused in every
-  profile. An unknown profile or an invalid policy file (`ODOO_POLICY_FILE`) locks every
-  tool except `odoo_version`, which shows the error.
+  removed from what reads return (the result names them in `policy_withheld_fields`).
+  Tools the profile forbids are not listed. **To keep 1.4 behaviour, set Permission
+  profile to `full`** (`ODOO_POLICY=full` in a container or a standalone run): API-key
+  changes and module uninstall stay refused in every profile. The other profiles are
+  `readonly` and `builder` (adds fields, views and automations; for sandboxes and staging,
+  since automations run code on the server). Details: `docs/policy.md`.
 - Tools the profile forbids on every model are no longer listed: `standard` lists 25 of the
   28 (not `odoo_unlink`, `odoo_add_field` or `odoo_add_automation`). A hidden tool called by
   name explains why. Every refusal names the profile, the rule and what changes it. Most are
@@ -34,21 +39,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   e-mail, and the link field of a model that delegates to a closed one (`website.page`
   `view_id`) cannot be set. Such a refusal comes after sign-in and says that Odoo did not
   run the call. A call outside a tool's declared mapping is stopped as a bug.
-- `odoo_online_profile` reports a section the policy withholds in `unavailable` instead of
-  failing.
 - With Read-only mode on, the write tools are no longer listed (calling one still explains
   why).
+- `odoo_report` now refuses before calling Odoo: it called the private method
+  `ir.actions.report._render_qweb_pdf`, which Odoo refuses over RPC on every
+  version, so it could never succeed. Use `odoo_record_documents` for the PDFs Odoo
+  already stored (for example an invoice PDF made when it was sent or printed). The
+  tool is deprecated and removed in 2.0.0. It says so even before a connection is
+  configured, since it never asks for a session.
+- `odoo_online_profile` reports a section the policy withholds in `unavailable` instead of
+  failing.
 - The write tools state `destructiveHint` in their annotations: false for `odoo_create`,
   `odoo_add_field` and `odoo_import_preview`, true for the others.
-- `odoo_version` returns a `policy` block (profile, file, digest, hidden tools, openings,
-  warnings, or the error that locked it) and warns (W10) when the Odoo user is an
-  administrator. `odoo_access_check` returns `policy` next to Odoo's own answer, with a note
-  when Odoo allows what the policy refuses. `odoo_list_models` leaves out the models the
-  policy allows nothing on (`hidden_by_policy`). The server instructions gain one line with
-  the profile, its digest and the hidden tools.
 
 ### Added
 
+- Options **Permission profile** (`odoo_policy`: `readonly`, `standard`, `builder`, `full`;
+  default `standard`) and **Permission policy file** (`odoo_policy_file`, optional: an
+  absolute path to a JSON file with per-model rules, method lists, field rules and openings
+  that need a reason and may expire; `docs/policy.md`). Both have defaults. An unknown
+  profile or an invalid policy file locks every tool except `odoo_version`, which shows the
+  error; the server never looks for a policy file in a default place.
+- `docs/policy.md` (profiles, tiers, rules, the file format, every error and warning, the
+  tool mapping), `docs/policy.schema.json` for editors, and four examples in
+  `docs/policy-examples/` (`production-hardened`, `sales-team`, `read-only-analyst`,
+  `sandbox-builder`), each loaded by CI. Their tables are generated from the policy's own
+  data (`scripts/policy_docs.py`) and checked in CI.
+- `python3 server/run_stdio.py --check-policy FILE [--profile P] [--explain
+  MODEL:OP[:METHOD]] [--json]` checks a policy file offline as the server would load it and
+  explains decisions, for example `res.users write: REFUSED (tier:security)`; exit 0 valid,
+  1 invalid, 2 bad usage. It never contacts Odoo.
 - **Audit log.** One JSON line per tool call, refusals included: the tool, the model
   and operation names, the layer and rule of a refusal, counts and timings; never
   values, domains, ids or secrets, and the Odoo login only on the line written at
@@ -56,6 +76,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   and hash-chained; `python3 server/run_stdio.py --verify-audit FILE` names the
   first edited, removed or cut line. Containers and standalone runs set
   `ODOO_AUDIT_DIR` (a folder, `stderr` or `off`) and `ODOO_AUDIT_RETENTION_DAYS`.
+- `odoo_version` returns a `policy` block (profile, file, digest, hidden tools, openings,
+  warnings, or the error that locked it) and warns (W10) when the Odoo user is an
+  administrator. `odoo_access_check` returns `policy` next to Odoo's own answer, with a note
+  when Odoo allows what the policy refuses. `odoo_list_models` leaves out the models the
+  policy allows nothing on (`hidden_by_policy`). The server instructions gain one line with
+  the profile, its digest and the hidden tools.
+- The SessionStart hook also checks the two policy options (and reads no other new
+  variable): when the server would start locked, it tells the user once a day and tells
+  Claude why. It still never reads the API key or password option.
 
 ### Changed
 
@@ -64,12 +93,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   the artifacts, but builds no container image and uploads nothing to PyPI.
   Publishing the draft runs those jobs. `docs/packaging.md` describes the steps, and
   `tests/test_release_workflow.py` checks that a draft run publishes nothing.
-- `odoo_report` now refuses before calling Odoo: it called the private method
-  `ir.actions.report._render_qweb_pdf`, which Odoo refuses over RPC on every
-  version, so it could never succeed. Use `odoo_record_documents` for the PDFs Odoo
-  already stored (for example an invoice PDF made when it was sent or printed). The
-  tool is deprecated and removed in 2.0.0. It says so even before a connection is
-  configured, since it never asks for a session.
+- Scope: a generic, declarative permission policy is part of the public core; approval
+  workflows, localization engines and backups are not (README, CONTRIBUTING,
+  `docs/architecture.md`).
+- The skills and the `odoo` agent say which profile a task needs: Studio-style changes need
+  `builder`, and the training's delete step archives under `standard`.
+
+### Fixed
+
+- Sessions are cached by `url|db|login` plus a per-process HMAC of the secret
+  (`Credentials.session_key()`), so the same url, db and login with another secret
+  never reuses an authenticated session. `fingerprint()` is unchanged, and the
+  secret is never part of a key or a log line.
 
 ### Removed
 
@@ -78,12 +113,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   the Odoo URL from a client header and passed the client's bearer through to Odoo.
   A remote HTTP mode will resolve sessions from an authenticated identity.
 
-### Fixed
+### Security
 
-- Sessions are cached by `url|db|login` plus a per-process HMAC of the secret
-  (`Credentials.session_key()`), so the same url, db and login with another secret
-  never reuses an authenticated session. `fingerprint()` is unchanged, and the
-  secret is never part of a key or a log line.
+- In the local (stdio) mode the policy limits what Claude can do through these tools; it
+  does not limit the holder of the API key, nor an agent with unrestricted shell access on
+  the same machine (`SECURITY.md`, "Permission policy"). Use a dedicated, least-privilege
+  Odoo user with an expiring API key.
 
 ## [1.4.1] - 2026-10-21
 

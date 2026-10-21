@@ -12,8 +12,10 @@ Thanks for helping improve MCP-Odoo-Tools.
   code, tests, prompts or tool descriptions. Interoperate with them only over the
   network. Rely on Odoo's public XML-RPC/JSON-RPC/JSON-2 interfaces and public
   model/field names only.
-- **Scope:** this repo is the generic public core. Localization/governance/
-  tenant-specific engines (CFDI, approval gates, backups, etc.) belong elsewhere.
+- **Scope:** this repo is the generic public core. A generic, declarative
+  permission policy is part of the public core; approval workflows, localization
+  engines (CFDI and the like), backups and other tenant-specific engines are not,
+  and belong elsewhere.
 
 ## Server (Python)
 
@@ -39,7 +41,13 @@ pytest -q -m "not live"
   `tests/test_compat_resolve.py`. Boundaries you can't verify live should be
   commented "best-effort".
 - New tool? Register it in `src/odoo_mcp/tools/` via the `registry` decorator and
-  route model/field names through `compat` before the ORM call.
+  route model/field names through `compat` before the ORM call. A new tool must
+  pass `access=` (what it touches, for the permission policy), declare its
+  internal calls with predicates (`registry.Internal(model, methods, check=...,
+  reason=...)`), and add a `GOLDEN` row to `tests/test_policy_mapping.py`; the
+  mapping and coverage tests explain failures. Then refresh the tables of
+  `docs/policy.md` with `python3 scripts/policy_docs.py --write` (see
+  [Tool mapping](docs/policy.md#tool-mapping)).
 
 ## CLI (TypeScript)
 

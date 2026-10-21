@@ -42,6 +42,8 @@ Install: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-
 ## Enterprise / Teams (later, separate)
 
 Planned as independent offerings (own repos, own licenses): SSO/RBAC,
-audit logging, approval workflows for writes, managed hosting, SLA support.
+central audit logging, approval workflows for writes, managed hosting, SLA
+support. The Standard package already has a local permission policy and a local
+audit trail (`docs/policy.md`).
 No enterprise-only code paths exist in this repo — when those editions land,
 this Standard package stays exactly as-is: free and public.

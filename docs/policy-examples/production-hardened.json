@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "comment": "Production hardening: business reads and writes, curated verbs only, no imports",
+  "models": {
+    "*":            {"call": false},
+    "res.partner":  {"call": ["message_post"], "reason": "Agents reply to customers from the chatter"},
+    "crm.lead":     {"call": ["action_set_won", "action_set_lost"]},
+    "sale.order":   {"call": ["action_confirm", "action_cancel"]},
+    "account.move": {"call": ["action_post"]},
+    "hr.*":         {"read": false, "create": false, "write": false, "call": false},
+    "mail.message": {"read": false},
+    "mail.activity":{"read": false},
+    "website.*":    {"write": false, "create": false}
+  },
+  "fields": {"withhold": ["*.vat", "hr.employee.private_email"]},
+  "tools": {"disabled": ["odoo_import", "odoo_import_preview"]}
+}

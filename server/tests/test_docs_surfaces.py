@@ -75,3 +75,48 @@ def test_guided_route_checks_the_surface_before_python() -> None:
     phase0 = skill.split("## Phase 0 ", 1)[1].split("## Phase 0b", 1)[0]
     assert "Phase 0b" in phase0 and phase0.index("Phase 0b") < phase0.index("```bash")
     assert "claude plugin configure" in skill and "Cowork" in skill
+
+
+# Options added after 1.4.1. Each must have a default, so it never adds to the options
+# Cowork cannot fill, and the default must be what the server uses when the option is
+# unset (config.Settings), so the manifest and the server agree.
+NEW_OPTIONS = {"odoo_policy": ("ODOO_POLICY", "standard"),
+               "odoo_policy_file": ("ODOO_POLICY_FILE", "")}
+
+
+def test_every_new_option_has_a_default() -> None:
+    from odoo_mcp.config import Settings
+
+    manifest = _manifest()
+    options = manifest["userConfig"]
+    env = manifest["mcpServers"]["odoo"]["env"]
+    defaults = Settings()
+    for key, (variable, default) in NEW_OPTIONS.items():
+        assert key in options, key
+        assert "default" in options[key], key
+        assert options[key]["default"] == default, key
+        assert options[key]["type"] == "string" and not options[key].get("sensitive"), key
+        assert not options[key].get("required"), key
+        assert env[variable] == "${user_config." + key + "}"
+    assert defaults.policy_profile == NEW_OPTIONS["odoo_policy"][1]
+    assert defaults.policy_file == NEW_OPTIONS["odoo_policy_file"][1]
+    assert options["odoo_policy"]["title"] == "Permission profile"
+    assert options["odoo_policy_file"]["title"] == "Permission policy file (optional)"
+    for name in ("readonly", "standard", "builder", "full"):
+        assert name in options["odoo_policy"]["description"]
+    # The audit folder needs no option: the plugin passes its data folder.
+    assert env["ODOO_AUDIT_DIR"] == "${CLAUDE_PLUGIN_DATA}/audit"
+    # Every option that has no default predates 1.5.0: the five connection options.
+    without_default = {key for key in options if "default" not in options[key]}
+    assert without_default == {"odoo_url", "odoo_db", "odoo_login", "odoo_api_key",
+                               "odoo_password"}
+
+
+def test_the_docs_show_the_full_escape() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## Permissions" in readme and "docs/policy.md" in readme
+    assert "`full`" in readme.split("## Permissions", 1)[1].split("\n## ", 1)[0]
+    release = changelog.split("\n## [", 2)[1]  # the newest release
+    assert re.findall(r"^### (.+)$", release, re.MULTILINE)[0] == "Changed (secure defaults)"
+    assert "**Permission profile** to `full`" in release
