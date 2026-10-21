@@ -9,7 +9,8 @@ distributing copies. The repository is public and the plugin installs from its r
 so every file counts, not only the shipped code.
 
 These checks catch a copied file by its license DECLARATIONS (a manifest ``license``
-key, a license title, an SPDX header), not by a mention, so
+key, a non-permissive SPDX header, or a license title in a file that is not Markdown,
+such as a copied LICENSE or a code header), not by a mention, so Markdown
 documentation may still explain how to work with such modules over the network. They
 cannot prove that no idea was paraphrased: that is what the clean-room rule is for.
 """
@@ -47,17 +48,17 @@ SPDX = re.compile(r"SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)")
 OWN_CODE = ("hooks", "scripts", "server/src", "server/run_stdio.py")
 
 
-def _files() -> list[str]:
+def _files(root: Path = ROOT) -> list[str]:
     try:
         # -z: names with spaces or accents come back unquoted and whole
         out = subprocess.run(
             ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-            cwd=ROOT, check=True, capture_output=True, text=True,
+            cwd=root, check=True, capture_output=True, text=True,
         ).stdout.split("\0")
         return [name for name in out if name]
     except (OSError, subprocess.CalledProcessError):  # a release zip has no .git
-        return [str(p.relative_to(ROOT)).replace("\\", "/") for p in ROOT.rglob("*")
-                if p.is_file() and not SKIP_DIRS.intersection(p.relative_to(ROOT).parts)]
+        return [str(p.relative_to(root)).replace("\\", "/") for p in root.rglob("*")
+                if p.is_file() and not SKIP_DIRS.intersection(p.relative_to(root).parts)]
 
 
 def _text(name: str) -> str | None:
@@ -67,9 +68,10 @@ def _text(name: str) -> str | None:
         return None  # binary assets carry no license text
 
 
-def violations(text: str) -> list[str]:
+def violations(text: str, name: str = "") -> list[str]:
     found = [m.group(0) for m in MANIFEST_LICENSE.finditer(text)]
-    found += [m.group(0) for m in LICENSE_TITLES.finditer(text)]
+    if not name.endswith(".md"):  # a copied LICENSE file or code header, not a doc sentence
+        found += [m.group(0) for m in LICENSE_TITLES.finditer(text)]
     found += [m.group(0) for m in SPDX.finditer(text) if m.group(1) not in COMPATIBLE_SPDX]
     return found
 
@@ -81,7 +83,7 @@ def test_no_incompatible_license_in_the_repository() -> None:
             continue
         text = _text(name)
         if text is not None:
-            hits += [f"{name}: {hit}" for hit in violations(text)]
+            hits += [f"{name}: {hit}" for hit in violations(text, name)]
     assert not hits, "license declarations that MIT cannot absorb:\n" + "\n".join(hits)
 
 
@@ -105,10 +107,7 @@ def test_manifests_declare_mit() -> None:
 
 @pytest.mark.parametrize("name", ["NOTICE", "CONTRIBUTING.md"])
 def test_the_clean_room_rule_covers_proprietary_modules(name: str) -> None:
-    path = ROOT / name
-    if not path.exists():  # the release zip ships NOTICE; CONTRIBUTING lives in the repo
-        pytest.skip(f"{name} is not part of this copy")
-    text = path.read_text(encoding="utf-8")
+    text = (ROOT / name).read_text(encoding="utf-8")  # both ship in the release zip too
     assert "AGPL" in text and "OPL-1" in text
 
 
@@ -121,6 +120,12 @@ def test_the_clean_room_rule_covers_proprietary_modules(name: str) -> None:
 ])
 def test_a_copied_declaration_is_caught(sample: str) -> None:
     assert violations(sample)
+
+
+def test_a_license_title_in_markdown_is_a_mention() -> None:
+    sentence = "Some Odoo Apps modules use the Odoo Proprietary License; talk to them over the network."
+    assert not violations(sentence, "SUPPORT.md")
+    assert violations(sentence, "LICENSE")
 
 
 @pytest.mark.parametrize("sample", [
@@ -142,8 +147,6 @@ def test_unusual_file_names_are_scanned(tmp_path: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     for name in ("manifest copy.json", "módulo.json"):
         (repo / "skills" / name).write_text('{"license": "OPL-1"}', encoding="utf-8")
-    out = subprocess.run(["git", "ls-files", "-z", "--others", "--exclude-standard"],
-                         cwd=repo, check=True, capture_output=True, text=True).stdout
-    names = [n for n in out.split("\0") if n]
+    names = _files(repo)
     assert sorted(names) == ["skills/manifest copy.json", "skills/módulo.json"]
     assert all(violations((repo / n).read_text(encoding="utf-8")) for n in names)

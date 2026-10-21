@@ -115,18 +115,26 @@ def test_never_prints_or_stores_an_option_value(tmp_path: Path) -> None:
 _ENV_SPY = r"""
 import json, os, runpy, sys
 seen, bulk = [], []
+def note(key):
+    seen.append(key.decode("latin-1") if isinstance(key, bytes) else key)
 class Spy(dict):
     def __getitem__(self, key):
-        seen.append(key); return dict.__getitem__(self, key)
+        note(key); return dict.__getitem__(self, key)
     def get(self, key, default=None):
-        seen.append(key); return dict.get(self, key, default)
+        note(key); return dict.get(self, key, default)
     def __contains__(self, key):
-        seen.append(key); return dict.__contains__(self, key)
+        note(key); return dict.__contains__(self, key)
+    def setdefault(self, key, default=None):
+        note(key); return dict.setdefault(self, key, default)
+    def pop(self, key, *default):
+        note(key); return dict.pop(self, key, *default)
 for name in ("__iter__", "items", "keys", "values", "copy", "__repr__", "__len__"):
     def bulk_read(self, *a, _n=name, _f=getattr(dict, name)):
         bulk.append(_n); return _f(self, *a)
     setattr(Spy, name, bulk_read)
 os.environ = Spy(os.environ)
+if hasattr(os, "environb"):
+    os.environb = Spy(os.environb)
 try:
     runpy.run_path(sys.argv[1], run_name="__main__")
 except SystemExit:
@@ -136,14 +144,24 @@ with open(sys.argv[2], "w") as fh:
 """
 
 
-def test_never_reads_a_credential_variable(tmp_path: Path) -> None:
-    # The v1.2.0 directory rule, checked by behaviour: the hook may look up only the
-    # variables it needs, by name, and never scan the environment.
+@pytest.mark.parametrize(("source", "configured", "container"), [
+    ("startup", False, False), ("resume", False, False),
+    ("startup", False, True), ("startup", True, False),
+])
+def test_never_reads_a_credential_variable(tmp_path: Path, source: str, configured: bool,
+                                           container: bool) -> None:
+    # The v1.2.0 directory rule, checked by behaviour on every branch of the hook: it may
+    # look up only the variables it needs, by name, and never scan the environment.
     report = tmp_path / "env-access.json"
-    options = {"ODOO_URL": "https://odoo.invalid", "ODOO_API_KEY": "sk-CANARY",
-               "ODOO_PASSWORD": "pw-CANARY"}
-    subprocess.run([sys.executable, "-c", _ENV_SPY, str(HOOK), str(report)], input=_event(),
-                   env=_env(tmp_path, options), capture_output=True, timeout=30, check=True)
+    options = dict(REQUIRED_SET if configured else {"ODOO_URL": "https://odoo.invalid"},
+                   ODOO_API_KEY="sk-CANARY", ODOO_PASSWORD="pw-CANARY")
+    env = _env(tmp_path, options)
+    if container:
+        env_file = tmp_path / "home" / ".odoo-tools" / "mcp" / "odoo.env"
+        env_file.parent.mkdir(parents=True)
+        env_file.write_text("ODOO_URL=<https://your-odoo>\n")
+    subprocess.run([sys.executable, "-c", _ENV_SPY, str(HOOK), str(report)],
+                   input=_event(source), env=env, capture_output=True, timeout=30, check=True)
     access = json.loads(report.read_text(encoding="utf-8"))
     assert access["bulk"] == []
     assert any(key.endswith("ODOO_URL") for key in access["seen"])  # the spy works

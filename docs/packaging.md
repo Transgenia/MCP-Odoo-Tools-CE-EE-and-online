@@ -15,18 +15,20 @@ nothing in this repo is gated, stubbed, or phone-home licensed.
 | GitHub Release `v<ver>` | `release.yml` | sdist/wheel + plugin zip, notes = that version's CHANGELOG section |
 
 Release procedure: bump `plugin.json`, `marketplace.json`, `server/pyproject.toml`
-and the telemetry fallback, add the `## [<ver>]` CHANGELOG section, merge, then
-push the tag `v<ver>` — or, without a local clone, run **Actions → Release → Run workflow**
-on `main` with tag `v<ver>`: the workflow creates the tag itself. `release.yml` refuses a tag
-that does not match the versions.
+and the telemetry fallback and add the `## [<ver>]` CHANGELOG section. Then, in this
+order, because Anthropic's directory picks up a merge to the tracked branch (by
+default through the push webhook) and can publish it by itself, while the container
+image the docs pin (`ghcr.io/transgenia/odoo-mcp-tools:<ver>`) exists only once the
+tag's `container` job finishes:
 
-Cut the release right after the merge. Anthropic's directory picks up a merge to
-the tracked branch and may publish it by itself (the plugin's publish setting in
-the developer portal), while the container image the docs pin
-(`ghcr.io/transgenia/odoo-mcp-tools:<ver>`) exists only once the tag's `container`
-job finishes. Before that version goes live in the directory, check
-`docker manifest inspect ghcr.io/transgenia/odoo-mcp-tools:<ver>`; if the directory
-publishes automatically, switch it to manual for the release or track the tag.
+1. Before merging: in the developer portal, plugin **Settings** tab, turn off
+   **Publish new versions automatically** if it is on.
+2. Merge, then right away push the tag `v<ver>`, or, without a local clone, run
+   **Actions → Release → Run workflow** on `main` with tag `v<ver>` (the workflow
+   creates the tag itself). `release.yml` refuses a tag that does not match the
+   versions.
+3. When `docker manifest inspect ghcr.io/transgenia/odoo-mcp-tools:<ver>` succeeds,
+   select **Publish update** in the portal and turn the toggle back on.
 
 Install: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
 (Claude Code 2.1.275 or later; older versions add the marketplace first, see `docs/install.md`).

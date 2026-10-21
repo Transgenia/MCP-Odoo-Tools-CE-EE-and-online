@@ -4,8 +4,8 @@
 
 Anthropic's plugin support matrix (https://claude.com/docs/plugins/platform-support)
 says Cowork ignores an MCP server that references ``${user_config.*}`` options without
-a default ("Cowork doesn't prompt for values") and that chat ignores local MCP
-servers. v1.4.0 documented the server as working in a local Cowork session: a user who
+a default ("Cowork doesn't prompt for values") and that chat ignores a plugin's local
+MCP server. v1.4.0 documented the server as working in a local Cowork session: a user who
 installed the plugin there found "odoo - Runs in each session" with an empty panel and
 no form for the connection options.
 """

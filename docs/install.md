@@ -54,7 +54,10 @@ download, at install time or at start-up.
   Microsoft Store instead of printing a version, that is the Windows "App
   execution alias" stub: install the Store Python, or turn off the
   `python3.exe` entry under **App execution aliases** in Windows Settings so
-  your own `python3.exe` is found.
+  your own `python3.exe` is found. The session-start hooks are shell commands and need Git for Windows (Git Bash);
+  without it Claude Code runs them in PowerShell and shows a SessionStart hook
+  error (set `CLAUDE_CODE_GIT_BASH_PATH` if Git Bash is installed but not found).
+  The MCP server is not affected.
 
 The skill `/odoo-tools:odoo-setup-mcp` is the guided route from there on:
 setup, verification, hands-on training, daily use and deployment.

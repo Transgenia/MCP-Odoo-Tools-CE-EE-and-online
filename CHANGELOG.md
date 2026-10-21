@@ -16,7 +16,7 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
   matrix (https://claude.com/docs/plugins/platform-support) says Cowork does not
   prompt for plugin options and ignores an MCP server that references an option
   without a default (this plugin's URL, database, login and credentials have
-  none), and that chat ignores local MCP servers. A user who installed the plugin
+  none), and that chat ignores a plugin's local MCP server. A user who installed the plugin
   from Cowork saw **odoo — Runs in each session** with an empty panel and no way
   to enter the connection options. The README support table, `docs/install.md`,
   `SUPPORT.md`, the plugin description and the `odoo-mcp-tools` skill now say
@@ -62,7 +62,8 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
 - `tests/test_license_hygiene.py`: no file in the repository, tracked or not (so a
   copied file is caught before it is committed), declares a license MIT cannot
   absorb: an Odoo manifest `license` such as OPL-1 or (L/A)GPL, the OPL-1 or AGPL
-  title, or a non-permissive SPDX header. Mentions in documentation stay allowed;
+  title in a file that is not Markdown (a copied LICENSE or code header), or a
+  non-permissive SPDX header. Mentions in Markdown documentation stay allowed, and
   five files that discuss these licenses on purpose are listed by name. Also MIT
   SPDX headers on our own Python code (including `server/run_stdio.py`), MIT in the
   three manifests, and the clean-room rule covering OPL-1 in `CONTRIBUTING.md` and

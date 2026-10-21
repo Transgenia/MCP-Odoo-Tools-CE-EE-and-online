@@ -86,7 +86,8 @@ facts (method names, parameters, access rules), never copied.
 - OPL-1 (Odoo Apps `mcp_server`, a third-party module): proprietary. Its license forbids
   publishing or distributing copies, modified or not, so nothing from it may enter
   this repository; ideas come from its public description only.
-  `server/tests/test_license_hygiene.py` checks that no file in the repository
-  declares a license MIT cannot absorb.
+  `server/tests/test_license_hygiene.py` checks that no file in the repository,
+  outside five files that discuss these licenses on purpose, declares a license MIT
+  cannot absorb.
 - MIT repos: attribution given here; code is ours.
 - Elastic-2.0 (`pantalytics/odoo-mcp-pro`): idea only (external-id upsert through `load()`), nothing copied.
