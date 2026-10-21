@@ -20,7 +20,11 @@ on every SessionStart, so the reason survives /clear and compaction. With the
 container mode's env file present, only Claude is told.
 
 Standard library only; it must run on Python 3.9. hooks.json starts it only when
-python3 is 3.9 or newer, so an old or missing Python never shows a hook error.
+python3 is 3.9 or newer, so an old or missing Python shows no error from this hook.
+That holds wherever Claude Code runs hooks in bash (macOS, Linux, Windows with Git
+Bash); without Git Bash, Windows runs shell-form hooks in PowerShell, where the
+hooks.json commands do not parse (see the README, Requirements). It also checks
+whether the container mode's ~/.odoo-tools/mcp/odoo.env exists, without opening it.
 """
 
 from __future__ import annotations
@@ -64,7 +68,9 @@ def _notice_due(now: float) -> bool:
         return True
     marker = Path(data) / MARKER
     try:
-        if now - marker.stat().st_mtime < NOTICE_EVERY:
+        # A marker dated in the future (clock set back, restored backup, synced home)
+        # counts as due, so it cannot silence the notice for longer than a day.
+        if 0 <= now - marker.stat().st_mtime < NOTICE_EVERY:
             return False
     except OSError:
         pass

@@ -22,9 +22,10 @@ The Python MCP server under `server/` is an original, independent
 implementation. It does NOT copy or adapt source code from any AGPL-licensed
 Odoo MCP project (including rosenvladimirov/odoo-claude-mcp or forks thereof),
 nor from any proprietary Odoo module, including modules distributed under the
-Odoo Proprietary License (OPL-1) such as the Odoo Apps `mcp_server` module. Where
-it works with such a module, it does so only over the network, as a client.
-It relies solely on Odoo's publicly documented XML-RPC / JSON-RPC interfaces and
+Odoo Proprietary License (OPL-1) such as the third-party `mcp_server` module on
+Odoo Apps (not part of Odoo itself). Where it works with such a module, it does so
+only over the network, as a client.
+It relies solely on Odoo's publicly documented XML-RPC / JSON-RPC / JSON-2 interfaces and
 publicly known model/field naming, which are not themselves subject to copyright.
 Any behavioral similarity reflects those public interfaces, not shared code.
 

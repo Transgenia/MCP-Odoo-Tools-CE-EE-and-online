@@ -16,15 +16,18 @@ Claude Code prompts for the connection options when the plugin is enabled
 and password are `sensitive` options, kept in the OS secure credential store.
 
 These options are a Claude Code feature. Cowork does not prompt for plugin options
-and ignores an MCP server that needs them, and Claude chat does not start local
-MCP servers, so the Odoo tools are not available in either (the plugin's skills and
+and ignores this plugin's MCP server because its connection options have no
+default, and Claude chat ignores a plugin's local MCP server, so the Odoo tools are
+not available in either (the plugin's skills and
 commands still load). See [Where it works](../README.md#where-it-works) and
 [If the Odoo tools do not appear](../README.md#if-the-odoo-tools-do-not-appear).
 
-Without the interactive dialog (scripts, remote or headless machines),
-`claude plugin configure <id> --json` lists which options are unset, and
-`claude plugin configure <id> --values-stdin` saves values read from stdin as a
-JSON object of single-line strings. `<id>` is the full `name@marketplace` id shown
+Without the interactive dialog (scripts, remote or headless machines; Claude Code
+2.1.285 or later), `claude plugin configure <id> --json` lists the options without
+a saved value (the unused credential and the options with defaults stay listed on
+a working setup), and `claude plugin configure <id> --values-stdin` saves values
+read from stdin as a JSON object of single-line strings; restart Claude Code
+afterwards. `<id>` is the full `name@marketplace` id shown
 by `claude plugin list` (for example `odoo-tools@synced`). Pipe the JSON from a
 protected file or a secret manager; never put the key in the command line.
 

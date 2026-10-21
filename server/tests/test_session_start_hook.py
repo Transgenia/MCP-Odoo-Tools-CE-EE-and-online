@@ -51,13 +51,19 @@ def _event(source: Any = "startup", cwd: str = "/tmp/project") -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
-def _run(tmp_path: Path, options: dict[str, str], source: Any = "startup",
-         stdin: bytes | None = None, **extra: str) -> tuple[int, str]:
+def _run_full(tmp_path: Path, options: dict[str, str], source: Any = "startup",
+              stdin: bytes | None = None, **extra: str) -> tuple[int, str, str]:
     result = subprocess.run(
         [sys.executable, str(HOOK)], input=_event(source) if stdin is None else stdin,
         env=_env(tmp_path, options, **extra), capture_output=True, timeout=30, check=False,
     )
-    return result.returncode, result.stdout.decode("utf-8")
+    return result.returncode, result.stdout.decode("utf-8"), result.stderr.decode("utf-8")
+
+
+def _run(tmp_path: Path, options: dict[str, str], source: Any = "startup",
+         stdin: bytes | None = None, **extra: str) -> tuple[int, str]:
+    code, out, _ = _run_full(tmp_path, options, source, stdin, **extra)
+    return code, out
 
 
 def test_silent_when_the_required_options_are_set(tmp_path: Path) -> None:
@@ -93,14 +99,56 @@ def test_only_the_missing_options_are_listed(tmp_path: Path) -> None:
     assert "odoo_url" not in payload["systemMessage"]
 
 
-def test_never_prints_an_option_value(tmp_path: Path) -> None:
+def test_never_prints_or_stores_an_option_value(tmp_path: Path) -> None:
     options = {"ODOO_URL": "https://secret-host.invalid", "ODOO_LOGIN": "who@secret.invalid",
                "ODOO_API_KEY": "sk-CANARY-SHOULD-NEVER-APPEAR",
                "ODOO_PASSWORD": "pw-CANARY-SHOULD-NEVER-APPEAR"}
-    code, out = _run(tmp_path, options)  # odoo_db is missing, so the hook speaks
+    code, out, err = _run_full(tmp_path, options)  # odoo_db is missing, so the hook speaks
     assert code == 0 and out
     for value in options.values():
-        assert value not in out
+        assert value not in out and value not in err
+    assert (tmp_path / "data" / "options-notice").read_bytes() == b""  # a timestamp only
+
+
+# Runs the hook with os.environ replaced by a mapping that records every key looked up
+# and every bulk read (iteration, items, copy...), then writes that record to a file.
+_ENV_SPY = r"""
+import json, os, runpy, sys
+seen, bulk = [], []
+class Spy(dict):
+    def __getitem__(self, key):
+        seen.append(key); return dict.__getitem__(self, key)
+    def get(self, key, default=None):
+        seen.append(key); return dict.get(self, key, default)
+    def __contains__(self, key):
+        seen.append(key); return dict.__contains__(self, key)
+for name in ("__iter__", "items", "keys", "values", "copy", "__repr__", "__len__"):
+    def bulk_read(self, *a, _n=name, _f=getattr(dict, name)):
+        bulk.append(_n); return _f(self, *a)
+    setattr(Spy, name, bulk_read)
+os.environ = Spy(os.environ)
+try:
+    runpy.run_path(sys.argv[1], run_name="__main__")
+except SystemExit:
+    pass
+with open(sys.argv[2], "w") as fh:
+    json.dump({"seen": seen, "bulk": bulk}, fh)
+"""
+
+
+def test_never_reads_a_credential_variable(tmp_path: Path) -> None:
+    # The v1.2.0 directory rule, checked by behaviour: the hook may look up only the
+    # variables it needs, by name, and never scan the environment.
+    report = tmp_path / "env-access.json"
+    options = {"ODOO_URL": "https://odoo.invalid", "ODOO_API_KEY": "sk-CANARY",
+               "ODOO_PASSWORD": "pw-CANARY"}
+    subprocess.run([sys.executable, "-c", _ENV_SPY, str(HOOK), str(report)], input=_event(),
+                   env=_env(tmp_path, options), capture_output=True, timeout=30, check=True)
+    access = json.loads(report.read_text(encoding="utf-8"))
+    assert access["bulk"] == []
+    assert any(key.endswith("ODOO_URL") for key in access["seen"])  # the spy works
+    for key in access["seen"]:
+        assert "API_KEY" not in key.upper() and "PASSWORD" not in key.upper(), key
 
 
 def test_unresolved_placeholders_count_as_unset(tmp_path: Path) -> None:
@@ -118,6 +166,14 @@ def test_the_user_notice_is_shown_once_a_day(tmp_path: Path) -> None:
     marker = tmp_path / "data" / "options-notice"
     old = marker.stat().st_mtime - 25 * 3600
     os.utime(marker, (old, old))
+    assert "systemMessage" in json.loads(_run(tmp_path, {})[1])
+
+
+def test_a_marker_from_the_future_does_not_silence_the_notice(tmp_path: Path) -> None:
+    _run(tmp_path, {})
+    marker = tmp_path / "data" / "options-notice"
+    future = marker.stat().st_mtime + 10 * 24 * 3600  # clock set back, restored backup
+    os.utime(marker, (future, future))
     assert "systemMessage" in json.loads(_run(tmp_path, {})[1])
 
 
@@ -178,12 +234,13 @@ def test_hooks_json_guards_the_python_version() -> None:
     assert '"${CLAUDE_PLUGIN_ROOT}/hooks/check_options.py"' in command  # quoted path
 
 
-def _shell(command: str, tmp_path: Path, path: str) -> tuple[int, str, str]:
+def _shell(command: str, tmp_path: Path, path: str,
+           source: str = "startup") -> tuple[int, str, str]:
     env = _env(tmp_path, {}, PATH=path)
     sh = shutil.which("sh")  # resolved here: the child's PATH is the one under test
     assert sh
     result = subprocess.run([sh, "-c", command.replace("${CLAUDE_PLUGIN_ROOT}", str(ROOT))],
-                            input=_event(), env=env, capture_output=True, timeout=30,
+                            input=_event(source), env=env, capture_output=True, timeout=30,
                             check=False)
     return result.returncode, result.stdout.decode("utf-8"), result.stderr.decode("utf-8")
 
@@ -212,3 +269,17 @@ def test_a_supported_python3_runs_the_check(tmp_path: Path) -> None:
     code, out, err = _shell(_hook_command(), tmp_path, str(real))
     assert code == 0 and err == ""
     assert "odoo_url" in json.loads(out)["systemMessage"]
+
+
+@POSIX_ONLY
+def test_the_event_reaches_the_check_past_the_version_guard(tmp_path: Path) -> None:
+    # If the guard consumed stdin, a resume would look like a new session and notify.
+    real = tmp_path / "py-bin"
+    real.mkdir()
+    (real / "python3").symlink_to(sys.executable)
+    code, out, err = _shell(_hook_command(), tmp_path, str(real), source="resume")
+    payload = json.loads(out)
+    assert code == 0 and err == ""
+    assert "systemMessage" not in payload
+    assert "odoo_url" in payload["hookSpecificOutput"]["additionalContext"]
+    assert not (tmp_path / "data" / "options-notice").exists()

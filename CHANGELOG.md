@@ -24,10 +24,10 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
   works (Claude Code, including `claude plugin configure` for headless machines);
   and the guided route (`odoo-setup-mcp`, new Phase 0b) checks the surface before
   it troubleshoots Python. No server code changed.
-- `docs/third-party-ideas.md` listed the Odoo Apps `mcp_server` module under
-  `ivnvxd/mcp-server-odoo` and MPL-2.0. That module is much. Consulting's and is
-  under the Odoo Proprietary License (OPL-1); `ivnvxd/mcp-server-odoo` is a separate
-  MPL-2.0 project. Nothing from either was copied.
+- `docs/third-party-ideas.md` listed the Odoo Apps `mcp_server` module, which
+  `ivnvxd/mcp-server-odoo` requires in its standard mode, as MPL-2.0. The module is
+  a proprietary third-party module under the Odoo Proprietary License (OPL-1);
+  `ivnvxd/mcp-server-odoo` itself is MPL-2.0. Nothing from either was copied.
 
 ### Added
 - **Missing-options notice at session start** (`hooks/check_options.py`, a second
@@ -40,22 +40,33 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
   presence only. It keeps the v1.2.0 rule that no hook reads the API key or
   password option (a directory finding), never prints, stores or sends a value,
   and always exits 0. `hooks.json` starts it in shell form only when `python3` is
-  3.9 or newer, so a missing or old Python never shows a hook error (the first
-  hook already explains it); a shell-form hook cannot reference `${user_config.*}`,
-  so the script reads the environment. It reads the event as bytes, so a Windows
-  code page cannot garble a non-ASCII working directory. Known limit: a
-  non-interactive session (`claude -p`, the Agent SDK) started that day also uses
-  up the daily notice. Tests: `tests/test_session_start_hook.py`.
+  3.9 or newer, so a missing or old Python shows no error from this hook (the first
+  hook explains a missing `python3`; an older one is caught by the guided route's
+  Step 1A). That holds on macOS, Linux and Windows with Git Bash: without Git Bash,
+  Windows runs shell-form hooks in PowerShell, where both hooks fail (README,
+  Requirements). A shell-form hook cannot reference `${user_config.*}`, so the
+  script reads the environment. It reads the event as bytes, so a Windows code page
+  cannot garble a non-ASCII working directory, and a timestamp dated in the future
+  (clock set back, restored backup) counts as due. Known limit: a non-interactive
+  session (`claude -p`, the Agent SDK) started that day also uses up the daily
+  notice. Tests: `tests/test_session_start_hook.py`, including a run with a
+  recording `os.environ` that fails if the hook looks up a credential variable or
+  scans the environment, and checks that no value reaches stdout, stderr or the
+  timestamp file.
 - `PRIVACY.md`: Claude Code also exports saved options to the plugin's hook
   processes (the hooks do not read the sensitive ones), and the hook's timestamp
   file is listed under local storage.
 - `tests/test_docs_surfaces.py`: every `${user_config.KEY}` the server references
   is declared; the README does not promise the Odoo tools where the options cannot
   be entered; the guided route triages the surface before Python.
-- `tests/test_license_hygiene.py`: no proprietary or AGPL license marker in any
-  shipped file (including untracked ones, so a copied file is caught before it is
-  committed), MIT SPDX headers on our own Python code, MIT in the three manifests,
-  and the clean-room rule covering OPL-1 in `CONTRIBUTING.md` and `NOTICE`.
+- `tests/test_license_hygiene.py`: no file in the repository, tracked or not (so a
+  copied file is caught before it is committed), declares a license MIT cannot
+  absorb: an Odoo manifest `license` such as OPL-1 or (L/A)GPL, the OPL-1 or AGPL
+  title, or a non-permissive SPDX header. Mentions in documentation stay allowed;
+  five files that discuss these licenses on purpose are listed by name. Also MIT
+  SPDX headers on our own Python code (including `server/run_stdio.py`), MIT in the
+  three manifests, and the clean-room rule covering OPL-1 in `CONTRIBUTING.md` and
+  `NOTICE`.
 
 ### Changed
 - **One-step install.** The README, `docs/install.md`, `docs/packaging.md` and the
@@ -63,14 +74,27 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
   Transgenia/MCP-Odoo-Tools-CE-EE-and-online` (Claude Code 2.1.275 or later, the
   line `claude plugin validate` advises), keeping the two-step commands for older
   versions.
-- README, "Where it works": Cowork and Claude chat accept remote MCP connectors by
-  `https` URL (Customize > Connectors); the plugin does not provide one.
+- README, "Where it works": Cowork and Claude chat accept MCP connectors you add
+  yourself (a remote server by `https` URL, added by an Owner in Organization
+  settings > Connectors on Team and Enterprise, or under Customize > Connectors; or
+  a desktop extension in the Claude desktop app); the plugin provides neither.
+- "If the Odoo tools do not appear" and the guided route: synced plugins need a
+  claude.ai sign-in in Claude Code 2.1.273 or later; `claude plugin configure`
+  needs 2.1.285 or later and a restart, and its `unconfigured` list keeps the
+  unused credential and the options with defaults on a working setup; the CLI
+  fallback is offered for Cowork only (Claude chat has no safe place for the key);
+  the container image is for Claude Code without Python. README Requirements: on
+  Windows the session-start hooks need Git Bash.
 - Clean-room rule (`CONTRIBUTING.md`, `NOTICE`): besides AGPL projects, no code from
   proprietary Odoo modules (OPL-1) or any license that does not allow
   redistribution under MIT; such projects may inform ideas from their public
   documentation only, and the plugin works with them only over the network.
 - The container image pinned in `/odoo-tools:deploy-local` and `docs/install.md`
-  is `ghcr.io/transgenia/odoo-mcp-tools:1.4.1`.
+  is `ghcr.io/transgenia/odoo-mcp-tools:1.4.1`; `docs/packaging.md` now says to cut
+  the release right after the merge, because the directory may publish the merge
+  before the image exists.
+- CI and the release workflow also lint `hooks/`, and the release zip ships
+  `CONTRIBUTING.md`.
 
 ## [1.4.0] - 2026-09-29
 

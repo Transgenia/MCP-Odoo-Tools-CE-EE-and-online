@@ -9,7 +9,7 @@ nothing in this repo is gated, stubbed, or phone-home licensed.
 | Artifact | Produced by | Contents |
 |----------|-------------|----------|
 | PyPI `odoo-mcp-tools` sdist + wheel | `release.yml` job `pypi` (trusted publishing: PyPI publisher = this repo, workflow `release.yml`, environment `pypi`) | `server/` (MCP server, 28 tools, no runtime dependencies) |
-| `odoo-tools-standard-<ver>.zip` | `release.yml` on tag `v*` | plugin: `.claude-plugin/`, `agents/`, `skills/`, `commands/`, `context/`, `hooks/`, `cli/`, `docs/`, `server/` (the source the plugin runs with `python3`), plus `README.md`, `SECURITY.md`, `PRIVACY.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE` |
+| `odoo-tools-standard-<ver>.zip` | `release.yml` on tag `v*` | plugin: `.claude-plugin/`, `agents/`, `skills/`, `commands/`, `context/`, `hooks/`, `cli/`, `docs/`, `server/` (the source the plugin runs with `python3`), plus `README.md`, `SECURITY.md`, `PRIVACY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE`, `NOTICE` |
 | `ghcr.io/transgenia/odoo-mcp-tools:<ver>` (+ `<major.minor>`, `latest`) | `release.yml` on tag `v*` | the MCP server as a container (amd64 + arm64), used by `/odoo-tools:deploy-local` container mode |
 | `ghcr.io/transgenia/odoo:{16.0..19.0}`, `ghcr.io/transgenia/postgres:16` | `mirror-images.yml` (weekly, called by `release.yml`, manual) | unchanged copies of the official images, used by the sandbox |
 | GitHub Release `v<ver>` | `release.yml` | sdist/wheel + plugin zip, notes = that version's CHANGELOG section |
@@ -19,6 +19,14 @@ and the telemetry fallback, add the `## [<ver>]` CHANGELOG section, merge, then
 push the tag `v<ver>` — or, without a local clone, run **Actions → Release → Run workflow**
 on `main` with tag `v<ver>`: the workflow creates the tag itself. `release.yml` refuses a tag
 that does not match the versions.
+
+Cut the release right after the merge. Anthropic's directory picks up a merge to
+the tracked branch and may publish it by itself (the plugin's publish setting in
+the developer portal), while the container image the docs pin
+(`ghcr.io/transgenia/odoo-mcp-tools:<ver>`) exists only once the tag's `container`
+job finishes. Before that version goes live in the directory, check
+`docker manifest inspect ghcr.io/transgenia/odoo-mcp-tools:<ver>`; if the directory
+publishes automatically, switch it to manual for the release or track the tag.
 
 Install: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
 (Claude Code 2.1.275 or later; older versions add the marketplace first, see `docs/install.md`).

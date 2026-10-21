@@ -47,7 +47,9 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
   when you stop using the CLI.
 - The SessionStart hook keeps one empty timestamp file, `options-notice`, in the
   plugin's data folder (`~/.claude/plugins/data/…`) so that the missing-options
-  notice is shown at most once a day. It holds no data.
+  notice is shown at most once a day. It holds no data. The hook also checks
+  whether the container mode's `~/.odoo-tools/mcp/odoo.env` exists; it never opens
+  or reads that file.
 
 ## Retention
 

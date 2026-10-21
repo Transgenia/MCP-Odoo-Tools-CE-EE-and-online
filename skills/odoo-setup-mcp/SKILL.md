@@ -47,24 +47,29 @@ plugin's **Connectors** tab is on 2 or 3.
 - **1 — Claude Code.** The server did not start; the usual cause is that the
   required options (Odoo URL, database, login) are empty. If you can run shell
   commands, run `claude plugin list` to get the plugin's full id
-  (`odoo-tools@<marketplace>`), then `claude plugin configure <id> --json` and
-  read `unconfigured`; otherwise ask the user to run `/plugin configure <id>`,
+  (`odoo-tools@<marketplace>`), then `claude plugin configure <id> --json`
+  (Claude Code 2.1.285 or later) and read `unconfigured`: act only if `odoo_url`,
+  `odoo_db` or `odoo_login` is in it, because the unused one of `odoo_api_key` and
+  `odoo_password` and the options with defaults are listed there even on a working
+  setup. Otherwise ask the user to run `/plugin configure <id>`,
   which opens the options dialog. Fix the options in Step 1C, then check Python
   in Step 1A, then restart Claude.
 - **2 or 3 — Cowork or Claude chat.** These apps do not run this plugin's local
   MCP server and have no form for plugin options. Anthropic's plugin support
   matrix says Cowork "doesn't prompt for values" and ignores an MCP server whose
-  options have no default, and chat ignores local MCP servers. The install is
+  options have no default, and chat ignores a plugin's local MCP server. The install is
   fine and the skills and commands loaded, but they cannot reach Odoo without the
   tools. Say it plainly, tell the user nothing is wrong with their account, and
   offer:
   1. **Claude Code** (recommended): a plugin installed on their Claude account
-     appears there as a synced plugin at the next session start. Continue from
-     Step 1B.
-  2. **The CLI fallback**, `/odoo-tools:odoo-setup-cli` (Node 18+). From a cloud or
-     sandboxed session it needs network access to their Odoo, and the key must
-     not be typed into the chat: advise a dedicated, least-privilege,
-     short-lived API key.
+     appears there as a synced plugin at the next session start when they sign in
+     to Claude Code (2.1.273 or later) with that claude.ai account; if it does not
+     show, `/reload-plugins` or the install commands. Continue from Step 1B.
+  2. **Cowork only: the CLI fallback**, `/odoo-tools:odoo-setup-cli` (Node 18+),
+     when the session can run Node, reach their Odoo, and the user can edit the
+     CLI's `.env` file themselves. The key must not be typed into the chat: advise
+     a dedicated, least-privilege, short-lived API key. Not in Claude chat, which
+     has no safe place to enter the key.
   3. **☎ Transgenia** for assisted setup, with the official channels above.
 
   Do not walk them through Python or the plugin options on these apps: those
@@ -130,10 +135,12 @@ prompts for them when the plugin is enabled. To enter or change them later:
 run `/plugin`, open **odoo-tools**, choose **Configure options**, or run
 `/plugin configure <id>` (VS Code: the gear icon on the plugin's row). These
 options exist only in Claude Code. On a
-remote or headless machine without the interactive dialog, `claude plugin
-configure <id> --json` lists the unset options and `claude plugin configure <id>
---values-stdin` saves values read from stdin as a JSON object of single-line
-strings (`<id>` is the full id from `claude plugin list`); the user pipes that
+remote or headless machine without the interactive dialog (Claude Code 2.1.285 or
+later), `claude plugin configure <id> --json` lists the options without a saved
+value (the unused credential and the options with defaults stay listed on a
+working setup) and `claude plugin configure <id> --values-stdin` saves values read
+from stdin as a JSON object of single-line strings, applied after a restart
+(`<id>` is the full id from `claude plugin list`); the user pipes that
 JSON from a protected file or a secret manager, and you never ask for, read or
 echo the key.
 

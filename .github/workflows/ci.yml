@@ -27,7 +27,7 @@ jobs:
       - name: Install
         run: pip install -e ".[dev,cache]"
       - name: Ruff
-        run: ruff check src tests ../scripts
+        run: ruff check src tests ../scripts ../hooks
       - name: Pytest (unit)
         run: pytest -q -m "not live"
 

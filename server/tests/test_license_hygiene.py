@@ -1,77 +1,95 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
-"""Nothing under a license incompatible with MIT may ship in this plugin.
+"""Nothing under a license incompatible with MIT may enter this public repository.
 
 CONTRIBUTING.md and NOTICE forbid copying code from AGPL-licensed Odoo MCP projects
-and from proprietary Odoo modules such as the Odoo Apps ``mcp_server`` module (much.
-Consulting, Odoo Proprietary License v1.0), whose license forbids distributing copies.
-These checks catch a copied file by its license markers; they cannot prove that no
-idea was paraphrased, which is what the clean-room rule is for.
+and from proprietary Odoo modules, such as the third-party ``mcp_server`` module on
+Odoo Apps (Odoo Proprietary License v1.0, OPL-1), whose license forbids publishing or
+distributing copies. The repository is public and the plugin installs from its root,
+so every file counts, not only the shipped code.
+
+These checks catch a copied file by its license DECLARATIONS (a manifest ``license``
+key, a license title, an SPDX header), not by a mention, so
+documentation may still explain how to work with such modules over the network. They
+cannot prove that no idea was paraphrased: that is what the clean-room rule is for.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-# Everything that is installed with the plugin or shipped as a package or image.
-SHIPPED = (".claude-plugin", "agents", "cli", "commands", "context", "docker",
-           "hooks", "packages", "scripts", "server/src", "skills")
-MARKERS = (
-    re.compile(r"Odoo Proprietary License"),
-    re.compile(r"\bOPL-1\b"),
-    re.compile(r"GNU Affero General Public License"),
-    re.compile(r"much\.? ?Consulting|muchconsulting", re.IGNORECASE),
-    re.compile(r"SPDX-License-Identifier:\s*(?!MIT\b)[A-Za-z0-9.+-]+"),
-)
-OWN_CODE = ("hooks", "scripts", "server/src")
+# Files that discuss these licenses on purpose; each one is reviewed by hand.
+ALLOWED = {
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "NOTICE",
+    "docs/third-party-ideas.md",
+    "server/tests/test_license_hygiene.py",
+}
+SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache",
+             ".ruff_cache", "dist", "build"}
+# Licenses MIT code may include with attribution.
+COMPATIBLE_SPDX = {"MIT", "MIT-0", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC",
+                   "0BSD", "CC0-1.0"}
+# An Odoo manifest, or a JSON/TOML file, declaring a license MIT cannot absorb.
+MANIFEST_LICENSE = re.compile(
+    r"""["']license["']\s*[:=]\s*["'](OPL-1|OEEL-1|Other proprietary|A?GPL[^"']*|LGPL[^"']*)["']""",
+    re.IGNORECASE)
+LICENSE_TITLES = re.compile(r"Odoo Proprietary License|GNU Affero General Public License")
+SPDX = re.compile(r"SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)")
+OWN_CODE = ("hooks", "scripts", "server/src", "server/run_stdio.py")
 
 
-def _tracked(prefix: str) -> list[Path]:
+def _files() -> list[str]:
     try:
-        # untracked files too, so a copied file is caught before it is committed
+        # -z: names with spaces or accents come back unquoted and whole
         out = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", prefix],
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
             cwd=ROOT, check=True, capture_output=True, text=True,
-        ).stdout.split()
-    except (OSError, subprocess.CalledProcessError):  # a release tarball has no .git
-        out = [str(p.relative_to(ROOT)) for p in (ROOT / prefix).rglob("*") if p.is_file()]
-    return [ROOT / name for name in out]
+        ).stdout.split("\0")
+        return [name for name in out if name]
+    except (OSError, subprocess.CalledProcessError):  # a release zip has no .git
+        return [str(p.relative_to(ROOT)).replace("\\", "/") for p in ROOT.rglob("*")
+                if p.is_file() and not SKIP_DIRS.intersection(p.relative_to(ROOT).parts)]
 
 
-def _text(path: Path) -> str | None:
+def _text(name: str) -> str | None:
     try:
-        return path.read_text(encoding="utf-8")
+        return (ROOT / name).read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError):
-        return None  # binary assets carry no license header
+        return None  # binary assets carry no license text
 
 
-@pytest.mark.parametrize("prefix", SHIPPED)
-def test_no_incompatible_license_marker_ships(prefix: str) -> None:
+def violations(text: str) -> list[str]:
+    found = [m.group(0) for m in MANIFEST_LICENSE.finditer(text)]
+    found += [m.group(0) for m in LICENSE_TITLES.finditer(text)]
+    found += [m.group(0) for m in SPDX.finditer(text) if m.group(1) not in COMPATIBLE_SPDX]
+    return found
+
+
+def test_no_incompatible_license_in_the_repository() -> None:
     hits = []
-    for path in _tracked(prefix):
-        text = _text(path)
-        if text is None:
+    for name in _files():
+        if name in ALLOWED:
             continue
-        for marker in MARKERS:
-            for match in marker.finditer(text):
-                line = text.count("\n", 0, match.start()) + 1
-                hits.append(f"{path.relative_to(ROOT)}:{line}: {match.group(0)}")
-    assert not hits, "license markers in shipped files:\n" + "\n".join(hits)
+        text = _text(name)
+        if text is not None:
+            hits += [f"{name}: {hit}" for hit in violations(text)]
+    assert not hits, "license declarations that MIT cannot absorb:\n" + "\n".join(hits)
 
 
 def test_own_python_code_declares_mit() -> None:
     missing = [
-        str(path.relative_to(ROOT))
-        for prefix in OWN_CODE
-        for path in _tracked(prefix)
-        if path.suffix == ".py"
-        and "SPDX-License-Identifier: MIT" not in "".join((_text(path) or "").splitlines(True)[:3])
+        name for name in _files()
+        if name.endswith(".py") and any(name == p or name.startswith(p + "/") for p in OWN_CODE)
+        and "SPDX-License-Identifier: MIT" not in "".join((_text(name) or "").splitlines(True)[:3])
     ]
     assert not missing, f"no MIT SPDX header in the first lines: {missing}"
 
@@ -85,18 +103,47 @@ def test_manifests_declare_mit() -> None:
     assert re.search(r'^license = \{ text = "MIT" \}$', pyproject, re.MULTILINE)
 
 
-def test_the_clean_room_rule_covers_proprietary_modules() -> None:
-    for name in ("CONTRIBUTING.md", "NOTICE"):
-        text = (ROOT / name).read_text(encoding="utf-8")
-        assert "AGPL" in text and "OPL-1" in text, name
+@pytest.mark.parametrize("name", ["NOTICE", "CONTRIBUTING.md"])
+def test_the_clean_room_rule_covers_proprietary_modules(name: str) -> None:
+    path = ROOT / name
+    if not path.exists():  # the release zip ships NOTICE; CONTRIBUTING lives in the repo
+        pytest.skip(f"{name} is not part of this copy")
+    text = path.read_text(encoding="utf-8")
+    assert "AGPL" in text and "OPL-1" in text
 
 
-def test_the_markers_catch_a_copied_header() -> None:
-    # Guards the patterns themselves: a pasted OPL-1 manifest or AGPL header must hit.
-    samples = ('"license": "OPL-1",', '"author": "much. Consulting",',
-               "Odoo Proprietary License v1.0",
-               "# SPDX-License-Identifier: AGPL-3.0-or-later",
-               "GNU Affero General Public License")
-    for sample in samples:
-        assert any(marker.search(sample) for marker in MARKERS), sample
-    assert not any(marker.search("# SPDX-License-Identifier: MIT") for marker in MARKERS)
+@pytest.mark.parametrize("sample", [
+    '"license": "OPL-1",',
+    "'license': 'LGPL-3',",
+    "Odoo Proprietary License v1.0",
+    "# SPDX-License-Identifier: AGPL-3.0-or-later",
+    "This program is free software: you can redistribute it under the GNU Affero General Public License",
+])
+def test_a_copied_declaration_is_caught(sample: str) -> None:
+    assert violations(sample)
+
+
+@pytest.mark.parametrize("sample", [
+    "# SPDX-License-Identifier: MIT",
+    "# SPDX-License-Identifier: Apache-2.0",
+    "Talk to the OPL-1 mcp_server module over the network only.",
+    "AGPL projects inform ideas, never code.",
+])
+def test_mentions_and_compatible_licenses_are_allowed(sample: str) -> None:
+    assert not violations(sample)
+
+
+def test_unusual_file_names_are_scanned(tmp_path: Path) -> None:
+    # git quotes non-ASCII names unless -z is used; a quoted name would be skipped.
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    repo = tmp_path / "repo"
+    (repo / "skills").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    for name in ("manifest copy.json", "módulo.json"):
+        (repo / "skills" / name).write_text('{"license": "OPL-1"}', encoding="utf-8")
+    out = subprocess.run(["git", "ls-files", "-z", "--others", "--exclude-standard"],
+                         cwd=repo, check=True, capture_output=True, text=True).stdout
+    names = [n for n in out.split("\0") if n]
+    assert sorted(names) == ["skills/manifest copy.json", "skills/módulo.json"]
+    assert all(violations((repo / n).read_text(encoding="utf-8")) for n in names)
