@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -12,6 +15,10 @@ from .cache import SchemaCache
 from .compat import EnvFacts, probe
 from .errors import ConfigError
 from .transport.fallback import FallbackTransport
+
+# Per process, never persisted or logged: it keys the HMAC of the secret in
+# Credentials.session_key(), so a key from one process means nothing in another.
+_SESSION_SALT = secrets.token_bytes(32)
 
 
 @dataclass
@@ -28,6 +35,16 @@ class Credentials:
     def fingerprint(self) -> str:
         # login+db+url identify the tenant; the secret is never part of the key
         return f"{self.url}|{self.db}|{self.login}"
+
+    def session_key(self) -> str:
+        """The key a session is cached under: the fingerprint, the credential
+        kind and a per-process HMAC of the secret. The same url, db and login
+        with another secret is another session, so a caller who knows them but
+        not the secret never reuses an authenticated one. The secret itself is
+        never part of the key."""
+        tag = hmac.new(_SESSION_SALT, self.secret.encode("utf-8", "surrogatepass"),
+                       hashlib.sha256).hexdigest()[:32]
+        return f"{self.fingerprint()}|{self.secret_kind}|{tag}"
 
 
 class OdooSession:

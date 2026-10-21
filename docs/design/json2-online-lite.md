@@ -77,7 +77,7 @@ Suggested order: 2, then 4 (detection and deltas), then 1, then 4 (pacing), then
 
 This keeps today's guarantee that `ODOO_LOGIN` is the user who owns the credential. It is two calls, once per session.
 
-**Credential kind.** `Credentials` gets `secret_kind: "api_key" | "password"`, set by `ConnectionManager.default()` from `Settings`. It is not part of the fingerprint and never appears in `repr`. The multi-tenant `from_headers` path is dormant (§6).
+**Credential kind.** `Credentials` gets `secret_kind: "api_key" | "password"`, set by `ConnectionManager.default()` from `Settings`. It is not part of the fingerprint and never appears in `repr`. The multi-tenant `from_headers` path was dormant and is removed in 1.5.0 (§6).
 
 ### 1.3 Positional to named mapping (every method the plugin calls)
 
@@ -403,9 +403,9 @@ Release gate for v0.1:
 
 ## 6. Explicitly out of scope (this iteration)
 
-- JSON-2 for the multi-tenant HTTP mode. It is dormant: `ConnectionManager.from_headers` has no caller. If it is ever wired, its session cache key must include a hash of the secret, because today a request with a known url/db/login would reuse another tenant's session.
+- JSON-2 for the multi-tenant HTTP mode. It is dormant: `ConnectionManager.from_headers` has no caller. If it is ever wired, its session cache key must include a hash of the secret, because today a request with a known url/db/login would reuse another tenant's session. **Resolved in 1.5.0:** sessions are keyed by `Credentials.session_key()` (url, db, login, the credential kind and a per-process HMAC of the secret), and `from_headers` is removed. A remote HTTP mode will resolve sessions from an authenticated identity and needs its own design.
 - Odoo 20.0 and saas~20.x in the compat model. `MAX_VERSION` stays 19, and the clamp keeps the routing right. A 20.0 sandbox also needs `deploy_local.py` to stop using the RPC db service, which 20.0 removed.
-- The `odoo_report` product decision (retire, alias to `odoo_record_documents`, or support 10-13 through `render_qweb_pdf`). Only the pre-call `CompatError` on 14+ is in scope.
+- The `odoo_report` product decision (retire, alias to `odoo_record_documents`, or support 10-13 through `render_qweb_pdf`). Only the pre-call `CompatError` on 14+ is in scope. **Resolved in 1.5.0:** the tool called the private `_render_qweb_pdf`, which Odoo refuses over RPC on every version, so it now raises `CompatError` before any RPC on every version and points to `odoo_record_documents`. It is removed in 2.0.0.
 - Chatter and activity tools, the portal PDF and share links, the odoo.com database and audit-log tools, `odoo_set_default` / `odoo_get_view` / onchange preview, the `discuss.channel` rename delta.
 - `odoo.sh` as a separate deployment value, and the telemetry-schema change it implies (after RFC-SAAS).
 - The JSON-2 smoke run in `sandbox-matrix.yml`, which needs API keys minted and masked in CI.

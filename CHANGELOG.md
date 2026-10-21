@@ -13,6 +13,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   the artifacts, but builds no container image and uploads nothing to PyPI.
   Publishing the draft runs those jobs. `docs/packaging.md` describes the steps, and
   `tests/test_release_workflow.py` checks that a draft run publishes nothing.
+- `odoo_report` now refuses before calling Odoo: it called the private method
+  `ir.actions.report._render_qweb_pdf`, which Odoo refuses over RPC on every
+  version, so it could never succeed. Use `odoo_record_documents` for the PDFs Odoo
+  already stored (for example an invoice PDF made when it was sent or printed). The
+  tool is deprecated and removed in 2.0.0.
+
+### Removed
+
+- `ConnectionManager.from_headers`. It had no caller, and as written it fell back
+  to the server's own secret when a request had no `Authorization` header, took
+  the Odoo URL from a client header and passed the client's bearer through to Odoo.
+  A remote HTTP mode will resolve sessions from an authenticated identity.
+
+### Fixed
+
+- Sessions are cached by `url|db|login` plus a per-process HMAC of the secret
+  (`Credentials.session_key()`), so the same url, db and login with another secret
+  never reuses an authenticated session. `fingerprint()` is unchanged, and the
+  secret is never part of a key or a log line.
 
 ## [1.4.1] - 2026-10-21
 

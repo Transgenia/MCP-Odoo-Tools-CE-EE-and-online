@@ -40,8 +40,9 @@ tenancy.ConnectionManager ──▶ session.OdooSession ──▶ transport/
   honour `ODOO_TIMEOUT`.
 - **session.py** — `OdooSession` holds credentials, lazily authenticates (uid),
   caches version/edition/deployment facts, and wraps schema reads through the
-  TTL `SchemaCache`. `ConnectionManager` (tenancy.py) maps a tenant fingerprint
-  (`url|db|login`, never the secret) to a session.
+  TTL `SchemaCache`. `ConnectionManager` (tenancy.py) maps a session key
+  (`Credentials.session_key()`: `url|db|login`, the credential kind and a
+  per-process HMAC of the secret, never the secret itself) to a session.
 - **compat/** — `detect.probe()` builds `EnvFacts`; `deltas.py` is the
   declarative delta map; `resolve.py` turns a requested model/field/capability
   into what exists on the target. Every tool calls `resolve_*` before the ORM.
@@ -73,8 +74,12 @@ tenancy.ConnectionManager ──▶ session.OdooSession ──▶ transport/
 
 - **stdio (default):** single-tenant, credentials from environment. This is the
   mode the plugin's `mcpServers` entry uses.
-- **HTTP (docker, optional/roadmap):** multi-tenant via `X-Odoo-Url/Db/Login`
-  headers + `Bearer` secret, resolved by `tenancy.from_headers`.
+- **HTTP (roadmap, not built):** a remote mode where the server keeps the Odoo
+  credential and resolves a session from an authenticated identity. It needs
+  its own design. The header-based `tenancy.from_headers` (client-chosen
+  `X-Odoo-Url/Db/Login` and a `Bearer` passed through to Odoo, with a fallback
+  to the server's own secret) had no caller and was removed in 1.5.0;
+  `ODOO_MULTITENANT` and `ODOO_HTTP_BEARER` stay parsed, with no behaviour.
 
 ## Design tenets
 

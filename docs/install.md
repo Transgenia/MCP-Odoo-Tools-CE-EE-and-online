@@ -115,9 +115,9 @@ Requires Node.js 18+. Installs the CLI to `~/.claude/tools/odoo-cli`.
 
 See [`../docker/`](../docker/). The image runs the same stdio server (attach
 with `docker run -i --env-file ./odoo.env`, a file you create with the `ODOO_*`
-variables and keep out of version control). A multi-tenant HTTP
-transport, where clients pass `X-Odoo-Url/Db/Login` + `Bearer` headers, is on
-the roadmap.
+variables and keep out of version control). A remote HTTP mode, where the
+server keeps the Odoo credential and clients authenticate to it, is on the
+roadmap and needs its own design.
 
 ## Verify
 

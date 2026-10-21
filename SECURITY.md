@@ -4,10 +4,12 @@
 
 - Odoo credentials are read from the server's environment (`ODOO_URL`,
   `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY`/`ODOO_PASSWORD`), which Claude Code
-  fills from the plugin options, or, in multi-tenant HTTP mode, from
-  per-request headers (`X-Odoo-Url/Db/Login` + `Bearer`).
+  fills from the plugin options. The server never takes an Odoo URL or secret
+  from a client request: the header-based multi-tenant path was removed in
+  1.5.0, and `ODOO_MULTITENANT` / `ODOO_HTTP_BEARER` are parsed but reserved.
 - The **MCP server** does not persist secrets to disk and never writes them to
-  logs. The tenant cache key is `url|db|login` — the secret is not part of it.
+  logs. Sessions are keyed by `url|db|login` plus a per-process HMAC of the
+  secret; the secret itself is never part of a key or a log line.
 - **Exception — CLI fallback:** `/odoo-tools:odoo-setup-cli` writes a local `.env`
   containing your credentials under `~/.claude/tools/odoo-cli`. If you use that
   surface, restrict its permissions (e.g. `chmod 600`), keep it out of version

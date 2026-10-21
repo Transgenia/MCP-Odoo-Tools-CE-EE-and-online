@@ -227,11 +227,12 @@ refused before anything reaches Odoo.
 | Group | Tools |
 |-------|-------|
 | Connection | `odoo_version`, `odoo_connections`, `odoo_telemetry_preview` |
-| Read | `odoo_search`, `odoo_search_count`, `odoo_read`, `odoo_search_read`, `odoo_read_group`, `odoo_fields_get`, `odoo_list_models`, `odoo_module_info`, `odoo_translate_get`, `odoo_report` |
+| Read | `odoo_search`, `odoo_search_count`, `odoo_read`, `odoo_search_read`, `odoo_read_group`, `odoo_fields_get`, `odoo_list_models`, `odoo_module_info`, `odoo_translate_get` |
 | Export | `odoo_export_records_json`, `odoo_export_records_csv` |
 | Write | `odoo_create`, `odoo_write`, `odoo_unlink`, `odoo_execute`, `odoo_translate_set` |
 | Studio-style (write) | `odoo_add_field`, `odoo_add_automation` |
 | Odoo Online (useful on any Odoo) | read: `odoo_online_profile`, `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`; write: `odoo_import_preview`, `odoo_import` |
+| Deprecated | `odoo_report`: returns an error without calling Odoo, because Odoo does not render reports over RPC on any version. Use `odoo_record_documents` for stored PDFs. Removed in 2.0.0 |
 
 The Odoo Online tools cover what an Online database makes hard: no custom
 Python, API access on Custom plans only, API keys that expire (18+), a new
