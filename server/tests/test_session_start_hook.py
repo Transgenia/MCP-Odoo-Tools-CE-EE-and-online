@@ -153,8 +153,8 @@ def test_never_reads_a_credential_variable(tmp_path: Path, source: str, configur
     # The v1.2.0 directory rule, checked by behaviour on every branch of the hook: it may
     # look up only the variables it needs, by name, and never scan the environment.
     report = tmp_path / "env-access.json"
-    options = dict(REQUIRED_SET if configured else {"ODOO_URL": "https://odoo.invalid"},
-                   ODOO_API_KEY="sk-CANARY", ODOO_PASSWORD="pw-CANARY")
+    options = dict(REQUIRED_SET if configured else {"ODOO_URL": "https://odoo.invalid"})
+    options.update({"ODOO_API_KEY": "sk-CANARY", "ODOO_PASSWORD": "pw-CANARY"})
     env = _env(tmp_path, options)
     if container:
         env_file = tmp_path / "home" / ".odoo-tools" / "mcp" / "odoo.env"
