@@ -48,15 +48,19 @@ new option **Permission profile** to `full`. The tool count stays 28.
   `search_panel_select_multi_range`, `copy_data`, the web `web_name_search`, the pivot
   readers `read_grouping_sets` and `formatted_read_grouping_sets`, and `filtered_domain`)
   are read, not opaque `call`s, so their domains, grouping sets, fields and specifications
-  go through the withheld-field and comodel checks and their results are redacted. As a
-  backstop, a method that stays a plain `call` (a business verb, or one no version lists)
-  has its result redacted at any depth too, and its arguments are scanned before it is
-  sent: a string that is, or is a dotted path whose first segment is, a withheld field, or
-  a domain-shaped argument that names one or hops into a sealed model, is refused, so a
-  value-returning method Odoo adds later cannot become a door around the rule. (A `call`
-  whose argument literally is a credential-like field name, such as the bare string
-  `"access_token"`, is now refused; business verbs with ids and an ordinary context are
-  not.) The bulk import engine (`base_import.import`) and the language wizards are in the
+  go through the withheld-field and comodel checks and their results are redacted.
+  `read_progress_bar` also checks the field it buckets by (`progress_bar["field"]`, and any
+  `sum_field`), a second grouping dimension. As a backstop, a method that stays a plain
+  `call` (a business verb, or one no version lists) has its result redacted at any depth
+  too, and its arguments are scanned with the model's field metadata before it is sent: a
+  string that is a field path of the model is checked as a read of that path (a dotted leaf
+  that hops into a sealed model, such as `mapped("provider_id.name")` into a payment
+  provider, is refused), a Mapping whose keys are fields is checked as write values (a
+  withheld key such as `signup_token`, and the models its x2many commands reach, are
+  refused), and a domain-shaped argument goes through the read-path analysis. A string that
+  is not a field of the model -- a message body, a subject, an attachment file name, a
+  status word -- is left alone, so an internal note and a business verb with a plain word
+  argument still run. The bulk import engine (`base_import.import`) and the language wizards are in the
   `customization` tier, reachable only through their tools, so `odoo_execute` cannot drive
   the importer's `load()` into a closed model.
 - With Read-only mode on, the write tools are no longer listed (calling one still explains
@@ -130,6 +134,39 @@ new option **Permission profile** to `full`. The tool count stays 28.
 
 ### Fixed
 
+- The call-class argument backstop no longer refuses ordinary chatter. It scans a
+  business method's arguments with the model's field metadata, so only a string that is
+  really a field of the model is checked: an internal note or a customer reply whose body,
+  subject or attachment file name happens to read like a credential (`"Pass"`, a subject
+  `"Password"`, `VAT.pdf`, `Boarding_Pass.pdf`) now runs, and `mail.activity` feedback does
+  too. The same metadata resolves a dotted string or a domain-shaped argument through the
+  tier and read checks, closing a read of a secrets-tier model through `mapped`, `filtered`,
+  `sorted` or another value-returning `call` whose dotted leaf hops into it (for example
+  `mapped("provider_id.name")` into a payment provider), including through a domain carrying
+  a `(1, '=', 1)` true leaf. A Mapping handed to a module-specific `call` has its keys
+  checked as write field names (and its x2many commands expanded), so a withheld field such
+  as `signup_token` cannot be set through a bespoke verb when `odoo_write` refuses it.
+- Assigning a user through a plain business relation runs under `standard`. A many2many link
+  to a write-withheld model is a `read` of it when the link only references the target
+  (`project.task.user_ids`, a `helpdesk.team` member link); it stays a `write`, and so
+  refused, only when it carries the target's rights (`res.users.groups_id`,
+  `res.company.user_ids`). Project task assignment and helpdesk membership no longer need
+  profile `full`.
+- Odoo's stock and manufacturing validation wizards run under `standard`: the context keys
+  they need to validate the records named (`button_validate_picking_ids`, `skip_backorder`,
+  `picking_ids_not_to_backorder`, `skip_immediate`, `mo_ids_to_backorder`) are allowed, as
+  are `warehouse` and `location` (stock on hand), and `default_<field>` now accepts a list
+  value such as a wizard's `default_pick_ids: [(4, id)]`. None of the added keys suppress
+  chatter tracking.
+- `web_name_search` is read with the web module's own signature,
+  `(name, specification, domain=None, operator, limit)` -- the specification is the second
+  argument, not the domain -- so a positional call from the web client is no longer refused
+  with rule `shape`.
+- Harmless token relations and counts are no longer withheld. A field name ending in
+  `token_id`, `token_ids` or `token_count` (so `token_id`, `suitable_payment_token_ids`,
+  `payment_token_count`, alongside the existing `payment_token_id`/`payment_token_ids`/
+  `token_count`) references the secrets-tier `payment.token` rather than a token value, so
+  reading it is allowed; token VALUE fields (`access_token`, `refresh_token`) stay withheld.
 - Sessions are cached by `url|db|login` plus a per-process HMAC over the whole
   connection identity and the secret (`Credentials.session_key()`), so the same url,
   db and login with another secret never reuses an authenticated session, and two

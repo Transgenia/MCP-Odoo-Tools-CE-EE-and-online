@@ -452,7 +452,7 @@ def test_layer_a_lets_allowed_calls_reach_the_handler(name: str, arguments: dict
 
 def test_the_context_text_lists_every_safe_key() -> None:
     listed_keys = {key.strip() for key in CONTEXT_ALLOWED.split(",")}
-    assert listed_keys - {"default_<field> with a plain value"} == SAFE_CONTEXT_KEYS
+    assert listed_keys - {"default_<field> with a plain or list value"} == SAFE_CONTEXT_KEYS
 
 
 def test_the_envelope_text() -> None:

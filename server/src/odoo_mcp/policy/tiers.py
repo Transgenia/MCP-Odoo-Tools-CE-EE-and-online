@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-TIERS_VERSION = "2026-10-21.1"
+TIERS_VERSION = "2026-10-21.2"
 
 OPERATIONS = ("read", "create", "write", "unlink", "call", "schema")
 WRITE_OPERATIONS = frozenset(OPERATIONS) - {"read"}
@@ -190,6 +190,19 @@ DELEGATES: dict[str, tuple[str, str]] = {
     "documents.document": ("ir.attachment", "attachment_id"),  # EE, up to 17, best-effort
 }
 
+# many2many links to a write-withheld (tier) model that only REFERENCE it: adding or
+# removing one changes no field of the target and grants no right, so it counts as a
+# read of the target, not a write. Assigning a user to a task or a helpdesk team is the
+# task's or team's own relation (design 6.6). Every other m2m to a write-withheld model
+# stays a write, so a privilege link -- a user's groups (res.users.groups_id, m2m to the
+# security-tier res.groups) or a company's users (res.company.user_ids, the inverse of a
+# user's allowed companies) -- is still refused outside 'full'. Keyed by (owner model,
+# field): the owner, not the comodel, tells an assignment from a privilege.
+REFERENCE_LINKS: frozenset[tuple[str, str]] = frozenset({
+    ("project.task", "user_ids"),      # task assignees (16+)
+    ("helpdesk.team", "member_ids"),   # helpdesk team members (EE)
+})
+
 # Names the policy treats as one model besides the renames and merges of
 # compat/deltas.py (MODEL_RENAMES): Odoo 10's automated actions.
 POLICY_ALIASES: dict[str, frozenset[str]] = {
@@ -214,6 +227,14 @@ WITHHELD_FIELD_PATTERN = re.compile(
     r"credentials?)($|_)")
 WITHHELD_FIELD_NAMES = frozenset({"signup_url", "smtp_pass", "totp_secret"})  # named for the docs
 NOT_WITHHELD = frozenset({"payment_token_id", "payment_token_ids", "token_count"})
+# Names that carry a credential word but denote a RELATION to, or a COUNT of, token
+# records rather than a token VALUE: a link to payment.token (token_id, token_ids,
+# suitable_payment_token_ids) or a count of them (token_count, payment_token_count).
+# payment.token itself is secrets-tier, so its values stay sealed; these fields only
+# reference it, so withholding them would hide harmless links without protecting a
+# secret. Matched on the lowercased name; a value field such as access_token or
+# refresh_token (no _id/_ids/_count suffix) is unaffected and stays withheld.
+NOT_WITHHELD_PATTERN = re.compile(r"(^|_)(token_id|token_ids|token_count)$")
 # Integrations often hard-code tokens in automation code: withheld, except under
 # profile "builder", which writes that code.
 WITHHELD_MODEL_FIELDS = frozenset({
@@ -221,10 +242,21 @@ WITHHELD_MODEL_FIELDS = frozenset({
     ("ir.actions.server", "webhook_url"), ("base.automation", "webhook_uuid"),
 })
 
-# Context keys a call may carry, besides default_<field> with a plain value. The
-# keys that silence chatter tracking (tracking_disable, mail_notrack,
-# mail_create_nolog) are absent on purpose: tracking is evidence.
+# Context keys a call may carry, besides default_<field> with a plain or list value.
+# The keys that silence chatter tracking (tracking_disable, mail_notrack,
+# mail_create_nolog) are absent on purpose: tracking is evidence. The stock and
+# manufacturing validation wizards (stock.picking.button_validate ->
+# stock.backorder.confirmation / stock.immediate.transfer,
+# mrp.production.button_mark_done) only validate the records their context names, so
+# their keys are allowed; none suppress tracking (design section 10). warehouse and
+# location drive the read-only qty_available computation.
 SAFE_CONTEXT_KEYS = frozenset({
     "lang", "tz", "active_test", "allowed_company_ids", "active_model", "active_id",
     "active_ids", "bin_size", "read_group_expand", "mail_create_nosubscribe",
+    # stock / mrp validation wizards (design finding): they validate only the records
+    # the context names; without the key the wizard returns True and changes nothing.
+    "button_validate_picking_ids", "skip_backorder", "picking_ids_not_to_backorder",
+    "skip_immediate", "mo_ids_to_backorder",
+    # stock on hand per warehouse / location (qty_available is computed from them).
+    "warehouse", "location",
 })

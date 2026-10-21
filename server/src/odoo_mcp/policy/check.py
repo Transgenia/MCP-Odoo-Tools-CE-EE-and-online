@@ -332,8 +332,12 @@ def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op:
         if key in SAFE_CONTEXT_KEYS:
             continue
         name = key[len("default_"):]
+        # default_<field> sets a default on the records this call creates. A plain
+        # value or a list (the wizard default default_pick_ids: [(4, id)]) is allowed
+        # for a field that is not withheld; the field name, not the value, is the gate.
         if (key.startswith("default_") and _FIELD_NAME.fullmatch(name)
-                and isinstance(value, _PLAIN_VALUE) and not policy.field_withheld(model, name)):
+                and isinstance(value, (*_PLAIN_VALUE, list, tuple))
+                and not policy.field_withheld(model, name)):
             continue
         raise texts.context(policy, op, model, key, layer=layer)
 

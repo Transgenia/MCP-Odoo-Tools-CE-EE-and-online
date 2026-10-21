@@ -281,10 +281,14 @@ notifies nobody by e-mail.
 ### Context keys
 
 A call may carry only these context keys, plus `default_<field>` with a plain
-value (text, number, boolean or null) on a field that is not withheld:
+value (text, number, boolean or null) or a list (a wizard default such as
+`default_pick_ids: [(4, id)]`) on a field that is not withheld. The stock and
+manufacturing validation wizards need some of these keys: without, for example,
+`button_validate_picking_ids` or `skip_backorder`, the wizard returns `True` and
+validates nothing. None of the allowed keys suppress chatter tracking.
 
 <!-- generated:context-keys -->
-`active_id`, `active_ids`, `active_model`, `active_test`, `allowed_company_ids`, `bin_size`, `lang`, `mail_create_nosubscribe`, `read_group_expand`, `tz`
+`active_id`, `active_ids`, `active_model`, `active_test`, `allowed_company_ids`, `bin_size`, `button_validate_picking_ids`, `lang`, `location`, `mail_create_nosubscribe`, `mo_ids_to_backorder`, `picking_ids_not_to_backorder`, `read_group_expand`, `skip_backorder`, `skip_immediate`, `tz`, `warehouse`
 <!-- /generated:context-keys -->
 
 `tracking_disable`, `mail_notrack` and `mail_create_nolog` are absent on
@@ -308,10 +312,12 @@ In `values` (create, write, copy defaults, `web_save`):
 So `res.partner` `user_ids: [(1, uid, {"groups_id": ...})]` is a write on
 `res.users` and `res.groups`, `bank_ids` changes are writes on
 `res.partner.bank`, and `order_line: [(5,)]` is a delete under `standard`. A
-many2many link to a security model counts as a change to it, so an assignee
-link such as `project.task.user_ids` to `res.users` is refused under
-`standard`; use profile `full` or an entry naming `res.users` exactly if the
-agent must assign users.
+many2many link to a write-withheld model counts as a change to it when the link
+carries the target's rights -- a user's groups (`res.users.groups_id`) or a
+company's users (`res.company.user_ids`, the inverse of a user's allowed
+companies). A link that only references the target changes no field of it and no
+right, so a business assignment such as `project.task.user_ids` or a
+`helpdesk.team` member link is a read of `res.users` and runs under `standard`.
 
 Reads are checked along their paths: every hop of a domain leaf (including
 `any` and `not any`), the nested `specification` of `web_read` and
@@ -326,8 +332,13 @@ profile.
 
 Outside `full`, a field whose name matches
 `(^|_)(password|passwd|pass|pwd|secret|token|apikey|api_key|private_key|privkey|credentials?)($|_)`,
-or is `signup_url`, `smtp_pass` or `totp_secret`, is withheld. `payment_token_id`,
-`payment_token_ids` and `token_count` are not. The `code` of `ir.actions.server`,
+or is `signup_url`, `smtp_pass` or `totp_secret`, is withheld. A name that
+denotes a token RELATION or COUNT rather than a token value is not: the exact
+names `payment_token_id`, `payment_token_ids` and `token_count`, and any name
+ending in `token_id`, `token_ids` or `token_count` (so `token_id`,
+`suitable_payment_token_ids` and `payment_token_count` too). They only reference
+the secrets-tier `payment.token`, whose own values stay sealed. The `code` of
+`ir.actions.server`,
 `ir.cron` and `base.automation`, the `webhook_url` of server actions and the
 `webhook_uuid` of automations are withheld too, except under `builder`
 (integrations often hard-code tokens there).
@@ -345,17 +356,24 @@ Every public method that reads record data or filters it goes through these
 checks, not only `search`/`read`: the web client's `web_name_search`, the pivot
 readers `read_grouping_sets` and `formatted_read_grouping_sets`, and
 `filtered_domain` are reads, so their domains, grouping sets and specifications
-are parsed and refused like any other. A method that stays a plain `call` (a
-business verb such as `action_confirm`, or a method no version of odoo-tools
-lists) has no such shape, so two backstops cover it. Its result is redacted at
-any depth, the same as a read's, so a value-returning method cannot become a
-door around the withheld-field rule. And its arguments are scanned before it is
-sent: a string argument that is, or is a dotted path whose first segment is, a
-withheld field, and a domain-shaped argument that names a withheld field or hops
-into a sealed model, are refused. The one cost is that a legitimate `call` whose
-argument literally is a credential-like field name (for example the bare string
-`"access_token"`, or `"partner_id.signup_token"`) is now refused; pass such a
-call another way.
+are parsed and refused like any other. `read_progress_bar` buckets its records
+by `progress_bar["field"]` (and sums `sum_field`), a second grouping dimension,
+so those are checked as its `group_by` is.
+
+A method that stays a plain `call` (a business verb such as `action_confirm`, or
+a method no version of odoo-tools lists) has no such shape, so two backstops
+cover it. Its result is redacted at any depth, the same as a read's, so a
+value-returning method cannot become a door around the withheld-field rule. And
+its arguments are scanned with the model's field metadata before it is sent: a
+string argument that is a field path of the model (its first segment a field) is
+checked as a read of that path, so a withheld segment or a dotted leaf that hops
+into a sealed model is refused (`mapped("provider_id.name")` into a secrets-tier
+provider, say); a Mapping argument whose keys are fields is checked as write
+values, so a withheld key such as `signup_token` and the models its x2many
+commands reach are refused; and a domain-shaped argument goes through the
+read-path analysis. A string that is NOT a field of the model -- a message body,
+a subject, an attachment file name, a status word -- is left alone, so an
+internal note and a business verb with a plain word argument still run.
 
 The policy file can change the list: `fields.withhold` adds names (`model.field`
 or `*.field`, for data minimisation), and `fields.allow` releases exact

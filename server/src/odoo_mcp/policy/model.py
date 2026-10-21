@@ -33,6 +33,7 @@ from .tiers import (
     INSPECT,
     NEVER,
     NOT_WITHHELD,
+    NOT_WITHHELD_PATTERN,
     NOTE_SUBTYPE,
     OPERATIONS,
     OUTBOUND_METHODS,
@@ -739,8 +740,14 @@ def _remember(memo: dict[Any, bool], key: Any, value: bool) -> None:
 
 
 def _credential_like(name: str) -> bool:
-    """The built-in list: credential-like names (``name`` is lowercased)."""
-    if name in NOT_WITHHELD:
+    """The built-in list: credential-like names (``name`` is lowercased).
+
+    A name that denotes a token RELATION or COUNT (``token_id``, ``token_ids``,
+    ``token_count``, so ``suitable_payment_token_ids`` and ``payment_token_count``
+    too) is not a credential value: it only references the secrets-tier
+    ``payment.token``, whose own values stay sealed.
+    """
+    if name in NOT_WITHHELD or NOT_WITHHELD_PATTERN.search(name) is not None:
         return False
     return name in WITHHELD_FIELD_NAMES or WITHHELD_FIELD_PATTERN.search(name) is not None
 

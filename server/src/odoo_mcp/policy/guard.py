@@ -70,7 +70,7 @@ from .classify import (
     valid_model,
 )
 from .model import Policy, model_aliases
-from .tiers import DELEGATES, INSPECT
+from .tiers import DELEGATES, INSPECT, REFERENCE_LINKS
 
 __all__ = [
     "SYSTEM_CALLS",
@@ -356,8 +356,16 @@ def _domain_shaped(value: Any) -> bool:
         if isinstance(term, str):
             if term not in _DOMAIN_OPERATORS:
                 return False
-        elif not (isinstance(term, (list, tuple)) and len(term) == 3
-                  and isinstance(term[0], str) and isinstance(term[1], str)):
+        elif isinstance(term, (list, tuple)) and len(term) == 3:
+            left = term[0]
+            # Odoo's TRUE_LEAF (1, '=', 1) and FALSE_LEAF (0, '=', 1): a valid leaf
+            # whose left is an int, so a domain carrying one is still a domain and
+            # goes through path analysis rather than being walked term by term.
+            if isinstance(left, int) and not isinstance(left, bool) and left in (0, 1):
+                continue
+            if not (isinstance(left, str) and isinstance(term[1], str)):
+                return False
+        else:
             return False
     return True
 
@@ -689,15 +697,16 @@ class GuardedSession:
     def _check_call_arguments(self, model: str, method: str, args: Any, kwargs: Any) -> None:
         """A method that stays class ``call`` (a business verb, or a method no inventory
         lists) has no argument shape, so nothing checks what it names. A reader Odoo
-        adds later, or a module-specific one, could still carry a withheld-field oracle:
-        a field list, a groupby or a domain naming a credential-like field, or a domain
-        whose dotted leaf hops into a sealed model. This walks the arguments (never the
-        context, which ``check_context`` governs) and refuses such a value before the
-        call is sent. An ordinary business verb -- ids, a plain context, string
-        arguments that are not field names -- passes untouched; the design decision is
-        that ``standard`` keeps the business verbs (``action_confirm``, ``action_post``,
-        ``button_*``), and only an argument that is, or names through a path, a withheld
-        field now stops one."""
+        adds later, or a module-specific one, could still carry a withheld-field oracle
+        or a dotted path that hops a read into a sealed model, and a module-specific
+        writer could set a withheld field named as a values key. This walks the
+        arguments (never the context, which ``check_context`` governs) and refuses such
+        a value before the call is sent, using field metadata so that only a string that
+        is REALLY a field of the model, a values key that is really a field, or a domain
+        is checked: an ordinary business verb -- ids, a plain context, a message body, a
+        subject, an attachment file name, a status word -- passes untouched, because the
+        design keeps the business verbs (``action_confirm``, ``action_post``,
+        ``button_*``) and internal notes working under ``standard``."""
         for value in args if isinstance(args, (list, tuple)) else ():
             self._scan_call_value(model, method, value, 0)
         if isinstance(kwargs, Mapping):
@@ -706,16 +715,17 @@ class GuardedSession:
                     self._scan_call_value(model, method, value, 0)
 
     def _scan_call_value(self, model: str, method: str, value: Any, depth: int) -> None:
-        """Every string argument at any depth is checked as a field name; a domain-shaped
-        list goes through the read-path analysis instead of being walked term by term,
-        so the value a term compares against is not mistaken for a field reference."""
+        """A string is checked as a field reference (only a real field of the model is
+        refused); a Mapping may be a values dict, whose keys are checked as write field
+        names and whose x2many commands are expanded; a domain-shaped list goes through
+        the read-path analysis instead of being walked term by term, so the value a term
+        compares against is not mistaken for a field reference."""
         if depth > MAX_ARG_DEPTH:
             return
         if isinstance(value, str):
             self._check_field_name(model, method, value)
         elif isinstance(value, Mapping):
-            for item in value.values():
-                self._scan_call_value(model, method, item, depth + 1)
+            self._scan_call_mapping(model, method, value, depth)
         elif isinstance(value, (list, tuple)):
             if _domain_shaped(value):
                 self._check_domain_argument(model, method, value)
@@ -723,23 +733,55 @@ class GuardedSession:
                 for item in value:
                     self._scan_call_value(model, method, item, depth + 1)
 
+    def _scan_call_mapping(self, model: str, method: str, mapping: Mapping[str, Any],
+                           depth: int) -> None:
+        """A Mapping argument of a call-class method may be the values of a module-specific
+        writer (``action_apply(vals)``, ``set_values(vals)``): a key that is a withheld
+        field of the model is refused -- setting ``signup_token`` is an account-takeover
+        primitive, which ``odoo_write`` already refuses -- and a key that is an x2many
+        field carrying commands is expanded to the models those commands create, write,
+        link or delete (design 6.6), exactly as a real write is. A key that is not a
+        field of the model (a nested options dict, a read specification) is not a write,
+        so its value is scanned on; without field metadata nothing is treated as a field."""
+        try:
+            meta = self._fields(model)
+        except _Unverified:
+            meta = None
+        for key, value in mapping.items():
+            if meta is not None and isinstance(key, str) and key in meta:
+                if self._policy.field_withheld(model, key):
+                    raise texts.field(self._policy, "write", model, key,
+                                      by_file=self._policy.field_withheld_by_file(model, key),
+                                      layer="B")
+                info = meta[key]
+                if (isinstance(info, Mapping) and info.get("type") in X2MANY
+                        and isinstance(value, (list, tuple)) and _commands(value) is not None):
+                    comodel = info.get("relation")
+                    if not valid_model(comodel):
+                        raise _Unverified()
+                    self._check_commands(model, method, key, str(info["type"]), comodel,
+                                         value, creating=False, depth=0)
+                    continue
+            self._scan_call_value(model, method, value, depth + 1)
+
     def _check_field_name(self, model: str, method: str, text: str) -> None:
-        """A string that names a withheld field of ``model`` -- the whole name, the first
-        segment of a dotted path, or a later segment withheld on every model -- is a
-        field-name oracle and is refused. A string that is not a field path (free text,
-        an operator, an HTML body) is left alone."""
-        policy = self._policy
-        if not _FIELD_PATH.fullmatch(text):
+        """A string argument of a call-class method that names a real field path of the
+        model -- its first segment a field of the model -- is checked as a read of that
+        path, so a withheld segment and a dotted leaf that hops into a sealed comodel are
+        both refused (design 4.11 / 6.6), through the same ``_check_path`` a read's domain
+        uses. A string that is NOT a field of the model (a message body, a subject, an
+        attachment file name, a status word, an operator, an xmlid) is not a field
+        reference and is left alone, so an internal note and a business verb with a plain
+        word argument still run. Without field metadata nothing is treated as a field."""
+        if not isinstance(text, str) or not _FIELD_PATH.fullmatch(text):
             return
-        path = text.split(".")
-        if policy.field_withheld(model, path[0]):
-            raise texts.field(policy, "read", model, text,
-                              by_file=policy.field_withheld_by_file(model, path[0])
-                              and len(path) == 1, layer="B")
-        for name in path[1:]:
-            if policy.field_withheld_everywhere(name):
-                raise texts.field(policy, "read", model, text,
-                                  by_file=f"*.{name.lower()}" in policy.withhold, layer="B")
+        try:
+            meta = self._fields(model)
+        except _Unverified:
+            return
+        path = tuple(text.split("."))
+        if path[0] in meta:
+            self._check_path(model, method, path)
 
     def _check_domain_argument(self, model: str, method: str, value: Any) -> None:
         """A domain-shaped argument: run the same read-path analysis a read's domain gets,
@@ -757,12 +799,22 @@ class GuardedSession:
         for path in paths:
             self._check_path(model, method, path)
 
-    def _link_op(self, comodel: str) -> str:
-        """A many2many link changes the relation, not the linked records: ``read`` on
-        the comodel, unless a tier or a file rule refuses writing it (the links of a
-        security model are privileges: a user's groups, a company's users)."""
+    def _link_op(self, model: str, field: str, comodel: str) -> str:
+        """The effect a many2many link ``model.field`` -> ``comodel`` has on the comodel.
+
+        A link changes the relation, not the linked records, so it is a ``read`` of the
+        comodel when the comodel may be written anyway (or only the profile default
+        refuses it). When a tier or a file rule withholds writing the comodel, the link
+        is treated as a ``write`` on it -- a privilege link such as a user's groups or a
+        company's users -- UNLESS ``(model, field)`` is a known reference link
+        (``project.task.user_ids``, a helpdesk team's members), which only assigns the
+        target and changes no field of it: that is a read. The owner, not the comodel,
+        tells an assignment from a privilege, since both point at the same security-tier
+        model (design 6.6)."""
         decision = self._policy.decide("write", comodel)
         if decision.allowed or decision.rule.startswith("profile:"):
+            return "read"
+        if any((name, field) in REFERENCE_LINKS for name in model_aliases(model)):
             return "read"
         return "write"
 
@@ -824,7 +876,7 @@ class GuardedSession:
             elif number == 2:
                 effects, existing = ["unlink"], [command[1]]
             elif ftype == "many2many":  # 3, 4, 5, 6: links
-                effects = [self._link_op(comodel)]
+                effects = [self._link_op(model, field, comodel)]
                 existing = ([command[1]] if number in (3, 4)
                             else list(command[2]) if number == 6 else None)
             elif number == 4:  # one2many: re-parents the line
@@ -910,7 +962,7 @@ class GuardedSession:
                     effects = ["create", "write"]
                     upserted[names[:index + 1]] = comodel
                 elif ftype == "many2many":
-                    effects = [self._link_op(comodel)]
+                    effects = [self._link_op(current, name, comodel)]
                 else:  # a many2one, by name, external id or database id
                     effects = ["read"]
                 for effect in effects:

@@ -118,6 +118,7 @@ HAVING = "having"  # a domain over aggregates ('amount:sum', '__count')
 FIELDS = "fields"  # a list of field names
 TERMS = "terms"  # groupby and aggregate terms: 'f', 'f:month', 'f:sum', 'name:sum(f)'
 GROUPING_SETS = "grouping_sets"  # read_grouping_sets: a list of groupby-term lists
+PROGRESS_BAR = "progress_bar"  # read_progress_bar's progress_bar: its 'field' and 'sum_field'
 ORDER = "order"  # an order clause: 'name desc, partner_id.name'
 SPEC = "specification"  # a web_read specification, nested through "fields"
 GROUPBY_SPEC = "groupby_specification"  # {groupby field: specification of its records}
@@ -214,22 +215,26 @@ ARG_SHAPES: dict[str, ArgShape] = {
         keywords={"category_domain": DOMAIN, "search_domain": DOMAIN, "comodel_domain": DOMAIN,
                   "filter_domain": DOMAIN, "group_domain": DOMAIN, "enable_counters": None,
                   "expand": None, "limit": None, "set_count": None}),
-    # read_progress_bar(domain, group_by, progress_bar): grouping by a withheld
-    # field is the same oracle read_group's groupby is (design 4.11).
+    # read_progress_bar(domain, group_by, progress_bar): group_by AND the bucket
+    # field progress_bar['field'] (plus any sum_field) are grouping dimensions over
+    # the matched records, so each is the same oracle read_group's groupby is
+    # (design 4.11); the progress-bar dict is parsed by progress_bar_paths.
     "read_progress_bar": ArgShape(False, (("domain", DOMAIN), ("group_by", TERMS),
-                                          ("progress_bar", None))),
-    # web_name_search(name, domain/args[, specification], operator, limit): the web
-    # client's name_search. The domain is a withheld-field oracle and a dotted leaf
-    # hops into a sealed comodel; a specification (17/18+) reads field values. Only
-    # name and the domain are read positionally, because the parameters after the
-    # domain drift between series (16 has no specification; 17/18+ insert one), so a
-    # specification, operator or limit is read by name; an extra positional fails
-    # closed (rule ``shape``) rather than a specification being mistaken for an
-    # operator and skipped.
-    "web_name_search": ArgShape(False, (("name", None), ("domain", DOMAIN),
-                                        ("specification", SPEC), ("operator", None),
+                                          ("progress_bar", PROGRESS_BAR))),
+    # web_name_search(name, specification, domain=None, operator='ilike', limit=100):
+    # the web client's name_search, which reads field values through its
+    # specification and filters through its domain. As the web module binds them the
+    # specification is the SECOND argument and the domain the third (the same order
+    # web_search_read uses: the query argument, then the specification). Both are
+    # read positionally: the specification is a read spec over the model's fields and
+    # the domain a withheld-field oracle whose dotted leaf hops into a sealed
+    # comodel. A series whose web_name_search omits the specification can still pass
+    # the domain by name; a positional domain is then read as a specification and
+    # fails closed (rule ``shape``), never silently skipped.
+    "web_name_search": ArgShape(False, (("name", None), ("specification", SPEC),
+                                        ("domain", DOMAIN), ("operator", None),
                                         ("limit", None)),
-                                aliases={"args": "domain"}, positional=2),
+                                aliases={"args": "domain"}),
     # read_grouping_sets / formatted_read_grouping_sets (18+): read_group for pivots.
     # The domain is an oracle, and every term of every grouping set is a groupby
     # oracle over a withheld field (design 4.11), parsed by grouping_sets_paths.
@@ -381,6 +386,8 @@ def _collect(out: CallArgs, role: str | None, value: Any) -> None:
         out.paths.extend(term_paths(value, method=method))
     elif role == GROUPING_SETS:
         out.paths.extend(grouping_sets_paths(value, method=method))
+    elif role == PROGRESS_BAR:
+        out.paths.extend(progress_bar_paths(value, method=method))
     elif role == ORDER:
         out.paths.extend(order_paths(value, method=method))
     elif role == SPEC:
@@ -537,6 +544,26 @@ def grouping_sets_paths(sets: Any, *, method: str = "grouping_sets") -> list[tup
     paths: list[tuple[str, ...]] = []
     for one in sets:
         paths.extend(term_paths(one, method=method))
+    return paths
+
+
+def progress_bar_paths(bar: Any, *, method: str = "progress_bar") -> list[tuple[str, ...]]:
+    """``read_progress_bar``'s ``progress_bar``: its records are bucketed by the distinct
+    values of ``bar['field']`` (a second grouping dimension) and summed over
+    ``bar['sum_field']`` when given, so both read a field and are checked as a groupby
+    is. A ``field`` that is not a field name fails closed (rule ``shape``)."""
+    if bar is None or bar is False:
+        return []
+    if not isinstance(bar, Mapping):
+        raise ShapeError(method, "a progress bar is not an object")
+    paths: list[tuple[str, ...]] = []
+    for key in ("field", "sum_field"):
+        value = bar.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not _PATH.fullmatch(value):
+            raise ShapeError(method, "a progress bar field is not a field name")
+        paths.append(_split(value))
     return paths
 
 

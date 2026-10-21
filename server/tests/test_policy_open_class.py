@@ -39,9 +39,12 @@ def test_the_open_class_readers_are_now_reads(method: str) -> None:
 
 
 def test_web_name_search_domain_oracle_on_its_own_model_is_refused() -> None:
+    # web_name_search(name, specification, domain=...): the domain is third, so it is
+    # passed by name here (a positional domain would be read as the specification).
     raw = ScriptedSession()
     err, _ = call(server(raw, p=policy("standard")), "odoo_execute", model="res.partner",
-                  method="web_name_search", args=["", [["signup_token", "=like", "A%"]]])
+                  method="web_name_search", args=[""],
+                  kwargs={"domain": [["signup_token", "=like", "A%"]]})
     assert err is True
     assert ("res.partner", "web_name_search") not in raw.sent()
 
@@ -49,8 +52,8 @@ def test_web_name_search_domain_oracle_on_its_own_model_is_refused() -> None:
 def test_web_name_search_dotted_leaf_into_a_secrets_comodel_is_refused() -> None:
     raw = ScriptedSession()
     err, _ = call(server(raw, p=policy("standard")), "odoo_execute", model="payment.transaction",
-                  method="web_name_search",
-                  args=["", [["provider_id.stripe_secret_key", "=like", "sk_%"]]])
+                  method="web_name_search", args=[""],
+                  kwargs={"domain": [["provider_id.stripe_secret_key", "=like", "sk_%"]]})
     assert err is True
     assert ("payment.transaction", "web_name_search") not in raw.sent()
 
@@ -58,8 +61,20 @@ def test_web_name_search_dotted_leaf_into_a_secrets_comodel_is_refused() -> None
 def test_web_name_search_benign_still_runs() -> None:
     raw = ScriptedSession()
     err, _ = call(server(raw, p=policy("standard")), "odoo_execute", model="res.partner",
-                  method="web_name_search", args=["Acme", [["name", "ilike", "Acme"]]])
+                  method="web_name_search", args=["Acme"],
+                  kwargs={"domain": [["name", "ilike", "Acme"]]})
     assert err is False
+    assert ("res.partner", "web_name_search") in raw.sent()
+
+
+def test_web_name_search_positional_specification_runs() -> None:
+    # The web module binds the specification as the SECOND argument, so a positional
+    # call of the web client's own signature -- (name, specification[, domain, ...]) --
+    # reads the specification, not a domain, and runs (design finding).
+    raw = ScriptedSession()
+    err, text = call(server(raw, p=policy("standard")), "odoo_execute", model="res.partner",
+                     method="web_name_search", args=["Acme", {"display_name": {}}])
+    assert err is False, text
     assert ("res.partner", "web_name_search") in raw.sent()
 
 
@@ -125,7 +140,7 @@ def test_full_profile_leaves_the_new_readers_untouched() -> None:
     raw = ScriptedSession()
     err, _ = call(server(raw, p=Policy(profile_name="full")), "odoo_execute",
                   model="res.partner", method="web_name_search",
-                  args=["", [["signup_token", "=like", "A%"]]])
+                  args=[""], kwargs={"domain": [["signup_token", "=like", "A%"]]})
     assert err is False
     assert ("res.partner", "web_name_search") in raw.sent()
 
