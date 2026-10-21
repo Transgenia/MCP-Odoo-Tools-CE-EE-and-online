@@ -53,7 +53,15 @@ INSPECT_METHODS = frozenset({"fields_get", "fields_view_get", "get_views", "chec
 READ_METHODS = frozenset({"search", "search_read", "search_count", "read", "read_group",
                           "formatted_read_group", "web_read_group", "web_search_read", "web_read",
                           "name_search", "name_get", "default_get", "get_field_translations",
-                          "export_data", "copy_data"})
+                          "export_data", "copy_data",
+                          # Public methods that return record data or filter it but were
+                          # classed "call", so their domains and fields escaped the 4.11 /
+                          # 6.6 checks and their results escaped redaction (same class of
+                          # defect as copy_data/update). search_fetch and fetch (17+) read
+                          # like search_read/read; search_panel_* and read_progress_bar are
+                          # read oracles over a field's comodel.
+                          "search_fetch", "fetch", "read_progress_bar",
+                          "search_panel_select_range", "search_panel_select_multi_range"})
 CREATE_METHODS = frozenset({"create", "name_create", "copy"})
 WRITE_METHODS = frozenset({"write", "update", "update_field_translations", "action_archive",
                            "action_unarchive", "toggle_active"})
@@ -178,6 +186,28 @@ ARG_SHAPES: dict[str, ArgShape] = {
     "export_data": ArgShape(True, (("fields_to_export", EXPORT), ("raw_data", None))),
     # ``default`` only overrides values of the answer: copy_data writes nothing.
     "copy_data": ArgShape(True, (("default", None),)),
+    # 17+: search_read / read with the records fetched into cache. Same field
+    # references, so the same domain and field checks apply.
+    "search_fetch": ArgShape(False, (("domain", DOMAIN), ("field_names", FIELDS),
+                                     ("offset", None), ("limit", None), ("order", ORDER))),
+    "fetch": ArgShape(True, (("field_names", FIELDS),)),
+    # Read oracles over a field's comodel: the guard also requires ``read`` on the
+    # comodel of ``field_name`` (design 4.5/6.6). The domain kwargs are checked;
+    # an unlisted kwarg fails closed (rule ``shape``).
+    "search_panel_select_range": ArgShape(
+        False, (("field_name", FIELD),),
+        keywords={"category_domain": DOMAIN, "search_domain": DOMAIN, "comodel_domain": DOMAIN,
+                  "filter_domain": DOMAIN, "group_domain": DOMAIN, "enable_counters": None,
+                  "expand": None, "limit": None, "set_count": None}),
+    "search_panel_select_multi_range": ArgShape(
+        False, (("field_name", FIELD),),
+        keywords={"category_domain": DOMAIN, "search_domain": DOMAIN, "comodel_domain": DOMAIN,
+                  "filter_domain": DOMAIN, "group_domain": DOMAIN, "enable_counters": None,
+                  "expand": None, "limit": None, "set_count": None}),
+    # read_progress_bar(domain, group_by, progress_bar): grouping by a withheld
+    # field is the same oracle read_group's groupby is (design 4.11).
+    "read_progress_bar": ArgShape(False, (("domain", DOMAIN), ("group_by", TERMS),
+                                          ("progress_bar", None))),
     # writes
     "create": ArgShape(False, (("vals_list", VALUES),), aliases={"vals": "vals_list"}),
     "name_create": ArgShape(False, (("name", None),)),

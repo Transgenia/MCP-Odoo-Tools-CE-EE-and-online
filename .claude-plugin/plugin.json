@@ -110,7 +110,8 @@
         "ODOO_READONLY": "${user_config.odoo_readonly}",
         "ODOO_POLICY": "${user_config.odoo_policy}",
         "ODOO_POLICY_FILE": "${user_config.odoo_policy_file}",
-        "ODOO_AUDIT_DIR": "${CLAUDE_PLUGIN_DATA}/audit"
+        "ODOO_AUDIT_DIR": "${CLAUDE_PLUGIN_DATA}/audit",
+        "ODOO_AUDIT_RETENTION_DAYS": "90"
       }
     }
   }

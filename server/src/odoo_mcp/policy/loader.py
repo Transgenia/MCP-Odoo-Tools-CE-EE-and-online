@@ -227,6 +227,13 @@ def load_bytes(data: bytes, *, path: str, profile: str, readonly: bool = False,
         if len(data) > MAX_FILE_BYTES:
             raise _error("E4", path=_printable(path))
         document = parse_document(data, path)
+        # A file is present, so its top level must be an object (design 5.3/5.5, E7).
+        # parse_document returns None for the JSON value ``null``; policy_from_document
+        # reads ``document is None`` as "no file", so without this a file holding null
+        # would load unlocked as the profile alone while the server reports a file in
+        # force. Every other non-object top level already raises E7 there.
+        if document is None:
+            raise _error("E7", path=_printable(path))
         return policy_from_document(document, path=path, profile=profile, readonly=readonly,
                                     tool_names=tool_names, today=today, file_mode=file_mode)
     except PolicyConfigError as exc:

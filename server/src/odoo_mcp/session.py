@@ -38,11 +38,19 @@ class Credentials:
 
     def session_key(self) -> str:
         """The key a session is cached under: the fingerprint, the credential
-        kind and a per-process HMAC of the secret. The same url, db and login
-        with another secret is another session, so a caller who knows them but
-        not the secret never reuses an authenticated one. The secret itself is
-        never part of the key."""
-        tag = hmac.new(_SESSION_SALT, self.secret.encode("utf-8", "surrogatepass"),
+        kind and a per-process HMAC over the whole connection identity and the
+        secret. The same url, db and login with another secret is another
+        session, so a caller who knows them but not the secret never reuses an
+        authenticated one. The secret itself is never part of the key.
+
+        The HMAC covers url, db, login and secret_kind as well as the secret, each
+        length-framed, so two credentials whose ``url|db|login`` strings collide
+        only because a component contains ``|`` (e.g. ``"host|db1"`` + ``"x"`` vs
+        ``"host"`` + ``"db1|x"``) still key apart; ``fingerprint()`` is unchanged,
+        so SchemaCache and the transport tests keep using it."""
+        parts = (self.url, self.db, self.login, self.secret_kind, self.secret)
+        material = "".join(f"{len(part)}\x00{part}\x00" for part in parts)
+        tag = hmac.new(_SESSION_SALT, material.encode("utf-8", "surrogatepass"),
                        hashlib.sha256).hexdigest()[:32]
         return f"{self.fingerprint()}|{self.secret_kind}|{tag}"
 

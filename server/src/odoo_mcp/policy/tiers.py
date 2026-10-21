@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-TIERS_VERSION = "2026-10-21"
+TIERS_VERSION = "2026-10-21.1"
 
 OPERATIONS = ("read", "create", "write", "unlink", "call", "schema")
 WRITE_OPERATIONS = frozenset(OPERATIONS) - {"read"}
@@ -129,10 +129,17 @@ TIERS: tuple[Tier, ...] = (
     ),
     Tier(
         "customization",
-        ("ir.*", "base.automation", "base.action.rule", "studio.*"),
+        ("ir.*", "base.automation", "base.action.rule", "studio.*",
+         # Bulk engines reachable as plain models through odoo_execute: the import
+         # engine upserts into ANY model (its res_model is just a value), and the
+         # language wizards install a language or import translations. The import
+         # tools reach base_import.import through registry.Internal predicates, which
+         # the tiers do not gate (decide_internal), so these entries only close the
+         # generic door, not odoo_import / odoo_import_preview.
+         "base_import.import", "base.language.install", "base.language.import"),
         "Server actions, automations, crons, views, assets, manual fields, defaults and "
-        "other ir.* records run code or change how Odoo behaves later; they need profile "
-        "'builder'.",
+        "other ir.* records run code or change how Odoo behaves later, and the bulk import "
+        "and language engines upsert or install across models; they need profile 'builder'.",
         exceptions=frozenset({"ir.attachment"}),  # a pointer model, pinned to its parent
     ),
 )

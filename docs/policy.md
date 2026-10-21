@@ -154,7 +154,7 @@ allows everything.
 | `secrets` | `ir.config_parameter`, `res.config`, `res.config.*`, `ir.mail_server`, `fetchmail.server`, `payment.provider`, `payment.acquirer`, `payment.token`, `iap.account`, `res.users.apikeys.show`, `res.company.ldap`, `auth_totp.device` (best-effort), `l10n_mx_edi.certificate` (best-effort), `certificate.certificate` (best-effort), `certificate.key` (best-effort), `account.online.link` (best-effort), `account.online.account` (best-effort), `mail.mail` | nothing | nothing | nothing | They hold credentials, or values that act as credentials (system parameters, mail-server and LDAP passwords, payment-provider keys and tokens, IAP tokens, a new API key, bank-sync tokens, CFDI certificates and keys, queued reset e-mails). Reading them is already the damage. |
 | `security` | `res.users`, `res.users.*`, `res.groups`, `res.groups.*`, `ir.model.access`, `ir.rule`, `ir.module.module`, `base.module.*`, `change.password.*`, `portal.wizard`, `portal.wizard.*`, `auth_totp.wizard`, `auth.oauth.provider`, `res.partner.bank`, `base.partner.merge.automatic.wizard`, `mail.message`, `mail.tracking.value`, `ir.sequence`, `ir.sequence.date_range` | read | read | read | Identity and rights, login redirection, bank accounts, partner merges, chatter history and fiscal sequences: reads stay open, changes need profile 'full' or an entry naming the model exactly. |
 | `outbound` | `mail.compose.message`, `mail.followers`, `mail.template`, `sms.sms`, `sms.composer`, `sms.template`, `portal.share`, `mailing.*` (best-effort), `snailmail.letter`, `account.move.send`, `account.move.send.*` (best-effort), `account.invoice.send`, `mail.mail` | read | read | read | They send e-mail, SMS, letters or share links, or decide what is sent. |
-| `customization` | `ir.*`, `base.automation`, `base.action.rule`, `studio.*`, except `ir.attachment` | read | read | everything | Server actions, automations, crons, views, assets, manual fields, defaults and other ir.* records run code or change how Odoo behaves later; they need profile 'builder'. |
+| `customization` | `ir.*`, `base.automation`, `base.action.rule`, `studio.*`, `base_import.import`, `base.language.install`, `base.language.import`, except `ir.attachment` | read | read | everything | Server actions, automations, crons, views, assets, manual fields, defaults and other ir.* records run code or change how Odoo behaves later, and the bulk import and language engines upsert or install across models; they need profile 'builder'. |
 <!-- /generated:tiers -->
 
 Why the `customization` models are closed:
@@ -239,7 +239,11 @@ door. A generic call on `ir.attachment` must name its parent:
   internal read the agent does not get). Every id must have no `res_field`, and
   every `res_model` must allow `read` (for reads) or `write` (for changes).
 - **A create** (or a write of these values) cannot be `public` and cannot set
-  `res_field`; its `res_model` must allow `write`.
+  `res_field`; its `res_model` must allow `write`. This holds when the write
+  reaches `ir.attachment` through a delegating child too: `product.document` and
+  `documents.document` expose the parent's `public`, `res_field` and `datas`
+  (`_inherits`), so creating or flipping a world-downloadable public attachment
+  through one of them is refused, exactly as it is on `ir.attachment` directly.
 
 Field attachments stay readable through their parent model (`odoo_read` of
 `product.template` `image_1920`), and `odoo_record_documents` keeps working
@@ -609,10 +613,16 @@ scope. A failure to write never breaks a tool call.
 
 Each line's `prev` is the first 16 hex characters of the SHA-256 of the
 previous line of the same file (`genesis` on the first). `python3
-server/run_stdio.py --verify-audit FILE` checks the chain: exit 0 when it holds,
-1 at the first edited, removed or cut line (which it names), 2 when the file
-cannot be read. Locally this is evidence, not prevention: whoever can write the
-folder can rewrite it.
+server/run_stdio.py --verify-audit FILE` checks that chain: exit 0 when it
+holds, 1 at the first line whose content was edited, whose order changed, or
+that was inserted, or when the final line is incomplete (which it names), 2 when
+the file cannot be read. Because each line only links to the one before,
+verification of a single file cannot by itself detect whole trailing lines
+removed from the end of a day, or a day file deleted outright: the surviving
+prefix still chains. Locally this is evidence, not prevention anyway: whoever
+can write the folder can rewrite the files and recompute the chain. A sink that
+anchors the chain across files and restarts (so tail-truncation and a deleted
+day are caught) is a remote-mode addition, not shipped here.
 
 ## Examples
 

@@ -108,7 +108,8 @@
   usable trust store, point `SSL_CERT_FILE` at a CA bundle.
 - **Basic auth in front of Odoo.** `ODOO_URL` may carry `user:pass@`; JSON-RPC
   sends it as an `Authorization` header (never on a redirect, which is refused
-  anyway) and no error or log line echoes the password. JSON-2 needs that same
+  anyway) and no error, log line or tool result echoes the password (the
+  `odoo_connections` tool strips the `user:pass@` from the URL it reports). JSON-2 needs that same
   header for its API key, so such a URL stays on the legacy endpoints (and
   cannot work from Odoo 22 / Odoo Online saas~21.1, where they are removed). Note that **Odoo URL**
   is not a `sensitive` plugin option: a password embedded there is stored in the
@@ -131,9 +132,12 @@
   through a symlink), kept 90 days (`ODOO_AUDIT_RETENTION_DAYS`, 0 keeps them).
   Without a folder the lines go to the `odoo_mcp.audit` logger on stderr;
   `ODOO_AUDIT_DIR=off` writes none. Each line carries a hash of the previous one,
-  and `python3 server/run_stdio.py --verify-audit FILE` names the first edited,
-  removed or cut line. Locally this is evidence, not prevention: whoever can
-  write the folder can rewrite it. A failure to write never breaks a tool call.
+  and `python3 server/run_stdio.py --verify-audit FILE` names the first line that
+  was edited, reordered or inserted, or an incomplete final line. It cannot, from
+  one file alone, detect whole trailing lines removed from a day or a deleted day
+  file (the surviving prefix still chains). Locally this is evidence, not
+  prevention anyway: whoever can write the folder can rewrite the files. A
+  failure to write never breaks a tool call.
 
 ## Permission policy (1.5.0)
 

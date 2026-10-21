@@ -37,10 +37,21 @@ new option **Permission profile** to `full`. The tool count stays 28.
   removes counts as a delete, and a link to users or groups as a change to them), the models
   a filter, a read specification, a groupby, an order or an export or import column reaches,
   and the parent of an attachment (a generic `ir.attachment` search must name the parent
-  model and never sees files stored in fields). A contact that is a user's login keeps its
-  e-mail, and the link field of a model that delegates to a closed one (`website.page`
-  `view_id`) cannot be set. Such a refusal comes after sign-in and says that Odoo did not
-  run the call. A call outside a tool's declared mapping is stopped as a bug.
+  model and never sees files stored in fields; writing an attachment's `public` or
+  `res_field` through a delegating child such as `product.document` is refused too). A
+  contact that is a user's login keeps its e-mail, and the link field of a model that
+  delegates to a closed one (`website.page` `view_id`) cannot be set. Such a refusal comes
+  after sign-in and says that Odoo did not run the call. A call outside a tool's declared
+  mapping is stopped as a bug.
+- Methods that return record data or filter it but are not search/read (`search_fetch`,
+  `fetch`, `onchange`, `read_progress_bar`, `search_panel_select_range`,
+  `search_panel_select_multi_range`, `copy_data`) are read, not opaque `call`s, so their
+  domains, fields and groupby go through the withheld-field and comodel checks and their
+  results are redacted. As a backstop, a withheld name is removed from every result but a
+  field-definition one (`fields_get`), so a value-returning method Odoo adds later cannot
+  become a door around the rule. The bulk import engine (`base_import.import`) and the
+  language wizards are in the `customization` tier, reachable only through their tools, so
+  `odoo_execute` cannot drive the importer's `load()` into a closed model.
 - With Read-only mode on, the write tools are no longer listed (calling one still explains
   why).
 - `odoo_report` now refuses before calling Odoo: it called the private method
@@ -82,7 +93,9 @@ new option **Permission profile** to `full`. The tool count stays 28.
   values, domains, ids or secrets, and the Odoo login only on the line written at
   start. The plugin writes daily files to its data folder, owner-only, kept 90 days
   and hash-chained; `python3 server/run_stdio.py --verify-audit FILE` names the
-  first edited, removed or cut line. Containers and standalone runs set
+  first edited, reordered or inserted line, or an incomplete final line (it cannot,
+  from one file alone, catch whole trailing lines removed or a deleted day). The
+  plugin also pins `ODOO_AUDIT_RETENTION_DAYS`; containers and standalone runs set
   `ODOO_AUDIT_DIR` (a folder, `stderr` or `off`) and `ODOO_AUDIT_RETENTION_DAYS`.
 - `odoo_version` returns a `policy` block (profile, file, digest, hidden tools, openings,
   warnings, or the error that locked it) and warns (W10) when the Odoo user is an
@@ -110,10 +123,22 @@ new option **Permission profile** to `full`. The tool count stays 28.
 
 ### Fixed
 
-- Sessions are cached by `url|db|login` plus a per-process HMAC of the secret
-  (`Credentials.session_key()`), so the same url, db and login with another secret
-  never reuses an authenticated session. `fingerprint()` is unchanged, and the
-  secret is never part of a key or a log line.
+- Sessions are cached by `url|db|login` plus a per-process HMAC over the whole
+  connection identity and the secret (`Credentials.session_key()`), so the same url,
+  db and login with another secret never reuses an authenticated session, and two
+  credentials whose `url|db|login` strings collide only because a component contains
+  `|` still key apart. `fingerprint()` is unchanged, and the secret is never part of a
+  key or a log line.
+- `odoo_connections` no longer returns the `user:pass@` of `ODOO_URL` (the basic-auth
+  credential of a gateway in front of Odoo): it is stripped, as the transport, the
+  guard's credential view and the redacted settings already strip it. It was returned
+  verbatim under every profile, read-only included.
+- A policy file whose entire content is the JSON value `null` now locks with E7, like
+  any other non-object top level, instead of loading unlocked as the profile alone
+  while `odoo_version` and the audit reported a file in force.
+- The audit `start` line is written even when a path, database or login carries
+  non-UTF-8 bytes (surrogate escapes), and a pre-existing daily file with looser
+  permissions is tightened to `0600` before it is appended to.
 
 ### Removed
 

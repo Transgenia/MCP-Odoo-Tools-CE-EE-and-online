@@ -46,9 +46,11 @@ from odoo_mcp.transport.json2_signatures import MODEL_SIGNATURES, SERIES_VARIANT
 def test_the_policy_reads_exactly_what_the_transport_replays_as_reads() -> None:
     # Design 9.2 #9: equality, not only a subset. A read method added to the
     # transport has to be classified here, and the other way round. The design
-    # counted 22; copy_data, a read of the records, makes 23.
+    # counted 22; copy_data (a read of the records) made 23, and the 1.5.0 review
+    # added search_fetch, fetch, read_progress_bar and the two search_panel readers
+    # (value-returning methods that had fallen through to "call"), making 28.
     assert INSPECT_METHODS | READ_METHODS == fallback.READ_METHODS
-    assert len(fallback.READ_METHODS) == 23
+    assert len(fallback.READ_METHODS) == 28
 
 
 def test_every_method_json2_marks_readonly_is_a_read_or_an_inspect() -> None:

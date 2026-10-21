@@ -84,8 +84,11 @@ MAX_TEXT = 200  # characters per string
 MAX_ITEMS = 50  # items per list
 _TAIL_LIMIT = 1 << 20  # a last line longer than this is unreadable: a new chain starts
 _TOKEN = re.compile(r"[A-Za-z0-9_.:*\-]{1,200}")
-# Control, format and line/paragraph separator characters: none reaches a line.
-_DROPPED_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+# Control, format, surrogate and line/paragraph separator characters: none
+# reaches a line. "Cs" (lone surrogates, which os.environ gives for non-UTF-8
+# bytes in a path, db or login) is dropped too: kept, it would make json's
+# utf-8 encode raise and the start line (the accountability record) be lost.
+_DROPPED_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 _OPS = frozenset(OPERATIONS) | {"inspect"}
 
 
@@ -316,8 +319,19 @@ class AuditLog:
                  | getattr(os, "O_CLOEXEC", 0))
         fd = os.open(path, flags, 0o600)
         try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
                 raise OSError(f"{file_name(day)} is not a regular file")
+            # The 0o600 of os.open applies only when the file is created; a daily
+            # file that already exists with looser bits (a restored backup, a copy,
+            # or one planted in a folder that is not 0700) is tightened before it is
+            # appended to, so docs/policy.md's "files 0600" holds. Best effort: a file
+            # owned by another user cannot be chmod'd, and the append goes on.
+            if os.name == "posix" and stat.S_IMODE(info.st_mode) & 0o077:
+                try:
+                    os.fchmod(fd, 0o600)
+                except OSError:  # not the owner; the audit never blocks a tool call
+                    pass
             if fcntl is not None:
                 fcntl.flock(fd, fcntl.LOCK_EX)
             seq, prev, cut = _chain_state(path)

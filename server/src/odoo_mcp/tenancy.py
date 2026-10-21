@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import threading
 
-from .config import Settings
+from .config import Settings, _without_userinfo
 from .errors import ConfigError
 from .session import Credentials, OdooSession
 
@@ -56,9 +56,13 @@ class ConnectionManager:
         return self.get(creds)
 
     def connections(self) -> list[dict[str, str]]:
+        # The userinfo of ODOO_URL (basic auth in front of Odoo) is a credential: the
+        # transport, CredsView, Settings.redacted() and the audit all strip it, so the
+        # odoo_connections tool must not hand it back either (it is read-only and
+        # visible under every profile, readonly included).
         with self._lock:
             return [
-                {"url": s.creds.url, "db": s.creds.db, "login": s.creds.login}
+                {"url": _without_userinfo(s.creds.url), "db": s.creds.db, "login": s.creds.login}
                 for s in self._sessions.values()
             ]
 

@@ -105,6 +105,9 @@ SYSTEM_METHODS = ("uid", "facts", "version_info", "module_installed", "invalidat
 X2MANY = frozenset({"one2many", "many2many"})
 RELATIONAL = frozenset({"many2one"}) | X2MANY
 MAX_COMMAND_DEPTH = 4  # nested x2many commands, as classify.MAX_DEPTH for paths
+# Read oracles over a field's comodel: their field_name argument names the model
+# whose records they enumerate, so reading it must be allowed (design 4.5/6.6).
+SEARCH_PANEL_METHODS = frozenset({"search_panel_select_range", "search_panel_select_multi_range"})
 ATTACHMENT = "ir.attachment"
 PARTNER = "res.partner"
 USERS = "res.users"
@@ -563,6 +566,8 @@ class GuardedSession:
         # 6. what the call reads, filters, groups or sorts on
         for path in parts.paths:
             self._check_path(model, method, path)
+        if method in SEARCH_PANEL_METHODS:
+            self._check_comodel_read(model, method, parts.named.get("field_name"))
         # 5. what it writes
         if parts.values:
             creating = cls == "create" or (method == "web_save" and view.record_ids is None)
@@ -574,8 +579,14 @@ class GuardedSession:
         args, kwargs = view.args, view.kwargs
         if rules_on and ATTACHMENT in names and cls != INSPECT:
             args, kwargs = self._attachment_call(view, cls, parts, args, kwargs, ops[0])
+        # Redaction is a backstop on every result but the inspect class, not only the
+        # read classes: a value-returning method left in the "call" class (onchange,
+        # and any method Odoo adds later) must not be a door around the withheld-field
+        # rule. It only removes withheld keys, so a result without any is unchanged.
+        # inspect is excluded because fields_get and get_views return field
+        # DEFINITIONS keyed by name, not values: those are not redacted (design 6.3).
         return _Plan(model, method, cls, args, kwargs, record_ids=view.record_ids,
-                     redact=cls == "read" or method == "web_save")
+                     redact=cls != INSPECT)
 
     # -- 7. context ---------------------------------------------------------------------
     def _check_contexts(self, model: str, method: str, parts: CallArgs, op: str) -> None:
@@ -639,6 +650,16 @@ class GuardedSession:
             raise texts.path(self._policy, method=method, model=model, op=op, comodel=comodel,
                              field_path=shown, rule=texts.rule_text(decision))
 
+    def _check_comodel_read(self, model: str, method: str, field_name: Any) -> None:
+        """A search_panel read enumerates the records of ``field_name``'s comodel, so
+        reading that comodel must be allowed, exactly as a domain hop into it would be
+        (design 4.5): a relational field to a secrets-tier model is refused."""
+        if not isinstance(field_name, str) or not _FIELD.fullmatch(field_name):
+            return
+        relation = self._relation(model, field_name)
+        if relation is not None:
+            self._effect("read", model, method, relation[1], field_name)
+
     def _link_op(self, comodel: str) -> str:
         """A many2many link changes the relation, not the linked records: ``read`` on
         the comodel, unless a tier or a file rule refuses writing it (the links of a
@@ -663,7 +684,7 @@ class GuardedSession:
         rules_on = self._rules_on()
         if rules_on:
             self._check_delegation_link(model, op, values)
-            if ATTACHMENT in model_aliases(model):
+            if self._reaches_attachment(model):
                 self._check_attachment_values(op, values)
         for key, value in values.items():
             if not (isinstance(value, (list, tuple))
@@ -735,6 +756,17 @@ class GuardedSession:
             if parent is not None and parent[1] in values:
                 raise texts.delegation_link(self._policy, op, model, parent[1], parent[0],
                                             layer="B")
+
+    def _reaches_attachment(self, model: str) -> bool:
+        """Whether a write on ``model`` writes ir.attachment: the model itself, or a
+        child that delegates (_inherits) to ir.attachment (product.document,
+        documents.document), whose inherited public/res_field/datas are the parent's
+        (design 4.5, 4.4). Keying the attachment-value rules off model_aliases alone
+        missed the delegates, since a model's aliases do not include its parent."""
+        names = model_aliases(model)
+        if ATTACHMENT in names:
+            return True
+        return any((DELEGATES.get(name) or (None, None))[0] == ATTACHMENT for name in names)
 
     def _check_identity(self, ids: Any, model: str, method: str, op: str) -> None:
         """4.6: a contact that is a user's login identity keeps its e-mail unless the
@@ -942,6 +974,11 @@ class GuardedSession:
             for key in ("records", "groups"):  # web_search_read, web_read_group
                 if method.startswith("web_") and isinstance(result.get(key), list):
                     return {**result, key: self._rows(model, model, result[key], seen)}
+            # onchange returns {"value": {field: value}, "warning": ..., "domain": ...}:
+            # its "value" holds the call model's own fields (as copy_data's rows do), so
+            # it is redacted against that model, not treated as an unknown nested dict.
+            if method == "onchange" and isinstance(result.get("value"), Mapping):
+                return {**result, "value": self._row(model, model, result["value"], seen)}
             return self._row(model, model, result, seen)
         if isinstance(result, list):
             return self._rows(model, model, result, seen)
@@ -1009,8 +1046,22 @@ class GuardedSession:
         return name if withheld else ""
 
     def _known_relation(self, model: str | None, name: Any) -> str | None:
-        """The comodel of ``model.name`` from the metadata this call already read."""
-        info = self._meta.get(model, {}).get(name) if model else None
+        """The comodel of ``model.name``, so a nested read row is redacted against its
+        own model (``hr.employee.private_email`` inside a ``hr.department`` copy_data).
+
+        copy_data and default_get name no paths, so the guard holds no metadata for the
+        model when redaction runs; the field metadata is loaded here on demand (cached
+        per session) and any failure degrades to ``None`` (the result is already in
+        hand, so redaction never fails the call), falling back to the names withheld
+        everywhere."""
+        if not model or not isinstance(name, str) or not valid_model(model):
+            return None
+        info = self._meta.get(model, {}).get(name)
+        if info is None:
+            try:
+                info = self._fields(model).get(name)
+            except Exception:  # redaction degrades to None, it never fails the call
+                return None
         if isinstance(info, Mapping) and info.get("type") in RELATIONAL and valid_model(
                 info.get("relation")):
             return str(info["relation"])
