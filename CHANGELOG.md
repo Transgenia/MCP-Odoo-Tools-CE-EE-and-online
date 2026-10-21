@@ -22,8 +22,9 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
   `SUPPORT.md`, the plugin description and the `odoo-mcp-tools` skill now say
   where the tools run; the README explains the empty panel and the route that
   works (Claude Code, including `claude plugin configure` for headless machines);
-  and the guided route (`odoo-setup-mcp`, new Phase 0b) checks the surface before
-  it troubleshoots Python. No server code changed.
+  and the guided route (`odoo-setup-mcp`, new Phase 0b) checks the surface, from
+  its tool list and before any shell command, before it troubleshoots Python. No
+  server code changed.
 - `docs/third-party-ideas.md` listed the Odoo Apps `mcp_server` module, which
   `ivnvxd/mcp-server-odoo` requires in its standard mode, as MPL-2.0. The module is
   a proprietary third-party module under the Odoo Proprietary License (OPL-1);
@@ -62,8 +63,9 @@ behaviour is unchanged (only its reported version moves to 1.4.1).
 - `tests/test_license_hygiene.py`: no file in the repository, tracked or not (so a
   copied file is caught before it is committed), declares a license MIT cannot
   absorb: an Odoo manifest `license` such as OPL-1 or (L/A)GPL, the OPL-1 or AGPL
-  title in a file that is not Markdown (a copied LICENSE or code header), or a
-  non-permissive SPDX header. Mentions in Markdown documentation stay allowed, and
+  title in a file that is not Markdown (a copied LICENSE or code header), or an
+  SPDX expression with any id MIT cannot absorb (`MIT AND GPL-3.0-only` included).
+  Mentions in Markdown documentation stay allowed, and
   five files that discuss these licenses on purpose are listed by name. Also MIT
   SPDX headers on our own Python code (including `server/run_stdio.py`), MIT in the
   three manifests, and the clean-room rule covering OPL-1 in `CONTRIBUTING.md` and
