@@ -47,6 +47,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   policy allows nothing on (`hidden_by_policy`). The server instructions gain one line with
   the profile, its digest and the hidden tools.
 
+### Added
+
+- **Audit log.** One JSON line per tool call, refusals included: the tool, the model
+  and operation names, the layer and rule of a refusal, counts and timings; never
+  values, domains, ids or secrets, and the Odoo login only on the line written at
+  start. The plugin writes daily files to its data folder, owner-only, kept 90 days
+  and hash-chained; `python3 server/run_stdio.py --verify-audit FILE` names the
+  first edited, removed or cut line. Containers and standalone runs set
+  `ODOO_AUDIT_DIR` (a folder, `stderr` or `off`) and `ODOO_AUDIT_RETENTION_DAYS`.
+
 ### Changed
 
 - Release workflow: a manual run can now be a **draft** (`release.yml`, input

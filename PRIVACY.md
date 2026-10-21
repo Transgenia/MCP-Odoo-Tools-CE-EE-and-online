@@ -1,6 +1,6 @@
 # Privacy policy — Odoo Tools plugin
 
-_Last updated: 2026-10-20. Applies to the `odoo-tools` Claude plugin in this
+_Last updated: 2026-10-21. Applies to the `odoo-tools` Claude plugin in this
 repository (MCP server, CLI fallback, skills, commands, agents and hooks)._
 
 Publisher: Transgenia (Centrum Transgenia SAS), dev@transgenia.org.
@@ -41,6 +41,14 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 - The MCP server does not write credentials or records to disk. Its schema cache
   is in memory.
+- **Audit log (1.5.0):** the MCP server writes one line per tool call, refusals
+  included, to daily files in the plugin's data folder
+  (`~/.claude/plugins/data/…/audit`, owner-only). A line holds tool, model and
+  operation names, counts, timings and the policy digest; the Odoo database and
+  login appear only on the line written when the server starts. It holds no
+  record data, argument values, filters, ids, URL or secret. Files are kept 90
+  days and are deleted with the plugin's data folder; in containers and
+  standalone runs, `ODOO_AUDIT_DIR=off` writes none.
 - **Exception — optional CLI fallback:** `/odoo-tools:odoo-setup-cli` creates an
   owner-only `.env` with placeholders under `~/.claude/tools/odoo-cli`; you type
   your credentials into it yourself (Claude never asks for the secret). Delete it

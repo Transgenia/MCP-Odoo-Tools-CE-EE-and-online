@@ -302,9 +302,10 @@ class Manager:
         return {}
 
 
-def server(session: Any = None, *, p: Policy | None = None, **settings: Any) -> McpServer:
+def server(session: Any = None, *, p: Policy | None = None, audit: Any = None,
+           **settings: Any) -> McpServer:
     return McpServer(Settings(**settings), manager=Manager(session),  # type: ignore[arg-type]
-                     policy=p)
+                     policy=p, audit=audit)
 
 
 def call(srv: McpServer, tool: str, /, **arguments: Any) -> tuple[bool, str]:

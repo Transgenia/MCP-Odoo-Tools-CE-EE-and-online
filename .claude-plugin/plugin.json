@@ -95,7 +95,8 @@
         "ODOO_PASSWORD": "${user_config.odoo_password}",
         "ODOO_TRANSPORT_PREF": "${user_config.odoo_transport_pref}",
         "ODOO_TIMEOUT": "${user_config.odoo_timeout}",
-        "ODOO_READONLY": "${user_config.odoo_readonly}"
+        "ODOO_READONLY": "${user_config.odoo_readonly}",
+        "ODOO_AUDIT_DIR": "${CLAUDE_PLUGIN_DATA}/audit"
       }
     }
   }

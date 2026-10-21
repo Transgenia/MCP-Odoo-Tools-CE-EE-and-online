@@ -24,6 +24,10 @@ Then the handler runs with a guarded session (Layer B, ``policy/guard.py``), the
 only session it gets: every Odoo call it makes is checked, with its values and
 paths, before the transport is touched, and withheld fields are removed from
 what reads return (the result names them in ``policy_withheld_fields``).
+
+Every ``tools/call`` of a known tool leaves one audit line (``odoo_mcp.audit``),
+refusals included, at whichever step it ends: names and counts only, never a
+value, a domain, an id or a secret.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, BinaryIO
 
 from . import tools as _tools  # noqa: F401  (import registers all tools)
+from .audit import AuditLog
 from .config import Settings
 from .errors import (
     AuthError,
@@ -142,6 +147,7 @@ class McpServer:
         manager: ConnectionManager | None = None,
         obs: Observability | None = None,
         policy: Policy | None = None,
+        audit: AuditLog | None = None,
     ) -> None:
         self.settings = settings
         # Read once, here: the policy is fixed for the life of the process (a
@@ -149,6 +155,8 @@ class McpServer:
         self.policy = policy if policy is not None else Policy.from_settings(
             settings, [tool.name for tool in registry.all()])
         self.manager = manager or ConnectionManager(settings)
+        # One line per tool call; serve() writes the start line.
+        self.audit = audit if audit is not None else AuditLog.from_settings(settings)
         self.obs = obs or Observability(
             metrics=settings.metrics,
             metrics_port=settings.metrics_port,
@@ -215,18 +223,27 @@ class McpServer:
 
         try:
             check_readonly(self.settings, tool)  # disabled tools say so, whatever the args
+        except OdooMcpError as exc:
+            self.audit.refused(name, exc, layer="tool", rule="readonly", policy=self.policy)
+            return _tool_result(str(exc), is_error=True)
+        try:
             self.policy.check_tool(tool)  # locked, unmapped, disabled or hidden: the same
         except OdooMcpError as exc:
+            self.audit.refused(name, exc, layer="tool", policy=self.policy)
             return _tool_result(str(exc), is_error=True)
         problem = validate_arguments(tool.input_schema, arguments)
         if problem:
+            self.audit.call(name, policy=self.policy, status="invalid")
             return _tool_result(f"Input validation error: {problem}", is_error=True)
         try:
             scope = self.policy.check(tool, arguments)  # Layer A: the arguments alone
         except PolicyError as exc:
+            self.audit.refused(name, exc, layer="A", policy=self.policy)
             return _tool_result(str(exc), is_error=True)
-        except Exception:
+        except Exception as exc:
             log.exception("the permission policy could not check a call of %s", name)
+            self.audit.call(name, policy=self.policy, status="error", exc=exc, layer="A",
+                            rule="internal", decision="deny")
             return _tool_result(
                 f"internal error: the odoo-tools permission policy could not check this {name} "
                 "call, so it was refused (fail closed). Nothing was sent to Odoo.",
@@ -234,6 +251,7 @@ class McpServer:
 
         started = time.monotonic()
         status = "ok"
+        failure: BaseException | None = None
         try:
             # stdio = single-tenant from env
             raw = self.manager.default() if self._needs_session(tool) else None
@@ -247,18 +265,23 @@ class McpServer:
             text = json.dumps(scope.annotate(result), default=str, ensure_ascii=False)
             return _tool_result(text, is_error=False)
         except PolicyError as exc:  # Layer B: an actual Odoo call was refused
-            status = "refused"
+            status, failure = "refused", exc
             return _tool_result(str(exc), is_error=True)
         except OdooMcpError as exc:
-            status = "error"
+            status, failure = "error", exc
             # Clean, actionable message; the client shows it as a tool error.
             return _tool_result(_with_guidance(exc), is_error=True)
         except Exception as exc:
-            status = "error"
+            status, failure = "error", exc
             log.exception("tool %s failed unexpectedly", name)
             return _tool_result(f"internal error in {name}: {exc}", is_error=True)
         finally:
-            self.obs.record(name, status, time.monotonic() - started)
+            elapsed = time.monotonic() - started
+            # Layer B refusals carry their own layer and rule; the class name only of
+            # any other error, never its message (an Odoo fault can echo values).
+            self.audit.call(name, policy=self.policy, status=status, scope=scope,
+                            exc=failure, seconds=elapsed)
+            self.obs.record(name, status, elapsed)
             try:
                 self.manager.record_tool_call(name)
             except Exception:  # noqa: S110 - counters must never fail a tool call
@@ -429,6 +452,8 @@ def serve(
         sys.stdout = sys.stderr
     server = McpServer(settings)
     log_policy(server.policy)
+    log.info("audit: %s", server.audit.describe())
+    server.audit.start(settings, server.policy)
     server.run(inp, out)
 
 

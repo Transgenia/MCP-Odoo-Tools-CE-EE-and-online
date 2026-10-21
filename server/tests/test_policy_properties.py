@@ -19,12 +19,14 @@ import datetime
 import json
 import random
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from policy_fakes import ScriptedSession
 from policy_fakes import server as guarded_server
 
+from odoo_mcp.audit import AUDIT_KEYS, AuditLog, verify
 from odoo_mcp.config import Settings
 from odoo_mcp.errors import PolicyError
 from odoo_mcp.policy.check import scope_for
@@ -703,13 +705,13 @@ def _marked_arguments(rng: random.Random, tool: Any) -> dict[str, Any]:
     return arguments
 
 
-def test_l_no_value_of_a_call_leaks_into_a_refusal_or_the_log(
-        caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l_no_value_of_a_call_leaks_into_a_refusal_the_log_or_the_audit(
+        caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path) -> None:
     """Random arguments carrying markers (values, keys, names; newlines and ANSI
-    escapes) never appear in a refusal text or on stderr, whatever the profile and
-    the layer that refuses. In about a third of the cases Layer A grants every
-    declared touch, so the guarded session alone refuses. (The audit file comes
-    with design step 6.)"""
+    escapes) never appear in a refusal text, on stderr or in the audit files,
+    whatever the profile and the layer that refuses. In about a third of the cases
+    Layer A grants every declared touch, so the guarded session alone refuses."""
     check, check_tool = Policy.check, Policy.check_tool
     layer_b_alone = {"on": False}
     monkeypatch.setattr(Policy, "check", lambda self, tool, arguments: (
@@ -720,11 +722,13 @@ def test_l_no_value_of_a_call_leaks_into_a_refusal_or_the_log(
     tools = registry.all()
     rng = random.Random(SEED)
     refused_by: dict[str, int] = {"A": 0, "B": 0}
+    audit = AuditLog("file", str(tmp_path))
     with caplog.at_level("DEBUG"):
         for _ in range(CASES):
             layer_b_alone["on"] = rng.random() < 0.35
             p = build(random_document(rng), rng.choice(PROFILE_NAMES), rng.random() < 0.1)
-            srv = guarded_server(ScriptedSession(version=rng.choice([16, 17, 18])), p=p)
+            srv = guarded_server(ScriptedSession(version=rng.choice([16, 17, 18])), p=p,
+                                 audit=audit)
             tool = rng.choice(tools)
             arguments = _marked_arguments(rng, tool)
             result = srv.call_tool({"name": tool.name, "arguments": arguments})
@@ -734,3 +738,10 @@ def test_l_no_value_of_a_call_leaks_into_a_refusal_or_the_log(
                 assert not any(probe in text for probe in LEAK_PROBES), (tool.name, text)
     assert not any(probe in caplog.text for probe in LEAK_PROBES), caplog.text[-2000:]
     assert refused_by["A"] > 800 and refused_by["B"] > 500, refused_by
+    (path,) = tmp_path.glob("odoo-tools-audit-*.jsonl")
+    written = path.read_text(encoding="utf-8")
+    assert not any(probe in written for probe in LEAK_PROBES)
+    lines = [json.loads(line) for line in written.splitlines()]
+    assert len(lines) == CASES and all(set(line) <= AUDIT_KEYS for line in lines)
+    assert sum(line["status"] == "refused" for line in lines) > 1300
+    assert verify(str(path)).ok

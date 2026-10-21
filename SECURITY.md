@@ -119,6 +119,21 @@
   (XML-RPC ignored the timeout before 1.2.0).
 - The server logs to stderr only; stdout is reserved for the MCP channel, and
   stray `print()` output is redirected to stderr.
+- **Audit trail (1.5.0).** Every tool call, refusals included, leaves one JSON line:
+  the tool, the model and operation names it touched (`op:model[:method]`), the
+  layer and rule of a refusal, counts, the duration, the exception class name of an
+  error and the policy digest. It never holds argument values, domains, field
+  values, ids, file contents, the URL, tokens, keys, passwords or error message
+  texts; a name that fails the policy's name check is written as `?`. The Odoo
+  database and login appear only on the `start` line written when the server
+  starts. The plugin writes daily files (`odoo-tools-audit-YYYY-MM-DD.jsonl`) to
+  its data folder (`ODOO_AUDIT_DIR`), owner-only (0700 folder, 0600 files, never
+  through a symlink), kept 90 days (`ODOO_AUDIT_RETENTION_DAYS`, 0 keeps them).
+  Without a folder the lines go to the `odoo_mcp.audit` logger on stderr;
+  `ODOO_AUDIT_DIR=off` writes none. Each line carries a hash of the previous one,
+  and `python3 server/run_stdio.py --verify-audit FILE` names the first edited,
+  removed or cut line. Locally this is evidence, not prevention: whoever can
+  write the folder can rewrite it. A failure to write never breaks a tool call.
 
 ## Read-only mode
 
