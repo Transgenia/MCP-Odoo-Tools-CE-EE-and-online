@@ -16,7 +16,8 @@ Two plugin options set it, both with defaults:
 **To keep the 1.4 behaviour, set Permission profile to `full`.** That is the
 one-step escape, for example on your own company instance where you decide to
 keep every right the Odoo user has. `full` still refuses the short NEVER list
-(API-key changes and module uninstall). In a container or a standalone run, set
+(API-key changes and module uninstall), and keeps the two argument checks that
+enforce it ([Profiles](#profiles)). In a container or a standalone run, set
 `ODOO_POLICY=full`.
 
 The policy is read once, when the server starts. A change needs a reconnect
@@ -76,6 +77,7 @@ is the only narrowing layer.
 | credential-like fields | withheld | withheld | withheld (the code fields of automations are released) | returned |
 | attachment, identity, delegation-link and context rules | on | on | on | off |
 | NEVER, the name checks and the guard's envelope | on | on | on | on |
+| argument shapes and related-model lookups (rules `shape` and `unverified`) | on | on | on | on |
 
 Two facts to keep in mind:
 
@@ -86,8 +88,22 @@ Two facts to keep in mind:
   field. The tiers under `builder` stop mistakes through the generic tools; they
   do not stop an agent that writes automation code. Use `builder` on sandboxes
   and staging only. Loading it raises warning W6.
-- **`full` is the 1.4 behaviour** except NEVER, the name checks and the guard's
-  envelope (which only stops a bug in odoo-tools itself).
+- **`full` is the 1.4 behaviour** except NEVER, the name checks, the guard's
+  envelope (which only stops a bug in odoo-tools itself) and two argument checks
+  that NEVER and a policy file depend on, so a few calls that 1.4 sent need
+  another form:
+  - arguments the policy cannot read with certainty are refused (rule `shape`),
+    for example more than three positional arguments to `read_group` through
+    `odoo_execute` (the later positions differ between Odoo series), or a
+    keyword it does not know on a read or write method (a business method's
+    arguments are not read). Pass the arguments by name, or use the dedicated
+    tool;
+  - the field definitions behind a dotted path, and behind a value that may be
+    x2many commands (a list, `false` or `null` in a write), are read first with
+    `fields_get`: an `api_key_ids` command on `res.users` reaches
+    `res.users.apikeys`, which NEVER closes. When Odoo refuses that lookup, the
+    call is refused (rule `unverified`). A plain field name, or a plain value,
+    needs no lookup.
 
 `standard` refuses `unlink` but allows `call`: deletes are the one generic
 irreversible verb (Odoo has no trash, and archiving is the reversible path the
@@ -184,7 +200,11 @@ Odoo does. Model names must match `^[a-z0-9_.]{1,128}$`.
 
 ## Built-in rules
 
-These apply in every profile except `full`.
+Profile `full` turns off the delegation-link, `ir.attachment`, identity,
+outbound-method and context rules below. Two parts stay on in every profile,
+because NEVER and the rules of a policy file apply under `full` too: a
+delegating child still takes its parent's decision, and related records are
+still checked.
 
 ### Delegation (`_inherits`)
 
@@ -294,7 +314,8 @@ Reads are checked along their paths: every hop of a domain leaf (including
 `order` terms. Each model reached must allow `read`, and no segment may be a
 withheld field. In import columns, a path into a one2many (`order_line/product_id`)
 creates and writes lines on the comodel. When the field metadata needed for
-these checks cannot be read, the call is refused.
+these checks cannot be read, the call is refused (rule `unverified`), in every
+profile.
 
 ## Credential-like fields
 
@@ -492,10 +513,12 @@ python3 "<plugin>/server/run_stdio.py" --check-policy FILE [--profile standard] 
         [--explain MODEL:OP[:METHOD] ...] [--json]
 ```
 
-It loads the file exactly as the server would, never contacts Odoo, and prints
-the profile and the digest, the normalised rules under their keys, the openings
-with their reason and expiry, the warnings, the hidden tools and one line per
-`--explain`:
+It loads the file as the server would, with Read-only mode off, never contacts
+Odoo, and prints the profile and the digest, the normalised rules under their
+keys, the openings with their reason and expiry, the warnings, the hidden tools
+and one line per `--explain`. The digest covers the read-only flag, so a server
+running with `ODOO_READONLY=1` reports another digest for the same file and
+profile (its `odoo_version` policy block then shows `"readonly": true`):
 
 ```
 explain: res.users write: REFUSED (tier:security)

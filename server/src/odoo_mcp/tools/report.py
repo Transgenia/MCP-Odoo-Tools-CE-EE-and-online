@@ -20,8 +20,9 @@ from ..registry import Access, ToolContext, obj, registry
 
 @registry.tool(
     "odoo_report",
-    "Deprecated (removed in 2.0.0): always returns an error without calling Odoo, "
-    "because Odoo does not render reports over RPC on any version. Use "
+    "Deprecated (removed in 2.0.0): always returns an error without calling Odoo. "
+    "It relied on ir.actions.report._render_qweb_pdf, a private method that Odoo "
+    "refuses over RPC on every version, so it never worked. Use "
     "odoo_record_documents for the PDFs Odoo already stored (e.g. an invoice PDF "
     "made when it was sent or printed).",
     obj(

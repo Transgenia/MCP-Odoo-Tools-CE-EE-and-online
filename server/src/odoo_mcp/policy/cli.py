@@ -3,11 +3,12 @@
 """``--check-policy FILE``: check a permission policy file offline, and explain it.
 
 ``run_stdio.py --check-policy FILE [--profile P] [--explain MODEL:OP[:METHOD] ...]
-[--json]`` loads the file exactly as the server would at start (``load_policy``)
-and prints the profile and the digest, the normalised rules under their source
-keys, the openings with their reason and expiry, the warnings, the hidden tools,
-and one decision line per ``--explain``, for example
-``res.users write: REFUSED (tier:security)``.
+[--json]`` loads the file as the server would at start (``load_policy``), with
+Read-only mode off, and prints the profile and the digest, the normalised rules
+under their source keys, the openings with their reason and expiry, the
+warnings, the hidden tools, and one decision line per ``--explain``, for example
+``res.users write: REFUSED (tier:security)``. The digest covers the read-only
+flag, so a server started with ODOO_READONLY=1 reports another one.
 
 Exit codes: 0 when the file is valid, 1 when it has an error (an E-code: the
 server would start locked), 2 on bad usage (``__main__`` reports it). It never

@@ -45,7 +45,7 @@ Odoo Online installs data modules only (no custom Python), takes API calls on Cu
 | --- | --- |
 | See the series and line, the API-key expiry, the transport and the plan limits in one read | `odoo_online_profile` |
 | Know why a call is refused: can this user read, write, create or unlink here, and export? | `odoo_access_check` |
-| Get a stored PDF or other attachment of a record (reports cannot be rendered over RPC on 14+) | `odoo_record_documents` |
+| Get a stored PDF or other attachment of a record (these tools render no reports: `odoo_report` is deprecated) | `odoo_record_documents` |
 | Find a method's parameter names for JSON-2 or `odoo_execute` | `odoo_api_catalog` |
 | Load many records: check the rows first, then import them atomically | `odoo_import_preview`, then `odoo_import` (write; confirm with the user first) |
 

@@ -90,7 +90,9 @@ PROFILES: dict[str, Profile] = {
     # server, with sudo() available (warning W6).
     "builder": Profile("builder", frozenset({"read", "create", "write", "call", "schema"}),
                        MappingProxyType({**_SEALED, "customization": frozenset(OPERATIONS)})),
-    # 1.4 behaviour minus NEVER.
+    # 1.4 behaviour minus NEVER. The argument checks that enforce NEVER and the
+    # file's rules stay on: the shape refusal, and the field metadata of related
+    # paths and values (rule unverified when it cannot be read).
     "full": Profile("full", frozenset(OPERATIONS), None, rules_off=True),
 }
 DEFAULT_PROFILE = "standard"

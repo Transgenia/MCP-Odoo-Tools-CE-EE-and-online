@@ -261,9 +261,11 @@ Walk through this checklist, one item at a time, marking each ✓:
    Keep the **Permission profile** at `standard` (or `readonly`) in production,
    `builder` only on sandboxes and staging, and `full` only where the user
    deliberately keeps every right of the Odoo user. With an administrator Odoo
-   user in production, start from `docs/policy-examples/production-hardened.json`
-   (an absolute path in **Permission policy file**) and check it first with
-   `python3 server/run_stdio.py --check-policy <file>`.
+   user in production, start from a copy of
+   `${CLAUDE_PLUGIN_ROOT}/docs/policy-examples/production-hardened.json` kept
+   outside every project (for example `~/.config/odoo-tools/policy.json`; its
+   absolute path goes in **Permission policy file**) and check the copy first with
+   `python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-policy <file>`.
 3. **HTTPS URL** only; keep `auto` transport unless there is a reason.
 4. **Pilot first**: repeat the key workflows on the sandbox or a staging copy.
 5. **Backups** before bulk writes or Studio-style changes in production.

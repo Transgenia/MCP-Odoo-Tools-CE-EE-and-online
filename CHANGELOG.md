@@ -23,7 +23,9 @@ new option **Permission profile** to `full`. The tool count stays 28.
   removed from what reads return (the result names them in `policy_withheld_fields`).
   Tools the profile forbids are not listed. **To keep 1.4 behaviour, set Permission
   profile to `full`** (`ODOO_POLICY=full` in a container or a standalone run): API-key
-  changes and module uninstall stay refused in every profile. The other profiles are
+  changes and module uninstall stay refused in every profile, and, to enforce that, `full`
+  still refuses a call whose arguments the policy cannot read with certainty (pass them by
+  name) or whose related models it cannot look up with `fields_get`. The other profiles are
   `readonly` and `builder` (adds fields, views and automations; for sandboxes and staging,
   since automations run code on the server). Details: `docs/policy.md`.
 - Tools the profile forbids on every model are no longer listed: `standard` lists 25 of the
@@ -51,6 +53,11 @@ new option **Permission profile** to `full`. The tool count stays 28.
   failing.
 - The write tools state `destructiveHint` in their annotations: false for `odoo_create`,
   `odoo_add_field` and `odoo_import_preview`, true for the others.
+- Scope: a generic, declarative permission policy is part of the public core; approval
+  workflows, localization engines and backups are not (README, CONTRIBUTING,
+  `docs/architecture.md`).
+- The skills and the `odoo` agent say which profile a task needs: Studio-style changes need
+  `builder`, and the training's delete step archives under `standard`.
 
 ### Added
 
@@ -66,9 +73,10 @@ new option **Permission profile** to `full`. The tool count stays 28.
   `sandbox-builder`), each loaded by CI. Their tables are generated from the policy's own
   data (`scripts/policy_docs.py`) and checked in CI.
 - `python3 server/run_stdio.py --check-policy FILE [--profile P] [--explain
-  MODEL:OP[:METHOD]] [--json]` checks a policy file offline as the server would load it and
-  explains decisions, for example `res.users write: REFUSED (tier:security)`; exit 0 valid,
-  1 invalid, 2 bad usage. It never contacts Odoo.
+  MODEL:OP[:METHOD]] [--json]` checks a policy file offline as the server would load it
+  (with Read-only mode off, which the digest covers) and explains decisions, for example
+  `res.users write: REFUSED (tier:security)`; exit 0 valid, 1 invalid, 2 bad usage. It never
+  contacts Odoo.
 - **Audit log.** One JSON line per tool call, refusals included: the tool, the model
   and operation names, the layer and rule of a refusal, counts and timings; never
   values, domains, ids or secrets, and the Odoo login only on the line written at
@@ -85,19 +93,11 @@ new option **Permission profile** to `full`. The tool count stays 28.
 - The SessionStart hook also checks the two policy options (and reads no other new
   variable): when the server would start locked, it tells the user once a day and tells
   Claude why. It still never reads the API key or password option.
-
-### Changed
-
 - Release workflow: a manual run can now be a **draft** (`release.yml`, input
   `draft`). It creates the tag, runs the tests and leaves a draft GitHub Release with
   the artifacts, but builds no container image and uploads nothing to PyPI.
   Publishing the draft runs those jobs. `docs/packaging.md` describes the steps, and
   `tests/test_release_workflow.py` checks that a draft run publishes nothing.
-- Scope: a generic, declarative permission policy is part of the public core; approval
-  workflows, localization engines and backups are not (README, CONTRIBUTING,
-  `docs/architecture.md`).
-- The skills and the `odoo` agent say which profile a task needs: Studio-style changes need
-  `builder`, and the training's delete step archives under `standard`.
 
 ### Fixed
 

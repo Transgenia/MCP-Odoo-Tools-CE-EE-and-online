@@ -76,7 +76,8 @@ class Settings:
     metrics_port: int = 8085
     otel_endpoint: str = ""
     # Read-only kill-switch for demos and least-privilege runs: when true the
-    # server refuses every non-read-only tool before touching Odoo.
+    # server hides every non-read-only tool from tools/list and refuses it when
+    # called by name, before touching Odoo, whatever the permission profile.
     readonly: bool = False
     # Optional bearer expected on the HTTP transport (multi-tenant deployments).
     http_bearer: str = ""

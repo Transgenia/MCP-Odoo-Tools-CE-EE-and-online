@@ -702,9 +702,9 @@ def _attachment_content(call: Any, scope: Any) -> bool:
     "bytes, create_date), flagging its main attachment and, on invoices (Odoo 17+), the "
     "stored invoice PDF. With attachment_id and include_content=true it also returns that "
     "file base64-encoded, only if it belongs to this record and its size is at most "
-    "max_bytes (default 1048576 = 1 MiB, at most 5 MiB). Use it for PDFs on Odoo 14+, "
-    "where reports cannot be rendered over RPC: it returns documents Odoo already stored "
-    "(e.g. an invoice PDF made when the invoice was sent or printed). Odoo 10-19.",
+    "max_bytes (default 1048576 = 1 MiB, at most 5 MiB). Use it for PDFs: these tools "
+    "render no reports (odoo_report is deprecated), and it returns documents Odoo already "
+    "stored (e.g. an invoice PDF made when the invoice was sent or printed). Odoo 10-19.",
     obj(
         {
             "model": {"type": "string", "description": "technical model name, e.g. account.move"},

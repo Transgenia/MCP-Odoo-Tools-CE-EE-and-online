@@ -163,7 +163,8 @@ server keeps the Odoo credential, the same policy becomes real enforcement.
   automations, views and other `ir.*` records are read-only; deletes are
   refused; credential-like fields are withheld from reads and refused in
   arguments. `full` still refuses creating, changing or revoking API keys and
-  uninstalling modules.
+  uninstalling modules, and, to enforce that, a call whose arguments or related
+  models the policy cannot check.
 - **Two layers.** The declared accesses of each tool are decided from its
   arguments before any session exists (nothing reaches Odoo). Then every Odoo call
   the tool makes goes through a guarded session that checks it again with its
