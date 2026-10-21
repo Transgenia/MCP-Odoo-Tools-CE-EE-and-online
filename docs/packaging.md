@@ -23,10 +23,16 @@ tag's `container` job finishes:
 
 1. Before merging: in the developer portal, plugin **Settings** tab, turn off
    **Publish new versions automatically** if it is on.
-2. Merge, then right away push the tag `v<ver>`, or, without a local clone, run
-   **Actions → Release → Run workflow** on `main` with tag `v<ver>` (the workflow
-   creates the tag itself). `release.yml` refuses a tag that does not match the
-   versions.
+2. Merge, then right away run **Actions → Release → Run workflow** on `main` with
+   tag `v<ver>` (the workflow creates the tag itself). `release.yml` refuses a tag
+   that does not match the versions.
+   - To review the release first, check **draft**. That run creates the tag, runs
+     the tests and leaves a **draft** GitHub Release with the zip, sdist and wheel.
+     It builds no image and uploads nothing to PyPI. Select **Publish release** on
+     the draft when it is right: publishing runs the image, mirror and PyPI jobs.
+     To discard it, delete the draft and the tag before running again.
+   - Without **draft**, or when you push the tag `v<ver>` yourself, everything is
+     published in one run.
 3. When `docker manifest inspect ghcr.io/transgenia/odoo-mcp-tools:<ver>` succeeds,
    select **Publish update** in the portal and turn the toggle back on.
 
