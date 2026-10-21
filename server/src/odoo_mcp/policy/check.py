@@ -84,13 +84,27 @@ FIELD_ARGUMENTS: dict[str, str] = {
 # The search-class methods: a generic ir.attachment call of these must name the
 # parent model in its domain (design 4.5). The pivot readers and the web
 # name_search take a domain over the model too, so they are pinned the same way.
+# Every read-class model method that takes a top-level domain belongs here, so the
+# pin tracks READ_METHODS rather than a hand-kept subset: search_fetch (17+) reads
+# like search_read; read_progress_bar and the search_panel_* readers enumerate or
+# bucket the records a domain matches, and so are an id/count/res_model oracle over
+# a sealed model unless pinned. A search_panel reader carries no top-level "domain"
+# argument, so on ir.attachment it can never name the parent and is refused outright
+# (fail closed), which is the secure outcome for that niche web-internal reader.
 SEARCH_METHODS = frozenset({"search", "search_read", "search_count", "read_group",
                             "formatted_read_group", "web_search_read", "web_read_group",
                             "name_search", "web_name_search", "read_grouping_sets",
-                            "formatted_read_grouping_sets"})
+                            "formatted_read_grouping_sets", "search_fetch", "read_progress_bar",
+                            "search_panel_select_range", "search_panel_select_multi_range"})
 ATTACHMENT = "ir.attachment"
 _PLAIN_VALUE = (str, int, float, bool, type(None))
 _FIELD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,127}")
+# x2many commands that only link, unlink-by-id, clear or replace existing records
+# (3 remove a link, 4 add a link, 5 clear, 6 set to ids): they carry no values dict,
+# so they cannot create or write a comodel record through a context default. A
+# (0, _, vals) create, a (1, id, vals) write or a (2, id) delete carries that payload
+# and is refused structurally, before any metadata.
+_LINK_COMMANDS = frozenset({3, 4, 5, 6})
 EFFECTIVE_LIMIT = 50  # the audit keeps at most 50 effective touches per call
 
 
@@ -322,10 +336,38 @@ def _context(context: Any, label: str) -> Mapping[str, Any]:
     return context
 
 
+def _default_list_is_link_only(value: Any) -> bool:
+    """Whether a ``default_<x2many>`` list carries only ids and link commands.
+
+    Odoo applies a ``default_<field>`` context key to the record a create fills
+    (``_add_missing_default_values``), so an x2many command in the value runs
+    against the comodel exactly as one in ``values`` does. A link command
+    (3/4/5/6) or a bare id list re-points existing records and carries no payload;
+    a ``(0, _, vals)`` create, a ``(1, id, vals)`` write or a ``(2, id)`` delete
+    would create, change or remove a comodel record -- possibly in a sealed tier --
+    and is refused here, in both layers, without any field metadata. The guarded
+    session then decides the link commands against the actual comodel (design 6.6).
+    """
+    for item in value:
+        if isinstance(item, bool):
+            return False
+        if isinstance(item, int):
+            continue  # a bare id, the 6-command shorthand
+        if not isinstance(item, (list, tuple)) or not item:
+            return False
+        number = item[0]
+        if isinstance(number, bool) or not isinstance(number, int) or number not in _LINK_COMMANDS:
+            return False
+        if any(isinstance(part, Mapping) for part in item):
+            return False  # a vals payload rides no link command
+    return True
+
+
 def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op: str = "call",
                   layer: str = "A") -> None:
-    """Every key is a safe one, or ``default_<field>`` with a plain value for a field
-    that is not withheld. The keys that silence chatter tracking are refused."""
+    """Every key is a safe one, or ``default_<field>`` with a plain value, or a
+    link-only list, for a field that is not withheld. The keys that silence chatter
+    tracking are refused."""
     for key, value in context.items():
         if not isinstance(key, str):
             raise texts.context(policy, op, model, key, layer=layer)
@@ -333,12 +375,16 @@ def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op:
             continue
         name = key[len("default_"):]
         # default_<field> sets a default on the records this call creates. A plain
-        # value or a list (the wizard default default_pick_ids: [(4, id)]) is allowed
-        # for a field that is not withheld; the field name, not the value, is the gate.
+        # value, or a link-only list (the wizard default default_pick_ids: [(4, id)]),
+        # is allowed for a field that is not withheld. A list that carries create/write
+        # commands or nested values is a relational write channel and is refused: the
+        # identical command in `values` is expanded and decided (design 4.11 / 6.5).
         if (key.startswith("default_") and _FIELD_NAME.fullmatch(name)
-                and isinstance(value, (*_PLAIN_VALUE, list, tuple))
                 and not policy.field_withheld(model, name)):
-            continue
+            if isinstance(value, _PLAIN_VALUE):
+                continue
+            if isinstance(value, (list, tuple)) and _default_list_is_link_only(value):
+                continue
         raise texts.context(policy, op, model, key, layer=layer)
 
 

@@ -230,12 +230,16 @@ the child.
 keys, so a generic read of it could reach the `secrets` tier through the back
 door. A generic call on `ir.attachment` must name its parent:
 
-- **A search** (`search`, `search_read`, `search_count`, `read_group`,
-  `formatted_read_group`, `web_search_read`, `web_read_group`, `name_search`,
-  `web_name_search`, `read_grouping_sets`, `formatted_read_grouping_sets`)
-  needs a top-level `["res_model", "=", X]` or `["res_model", "in", [...]]`
-  whose models all allow `read`, and no leaf on `res_field`. The guard adds
-  `["res_field", "=", False]`, so a search never sees files stored in fields.
+- **A search** (every read-class model method that takes a top-level domain:
+  `search`, `search_read`, `search_count`, `read_group`, `formatted_read_group`,
+  `web_search_read`, `web_read_group`, `name_search`, `web_name_search`,
+  `read_grouping_sets`, `formatted_read_grouping_sets`, `search_fetch` and the
+  pivot/panel readers `read_progress_bar`, `search_panel_select_range`,
+  `search_panel_select_multi_range`) needs a top-level `["res_model", "=", X]` or
+  `["res_model", "in", [...]]` whose models all allow `read`, and no leaf on
+  `res_field`. The guard adds `["res_field", "=", False]`, so a search never sees
+  files stored in fields. A `search_panel_*` reader carries no top-level domain
+  argument, so on `ir.attachment` it can never name the parent and is refused.
 - **A call by ids** first reads `res_model` and `res_field` of those ids (an
   internal read the agent does not get). Every id must have no `res_field`, and
   every `res_model` must allow `read` (for reads) or `write` (for changes).
@@ -281,14 +285,22 @@ notifies nobody by e-mail.
 ### Context keys
 
 A call may carry only these context keys, plus `default_<field>` with a plain
-value (text, number, boolean or null) or a list (a wizard default such as
-`default_pick_ids: [(4, id)]`) on a field that is not withheld. The stock and
-manufacturing validation wizards need some of these keys: without, for example,
-`button_validate_picking_ids` or `skip_backorder`, the wizard returns `True` and
-validates nothing. None of the allowed keys suppress chatter tracking.
+value (text, number, boolean or null) or a link-only list (a wizard default such
+as `default_pick_ids: [(4, id)]`) on a field that is not withheld. A list that
+carries a create, write or delete command (`(0, _, vals)`, `(1, id, vals)`,
+`(2, id)`) or nested values is a relational write channel: Odoo applies a
+`default_<field>` to the record a create fills, so the command would run against
+the comodel, and the identical command in `values` is expanded and refused. Such
+a list is refused as a context key, and the guard decides the remaining link
+commands against the actual comodel. The stock and manufacturing validation
+wizards need some of these keys: without, for example, `button_validate_picking_ids`
+or `skip_backorder`, the wizard returns `True` and validates nothing. The invoice
+Confirm/Post button sends `validate_analytic` (16+), which `account.move._post`
+reads to force analytic-distribution validation. None of the allowed keys suppress
+chatter tracking.
 
 <!-- generated:context-keys -->
-`active_id`, `active_ids`, `active_model`, `active_test`, `allowed_company_ids`, `bin_size`, `button_validate_picking_ids`, `lang`, `location`, `mail_create_nosubscribe`, `mo_ids_to_backorder`, `picking_ids_not_to_backorder`, `read_group_expand`, `skip_backorder`, `skip_immediate`, `tz`, `warehouse`
+`active_id`, `active_ids`, `active_model`, `active_test`, `allowed_company_ids`, `bin_size`, `button_validate_picking_ids`, `lang`, `location`, `mail_create_nosubscribe`, `mo_ids_to_backorder`, `picking_ids_not_to_backorder`, `read_group_expand`, `skip_backorder`, `skip_immediate`, `tz`, `validate_analytic`, `warehouse`
 <!-- /generated:context-keys -->
 
 `tracking_disable`, `mail_notrack` and `mail_create_nolog` are absent on
@@ -358,21 +370,30 @@ readers `read_grouping_sets` and `formatted_read_grouping_sets`, and
 `filtered_domain` are reads, so their domains, grouping sets and specifications
 are parsed and refused like any other. `read_progress_bar` buckets its records
 by `progress_bar["field"]` (and sums `sum_field`), a second grouping dimension,
-so those are checked as its `group_by` is.
+so those are checked as its `group_by` is; its result is not redacted, since its
+keys are the distinct values of those (already checked) grouping fields, not field
+names, and a column whose value reads like a credential word would otherwise be
+dropped. These readers accept the trailing options a series adds (a panel's
+`hierarchize`, `group_by` or `group_domain`), checking only the field and the
+domains over the model.
 
 A method that stays a plain `call` (a business verb such as `action_confirm`, or
 a method no version of odoo-tools lists) has no such shape, so two backstops
 cover it. Its result is redacted at any depth, the same as a read's, so a
 value-returning method cannot become a door around the withheld-field rule. And
 its arguments are scanned with the model's field metadata before it is sent: a
-string argument that is a field path of the model (its first segment a field) is
-checked as a read of that path, so a withheld segment or a dotted leaf that hops
-into a sealed model is refused (`mapped("provider_id.name")` into a secrets-tier
-provider, say); a Mapping argument whose keys are fields is checked as write
-values, so a withheld key such as `signup_token` and the models its x2many
-commands reach are refused; and a domain-shaped argument goes through the
-read-path analysis. A string that is NOT a field of the model -- a message body,
-a subject, an attachment file name, a status word -- is left alone, so an
+string argument that is a field path of the model (its first segment a field,
+with any `:function` or `:granularity` aggregate suffix stripped as the grouping
+readers do, so `signup_token:count` is caught) is checked as a read of that path,
+so a withheld segment or a dotted leaf that hops into a sealed model is refused
+(`mapped("provider_id.name")` into a secrets-tier provider, say); a Mapping
+argument whose keys are fields is checked as write values, so a withheld key such
+as `signup_token` and the models its x2many commands reach are refused, except on
+a write-nothing simulation verb (`onchange`), whose values are the record's
+existing lines and are not a write; and a domain-shaped argument (a list whose
+leaves carry a recognised operator) goes through the read-path analysis. A string
+that is NOT a field of the model -- a message body, a subject, an attachment file
+name, a status word -- is left alone, so an
 internal note and a business verb with a plain word argument still run.
 
 The policy file can change the list: `fields.withhold` adds names (`model.field`

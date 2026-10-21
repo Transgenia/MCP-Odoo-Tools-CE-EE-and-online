@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-TIERS_VERSION = "2026-10-21.2"
+TIERS_VERSION = "2026-10-21.3"
 
 OPERATIONS = ("read", "create", "write", "unlink", "call", "schema")
 WRITE_OPERATIONS = frozenset(OPERATIONS) - {"read"}
@@ -259,4 +259,8 @@ SAFE_CONTEXT_KEYS = frozenset({
     "skip_immediate", "mo_ids_to_backorder",
     # stock on hand per warehouse / location (qty_available is computed from them).
     "warehouse", "location",
+    # account.move._post reads this on the invoice Confirm/Post button (16+) to force
+    # analytic-distribution validation; action_post is a business verb kept under
+    # standard, and the key suppresses no chatter tracking (the flagship CFDI flow).
+    "validate_analytic",
 })

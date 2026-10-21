@@ -115,9 +115,32 @@ USERS = "res.users"
 AUTOMATION = "$automation"  # registry.Internal: base.automation (base.action.rule on 10)
 # Fields of ir.attachment that hold the file itself.
 CONTENT_FIELDS = frozenset({"datas", "raw", "db_datas"})
+# Write-nothing simulation verbs: onchange(values, field_names, field_onchange) saves
+# nothing, so the x2many commands in its values are the record's existing lines, not a
+# write. The call-class backstop must not expand them as writes or unlinks of the
+# comodel (its result is still redacted, so nothing leaks), or previewing a quotation
+# that already has lines would be refused under standard (design 4.7 keeps it working).
+SIMULATION_METHODS = frozenset({"onchange"})
 _FIELD = re.compile(r"[A-Za-z0-9_]+")
-_FIELD_PATH = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*")
+# A whole string that is a groupby/aggregate term: 'field', 'field:function' or
+# 'name:function(source)', dotted paths allowed (classify._TERM, anchored at both
+# ends). The field a term reads is its source when present, else its head: so the
+# backstop strips a ':count'/':month' suffix before deciding a withheld-field oracle,
+# the way the enumerated grouping readers do through the TERMS role (design 4.11).
+_TERM_FULL = re.compile(
+    r"(?P<head>[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)"
+    r"(?::[A-Za-z0-9_]+(?:\((?P<source>[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\))?)?")
 _DOMAIN_OPERATORS = frozenset({"&", "|", "!"})
+# The leaf operators of an Odoo domain term. A three-element list is a domain term
+# only when its middle element is one of these, so an attachment tuple [name, content,
+# info] -- whose middle element is file content, not an operator -- is not mistaken for
+# a domain and routed through domain-path analysis (which would read the file name as a
+# field path). A real domain whose operator this set omits is still walked term by
+# term, where the leaf field is checked, so an incomplete set never leaks.
+_TERM_OPERATORS = frozenset({
+    "=", "!=", "<>", "<=", "<", ">", ">=", "=?", "=like", "=ilike", "like", "not like",
+    "ilike", "not ilike", "in", "not in", "child_of", "parent_of", "any", "not any",
+    "any!", "not any!"})
 MAX_ARG_DEPTH = 4  # how deep the call-class argument scan walks (as classify.MAX_DEPTH)
 # The value types redaction passes through as they are (JSON scalars).
 _SCALARS = frozenset({str, int, float, bool, type(None)})
@@ -357,13 +380,17 @@ def _domain_shaped(value: Any) -> bool:
             if term not in _DOMAIN_OPERATORS:
                 return False
         elif isinstance(term, (list, tuple)) and len(term) == 3:
-            left = term[0]
+            left, operator = term[0], term[1]
             # Odoo's TRUE_LEAF (1, '=', 1) and FALSE_LEAF (0, '=', 1): a valid leaf
             # whose left is an int, so a domain carrying one is still a domain and
             # goes through path analysis rather than being walked term by term.
             if isinstance(left, int) and not isinstance(left, bool) and left in (0, 1):
                 continue
-            if not (isinstance(left, str) and isinstance(term[1], str)):
+            # A real domain leaf has a field path on the left and a recognised operator
+            # in the middle; a (name, content, info) attachment tuple has file content
+            # in the middle, which is no operator, so it is not a domain.
+            if not (isinstance(left, str) and isinstance(operator, str)
+                    and operator.strip().lower() in _TERM_OPERATORS):
                 return False
         else:
             return False
@@ -629,6 +656,34 @@ class GuardedSession:
             if not isinstance(context, Mapping):
                 raise self._shape(op, model, "the context is not an object", method)
             check_context(self._policy, model, context, op=op, layer="B")
+            self._check_context_defaults(model, method, context)
+
+    def _check_context_defaults(self, model: str, method: str, context: Mapping[str, Any]) -> None:
+        """A ``default_<x2many>`` context key fills a relation of the record this call
+        creates, so Odoo runs its commands against the comodel exactly as the same key in
+        ``values`` would (``_add_missing_default_values``, design 6.6). ``check_context``
+        already refused create/write/delete commands and nested values structurally; here,
+        with field metadata, the remaining link commands are decided against the actual
+        comodel, so a default that re-parents a user or grants into a security model (a
+        ``default_user_ids`` link, a ``default_<m2m>`` into a sealed model) is refused too.
+        A ``default_<field>`` the model's ``fields_get`` does not know (a wizard default
+        whose field is defined only on the transient) carries no decidable comodel and is
+        left to Odoo, which refuses an unknown field."""
+        meta: Mapping[str, Any] | None = None
+        for key, value in context.items():
+            if not (isinstance(key, str) and key.startswith("default_")
+                    and isinstance(value, (list, tuple))):
+                continue
+            if meta is None:
+                meta = self._fields(model)
+            info = meta.get(key[len("default_"):])
+            if (isinstance(info, Mapping) and info.get("type") in X2MANY
+                    and _commands(value) is not None):
+                comodel = info.get("relation")
+                if not valid_model(comodel):
+                    raise _Unverified()
+                self._check_commands(model, method, key[len("default_"):], str(info["type"]),
+                                     comodel, value, creating=True, depth=0)
 
     # -- field metadata -----------------------------------------------------------------
     def _fields(self, model: str) -> Mapping[str, Any]:
@@ -742,7 +797,16 @@ class GuardedSession:
         field carrying commands is expanded to the models those commands create, write,
         link or delete (design 6.6), exactly as a real write is. A key that is not a
         field of the model (a nested options dict, a read specification) is not a write,
-        so its value is scanned on; without field metadata nothing is treated as a field."""
+        so its value is scanned on; without field metadata nothing is treated as a field.
+
+        A simulation verb (``onchange``) saves nothing, so its values dict is not a write:
+        its keys are not refused and its x2many commands are not expanded as writes or
+        unlinks of the comodel (the record's existing lines ride those commands). Its
+        values are scanned on for an oracle, and its result is redacted like a read's."""
+        if method in SIMULATION_METHODS:
+            for value in mapping.values():
+                self._scan_call_value(model, method, value, depth + 1)
+            return
         try:
             meta = self._fields(model)
         except _Unverified:
@@ -769,17 +833,28 @@ class GuardedSession:
         model -- its first segment a field of the model -- is checked as a read of that
         path, so a withheld segment and a dotted leaf that hops into a sealed comodel are
         both refused (design 4.11 / 6.6), through the same ``_check_path`` a read's domain
-        uses. A string that is NOT a field of the model (a message body, a subject, an
-        attachment file name, a status word, an operator, an xmlid) is not a field
-        reference and is left alone, so an internal note and a business verb with a plain
-        word argument still run. Without field metadata nothing is treated as a field."""
-        if not isinstance(text, str) or not _FIELD_PATH.fullmatch(text):
+        uses. The string is read as a groupby/aggregate term first, so a field carried
+        with a ':function'/':granularity' suffix ('signup_token:count') or inside an
+        aggregate ('name:sum(signup_token)') is checked on the field it reads, exactly as
+        the enumerated grouping readers do (a bare path is a term with no suffix). A
+        string that is NOT a field of the model (a message body, a subject, an attachment
+        file name, a status word, an operator, an xmlid) is not a field reference and is
+        left alone, so an internal note and a business verb with a plain word argument
+        still run. Without field metadata nothing is treated as a field."""
+        if not isinstance(text, str):
+            return
+        match = _TERM_FULL.fullmatch(text)
+        if match is None:
+            return
+        source, head = match.group("source"), match.group("head")
+        ref = source if source is not None else (head if head != "__count" else None)
+        if ref is None:
             return
         try:
             meta = self._fields(model)
         except _Unverified:
             return
-        path = tuple(text.split("."))
+        path = tuple(ref.split("."))
         if path[0] in meta:
             self._check_path(model, method, path)
 
@@ -1117,6 +1192,14 @@ class GuardedSession:
         return result
 
     def _redact(self, model: str, method: str, result: Any) -> Any:
+        # read_progress_bar returns {group value: {bucket value: count}}: its keys are
+        # the distinct values of the group-by and bucket fields (a kanban stage name, a
+        # selection value), not field names, and the grouping fields were already checked
+        # (design 4.11), so the counts hold no withheld field value. Deciding its keys as
+        # field names would drop a column whose value reads like a credential word ('Pass',
+        # 'Token') and report a field that does not exist, so it is left unredacted.
+        if method == "read_progress_bar":
+            return result
         # The rows of one model share their keys: each key is decided once per call.
         seen: dict[str | None, tuple[set[Any], dict[Any, str]]] = {}
         if isinstance(result, Mapping):

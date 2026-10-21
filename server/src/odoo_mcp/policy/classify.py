@@ -139,6 +139,12 @@ class ArgShape:
     # The positional arguments read: fewer than params where the positions differ
     # between series (read_group on 20.0, web_read_group from saas~18.4).
     positional: int | None = None
+    # Accept keywords the table does not name instead of failing closed: for the web
+    # client's search_panel readers, whose trailing options (hierarchize, group_by,
+    # group_domain) drift between series and name only comodel-scoped data, while the
+    # arguments that matter (the field and the domains over the model) stay listed and
+    # checked. A method that writes or whose every keyword is an oracle never sets it.
+    open_keywords: bool = False
 
     def role(self, name: str) -> str | None:
         for param, role in self.params:
@@ -205,16 +211,22 @@ ARG_SHAPES: dict[str, ArgShape] = {
     # Read oracles over a field's comodel: the guard also requires ``read`` on the
     # comodel of ``field_name`` (design 4.5/6.6). The domain kwargs are checked;
     # an unlisted kwarg fails closed (rule ``shape``).
+    # The domains over the model (category/search/comodel/filter) are checked; the
+    # trailing options a series adds (hierarchize, group_by, and group_domain, which is
+    # a plain domain in some series and a {group: domain} dict in others, both over the
+    # comodel) are accepted and not checked (open_keywords), so mirroring a real kanban
+    # search panel through odoo_execute is not refused with rule shape for an unlisted
+    # keyword. The field_name comodel read is enforced by the guard (design 4.5).
     "search_panel_select_range": ArgShape(
         False, (("field_name", FIELD),),
         keywords={"category_domain": DOMAIN, "search_domain": DOMAIN, "comodel_domain": DOMAIN,
-                  "filter_domain": DOMAIN, "group_domain": DOMAIN, "enable_counters": None,
-                  "expand": None, "limit": None, "set_count": None}),
+                  "filter_domain": DOMAIN, "enable_counters": None,
+                  "expand": None, "limit": None, "set_count": None}, open_keywords=True),
     "search_panel_select_multi_range": ArgShape(
         False, (("field_name", FIELD),),
         keywords={"category_domain": DOMAIN, "search_domain": DOMAIN, "comodel_domain": DOMAIN,
-                  "filter_domain": DOMAIN, "group_domain": DOMAIN, "enable_counters": None,
-                  "expand": None, "limit": None, "set_count": None}),
+                  "filter_domain": DOMAIN, "enable_counters": None,
+                  "expand": None, "limit": None, "set_count": None}, open_keywords=True),
     # read_progress_bar(domain, group_by, progress_bar): group_by AND the bucket
     # field progress_bar['field'] (plus any sum_field) are grouping dimensions over
     # the matched records, so each is the same oracle read_group's groupby is
@@ -349,6 +361,8 @@ def extract(method: str, args: Any = None, kwargs: Any = None, *, ids: Any = _NO
     for key, value in keywords.items():
         name = shape.aliases.get(key, key)
         if not isinstance(name, str) or not shape.knows(name):
+            if shape.open_keywords and isinstance(key, str) and _KEYWORD.fullmatch(key):
+                continue  # a trailing option the reader takes but the policy need not check
             raise ShapeError(method, f"takes no keyword {_token(key)}")
         if name in out.named:
             raise ShapeError(method, f"argument '{name}' is given twice")
@@ -559,8 +573,8 @@ def progress_bar_paths(bar: Any, *, method: str = "progress_bar") -> list[tuple[
     paths: list[tuple[str, ...]] = []
     for key in ("field", "sum_field"):
         value = bar.get(key)
-        if value is None:
-            continue
+        if value is None or value is False:
+            continue  # sum_field is optional and the web client sends it as false
         if not isinstance(value, str) or not _PATH.fullmatch(value):
             raise ShapeError(method, "a progress bar field is not a field name")
         paths.append(_split(value))

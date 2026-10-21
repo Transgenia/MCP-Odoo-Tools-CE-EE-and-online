@@ -155,9 +155,52 @@ new option **Permission profile** to `full`. The tool count stays 28.
 - Odoo's stock and manufacturing validation wizards run under `standard`: the context keys
   they need to validate the records named (`button_validate_picking_ids`, `skip_backorder`,
   `picking_ids_not_to_backorder`, `skip_immediate`, `mo_ids_to_backorder`) are allowed, as
-  are `warehouse` and `location` (stock on hand), and `default_<field>` now accepts a list
-  value such as a wizard's `default_pick_ids: [(4, id)]`. None of the added keys suppress
+  are `warehouse` and `location` (stock on hand), and `default_<field>` accepts a link-only
+  list such as a wizard's `default_pick_ids: [(4, id)]`. None of the added keys suppress
   chatter tracking.
+- Posting a customer invoice runs under `standard`: `validate_analytic`, the context key the
+  invoice Confirm/Post button sends (16+) so `account.move._post` validates the analytic
+  distribution, is allowed. `action_post` was already a business verb; only the context key
+  refused the flagship CFDI flow, and no allowed key suppresses chatter tracking.
+- A `default_<x2many>` context key can no longer smuggle a create, write or delete into a
+  sensitive tier. Odoo applies a `default_<field>` to the record a create fills, so an
+  x2many command in the value runs against the comodel exactly as the same command in
+  `values` does. A list that carries a `(0, _, vals)` create, a `(1, id, vals)` write or a
+  `(2, id)` delete, or nested values, is now refused as a context key -- so
+  `default_bank_ids: [(0, 0, {...})]` (create a `res.partner.bank`), `default_user_ids`
+  (create a `res.users`), `default_message_follower_ids` (create a `mail.followers`) and a
+  nested withheld field no longer reach Odoo under `standard` -- and the guard decides the
+  remaining link commands against the actual comodel. A link-only wizard default
+  (`default_pick_ids: [(4, id)]`) still runs.
+- A value-returning `call` whose string argument names a withheld field carried as a grouped
+  term (`signup_token:count`, `name:sum(signup_token)`) is refused: the backstop strips the
+  `:function`/`:granularity` aggregate suffix before deciding the field, as the enumerated
+  grouping readers do, so the oracle is closed whichever form it takes.
+- `onchange`, a write-nothing simulation, runs under `standard` again. Its values are the
+  record's existing lines, encoded as x2many replace or clear commands
+  (`[(6, false, ids)]`, a bare id list, `[(5,)]`); the call-class backstop no longer expands
+  them as writes or unlinks of the comodel, so previewing the totals of a quotation or a
+  contact form that already has lines is not refused. Its result is still redacted.
+- An internal note with an attachment in Odoo's three-element `(name, content, info)` form
+  runs even when the file name reads like a credential (`password_policy.pdf`,
+  `Credentials_SAT.pdf`). A three-element list is a domain term, and so routed through
+  domain analysis, only when its middle element is a recognised domain operator; an
+  attachment tuple carries file content there, so it is not mistaken for a domain and its
+  file name is not read as a field path.
+- `read_progress_bar`'s result is no longer over-redacted. Its keys are the distinct values
+  of the (already checked) grouping fields, not field names, so a kanban column or bucket
+  whose value reads like a credential word (`Pass`, `Token`, a `pass` quality state) is kept
+  instead of being dropped with a misleading `policy_withheld_fields`.
+- The `ir.attachment` pin now covers every read-class model method that takes a top-level
+  domain, not a hand-kept subset: `search_fetch`, `read_progress_bar` and the
+  `search_panel_*` readers on `ir.attachment` are pinned to a readable parent and stopped
+  from filtering on `res_field`, closing an id/count/`res_model` oracle over a sealed model
+  (`certificate.key`, `payment.provider`). A `search_panel_*` reader carries no top-level
+  domain and so is refused on `ir.attachment`.
+- The `search_panel_*` readers and `read_progress_bar` accept the trailing options a series
+  adds (`hierarchize`, `group_by`, `group_domain`, `sum_field: false`) instead of failing
+  closed with rule `shape`, so mirroring a kanban or search panel through `odoo_execute`
+  runs; the field and the domains over the model are still checked.
 - `web_name_search` is read with the web module's own signature,
   `(name, specification, domain=None, operator, limit)` -- the specification is the second
   argument, not the domain -- so a positional call from the web client is no longer refused

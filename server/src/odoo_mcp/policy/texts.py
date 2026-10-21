@@ -131,8 +131,8 @@ DELEGATION_LINK_HINT = ("'{field}' would link {model} to an existing {parent} re
 CONTEXT_ALLOWED = ("lang, tz, active_test, allowed_company_ids, active_model, active_id, "
                    "active_ids, bin_size, read_group_expand, mail_create_nosubscribe, "
                    "button_validate_picking_ids, skip_backorder, picking_ids_not_to_backorder, "
-                   "skip_immediate, mo_ids_to_backorder, warehouse, location, "
-                   "default_<field> with a plain or list value")
+                   "skip_immediate, mo_ids_to_backorder, warehouse, location, validate_analytic, "
+                   "default_<field> with a plain value or a link-only list")
 CONTEXT_HINT = "context key {key} is not allowed through these tools (allowed: {allowed})"
 CALL_LIST_HINT = "method '{method}' is not among the methods allowed on '{model}' ({list})"
 FILE_HINT = "the policy file rule '{key}' refuses it"
