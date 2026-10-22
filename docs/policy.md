@@ -292,7 +292,13 @@ carries a create, write or delete command (`(0, _, vals)`, `(1, id, vals)`,
 `default_<field>` to the record a create fills, so the command would run against
 the comodel, and the identical command in `values` is expanded and refused. Such
 a list is refused as a context key, and the guard decides the remaining link
-commands against the actual comodel. The stock and manufacturing validation
+commands against the actual comodel. A plain-value default meets the same
+structural value rules as a `values` key for the same field: a `default_<link
+field>` of a delegating child (`default_ir_attachment_id`), and `default_public`,
+`default_res_field` or a `default_res_model` on a write-sealed model for an
+`ir.attachment` (or a child that delegates to it), are refused just as the
+identical key in `values` is (delegation-link, 4.4; `ir.attachment` create, 4.5).
+The stock and manufacturing validation
 wizards need some of these keys: without, for example, `button_validate_picking_ids`
 or `skip_backorder`, the wizard returns `True` and validates nothing. The invoice
 Confirm/Post button sends `validate_analytic` (16+), which `account.move._post`
@@ -477,9 +483,13 @@ silently drop a refusal. An editor schema is in
   that lists an outbound method, needs a `reason` of at least 10 characters
   (E15). `reason` and `expires` are for exact entries only (E19).
 - **Expiry fails closed.** After its date (end of day, UTC) an entry's
-  allowances are ignored and its refusals still apply, so an expired entry can
-  never loosen the policy. Openings show in `odoo_version` (`opened_sensitive`),
-  in `--check-policy` and on the audit start line.
+  allowances -- a `true` value and a `call` method list alike -- are ignored and
+  only its `false` refusals still apply, so the operation falls through to the
+  profile. An expired method list does not become a blanket `call` refusal: the
+  business verbs it named keep working under `standard`, and an expired entry
+  never allows more than the same file without its allowances. Openings show in
+  `odoo_version` (`opened_sensitive`), in `--check-policy` and on the audit start
+  line.
 - The digest is a SHA-256 over the profile, the normalised rules, the field
   rules, the disabled tools, the read-only flag and the tier data version, cut to
   12 hex characters. Comments, reasons and key order do not change it; any

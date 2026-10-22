@@ -424,14 +424,34 @@ def test_expiry_drops_allowances_at_the_end_of_the_day_and_keeps_refusals() -> N
     assert [entry["model"] for entry in on_the_day.opened_sensitive()] == ["res.partner.bank"]
 
 
-def test_an_expired_method_list_refuses_every_method() -> None:
+def test_an_expired_method_list_is_ignored_like_an_expired_true() -> None:
+    # Design 4.10: an expired method list is an allowance that is IGNORED, exactly as
+    # an expired `true` is, so the operation falls through to the profile. It does not
+    # turn into a blanket `call: false` on the model (which would refuse every business
+    # verb, including ones the list never named). Only a `false` refusal survives expiry.
     models = {"sale.order": {"call": ["action_confirm"], "expires": "2026-10-20"}}
     expired = policy("standard", models)
-    assert decided(expired, "call", "sale.order", "action_confirm") == (False, "file:sale.order")
-    assert decided(expired, "call", "sale.order", "action_cancel") == (False, "file:sale.order")
+    assert decided(expired, "call", "sale.order", "action_confirm") == (True, "profile:standard")
+    assert decided(expired, "call", "sale.order", "action_cancel") == (True, "profile:standard")
+    # while live, the list still restricts call to the method it names.
     live = policy("standard", models, today=datetime.date(2026, 10, 20))
     assert live.decide("call", "sale.order", "action_confirm").allowed
     assert not live.decide("call", "sale.order", "action_cancel").allowed
+
+
+def test_an_expired_method_list_still_drops_the_outbound_opening_it_carried() -> None:
+    # The expired list is ignored, so message_post falls to the outbound-method rule and
+    # an internal note is the only form allowed -- the temporary outbound opening is gone,
+    # yet action_post (a business verb) keeps working under standard (the flagship CFDI
+    # invoice-posting flow is not broken by an expired entry).
+    models = {"account.move": {"call": ["action_post", "message_post"], "reason": REASON,
+                               "expires": "2026-01-01"}}
+    expired = policy("standard", models)
+    note = {"ids": [1], "kwargs": {"subtype_xmlid": "mail.mt_note"}}
+    assert decided(expired, "call", "account.move", "action_post") == (True, "profile:standard")
+    assert decided(expired, "call", "account.move", "action_confirm") == (True, "profile:standard")
+    assert expired.decide("call", "account.move", "message_post", note).allowed
+    assert not expired.decide("call", "account.move", "message_post").allowed  # outbound
 
 
 def test_expiry_is_checked_against_the_clock_of_each_decision() -> None:

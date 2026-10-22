@@ -659,16 +659,29 @@ class GuardedSession:
             self._check_context_defaults(model, method, context)
 
     def _check_context_defaults(self, model: str, method: str, context: Mapping[str, Any]) -> None:
-        """A ``default_<x2many>`` context key fills a relation of the record this call
-        creates, so Odoo runs its commands against the comodel exactly as the same key in
-        ``values`` would (``_add_missing_default_values``, design 6.6). ``check_context``
-        already refused create/write/delete commands and nested values structurally; here,
-        with field metadata, the remaining link commands are decided against the actual
-        comodel, so a default that re-parents a user or grants into a security model (a
-        ``default_user_ids`` link, a ``default_<m2m>`` into a sealed model) is refused too.
+        """A ``default_<field>`` context key fills a field of the record this call creates,
+        so Odoo applies it exactly as the same key in ``values`` would
+        (``_add_missing_default_values``, design 6.5/6.6). ``check_context`` already refused
+        a withheld default and an x2many default carrying create/write/delete commands or
+        nested values structurally; here, with field metadata, the two remaining classes
+        are closed against the actual models:
+
+          * the metadata-free structural value rules -- the delegation link (4.4) and the
+            ir.attachment create rules (4.5: public/res_field/res_model) -- run over the
+            defaults, so ``default_ir_attachment_id`` re-pointing a delegating child,
+            ``default_public``/``default_res_field``, or ``default_res_model`` on a
+            write-sealed model are refused exactly as the identical ``values`` key is;
+          * a remaining x2many link command (``default_user_ids: [(4, id)]``) is decided
+            against the actual comodel, so a default that re-parents a user or grants into
+            a security model (a ``default_<m2m>`` into a sealed model) is refused too.
+
         A ``default_<field>`` the model's ``fields_get`` does not know (a wizard default
         whose field is defined only on the transient) carries no decidable comodel and is
-        left to Odoo, which refuses an unknown field."""
+        left to Odoo, which refuses an unknown field. The caller has checked ``rules_on``."""
+        defaults = {key[len("default_"):]: value for key, value in context.items()
+                    if isinstance(key, str) and key.startswith("default_")}
+        if defaults:
+            self._check_structural_values(model, "create", defaults)
         meta: Mapping[str, Any] | None = None
         for key, value in context.items():
             if not (isinstance(key, str) and key.startswith("default_")
@@ -907,9 +920,7 @@ class GuardedSession:
                                   by_file=policy.field_withheld_by_file(model, key), layer="B")
         rules_on = self._rules_on()
         if rules_on:
-            self._check_delegation_link(model, op, values)
-            if self._reaches_attachment(model):
-                self._check_attachment_values(op, values)
+            self._check_structural_values(model, op, values)
         for key, value in values.items():
             if not (isinstance(value, (list, tuple))
                     or (not creating and (value is None or value is False))):
@@ -972,6 +983,21 @@ class GuardedSession:
             if number in (0, 1):
                 self._check_values(comodel, method, command[2], creating=number == 0,
                                    ids=[command[1]] if number == 1 else None, depth=depth + 1)
+
+    def _check_structural_values(self, model: str, op: str, values: Mapping[str, Any]) -> None:
+        """The metadata-free structural value rules, applied to a ``values`` dict and to
+        the ``default_<field>`` values a context supplies alike (design 4.4, 4.5): the
+        link field of a delegating child cannot be set (``product.document.ir_attachment_id``
+        re-points the child at an existing attachment and exposes its content), and an
+        ir.attachment -- or a child that delegates to it -- is never created public, as a
+        field attachment, or on a model the policy does not let the agent write. Odoo
+        applies ``default_<field>`` on create exactly as a value, so the identical setting
+        through the context must meet the same rules as through ``values`` (6.5 step 5/7);
+        running both from here keeps the two paths from drifting apart. The caller has
+        checked ``rules_on``."""
+        self._check_delegation_link(model, op, values)
+        if self._reaches_attachment(model):
+            self._check_attachment_values(op, values)
 
     def _check_delegation_link(self, model: str, op: str, values: Mapping[str, Any]) -> None:
         """4.4: the link field of a delegating child cannot be set through the tools."""

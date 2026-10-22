@@ -170,16 +170,18 @@ class Rule:
     def value(self, op: str, today: datetime.date) -> Any:
         """What the entry sets for ``op`` today; ``None`` when it sets nothing.
 
-        Expiry fails closed. After the date a ``true`` is ignored, and a method
-        list, which allowed its methods and refused every other one, keeps only
-        its refusal: it refuses them all. A ``false`` still applies.
+        Expiry fails closed (design 4.10): after the date the entry's allowances
+        -- a ``true`` value AND a method list -- are ignored, so the operation
+        falls through to the profile (the business verbs an expired ``call``
+        list named keep working under ``standard``, instead of the whole model
+        turning into a blanket refusal); only a ``false`` refusal still applies.
+        An expired entry can therefore never allow more than the same file
+        without its allowances, and never refuses more than its own ``false``s.
         """
         value = self.get(op)
         if value is None or not self.expired(today):
             return value
-        if value is True:
-            return None
-        return False
+        return False if value is False else None
 
 
 @functools.lru_cache(maxsize=4096)

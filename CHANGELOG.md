@@ -172,6 +172,22 @@ new option **Permission profile** to `full`. The tool count stays 28.
   nested withheld field no longer reach Odoo under `standard` -- and the guard decides the
   remaining link commands against the actual comodel. A link-only wizard default
   (`default_pick_ids: [(4, id)]`) still runs.
+- A scalar `default_<field>` context key can no longer bypass the delegation-link and
+  `ir.attachment` create rules. Odoo applies a `default_<field>` on create exactly as a
+  value, so the structural value checks that guard `values` now run over the context
+  defaults too: `default_ir_attachment_id` (re-pointing a delegating child such as
+  `product.document` at an existing, possibly secrets-tier, attachment), `default_public`,
+  `default_res_field` and a `default_res_model` on a write-sealed model are refused under
+  `standard`, exactly as the identical key in `values` is, and never reach Odoo. Round four
+  closed the context channel only for x2many commands; this closes the scalar links and
+  flags. A benign default (`default_name`) still runs.
+- An expired `call` method list is now ignored, not turned into a blanket refusal. A method
+  list is an allowance, so expiry drops it exactly as it drops a `true` value: the operation
+  falls through to the profile and only a `false` refusal survives. After a temporary
+  opening such as `account.move: {"call": ["action_post", "message_post"], "expires": ...}`
+  lapses, `action_post` and `action_confirm` keep working under `standard` (the opening's
+  outbound `message_post` correctly reverts to internal notes only); before, every `call` on
+  the model, business verbs included, was refused.
 - A value-returning `call` whose string argument names a withheld field carried as a grouped
   term (`signup_token:count`, `name:sum(signup_token)`) is refused: the backstop strips the
   `:function`/`:granularity` aggregate suffix before deciding the field, as the enumerated
