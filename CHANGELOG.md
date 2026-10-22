@@ -43,6 +43,22 @@ new option **Permission profile** to `full`. The tool count stays 28.
   delegates to a closed one (`website.page` `view_id`) cannot be set. Such a refusal comes
   after sign-in and says that Odoo did not run the call. A call outside a tool's declared
   mapping is stopped as a bug.
+- **A context default must be a plain value.** Under `readonly`, `standard` and `builder`,
+  a `default_<field>` context key whose value is a list or an object (x2many commands, a
+  list of ids, nested values) is refused before anything is sent to Odoo, for every tool,
+  method and model (rule `context`); the refusal names the key, never its value. Odoo
+  applies a context default to every record created while the call runs, including the
+  lines that x2many commands create and the records of other models that a business
+  method, a wizard or an import creates (`action_confirm`, a validation wizard, `load`), so
+  such a value can never be checked soundly against the one model a call names. Pass those
+  values in the record's values, where they are checked, or use profile `full`. For
+  example, create the MRP backorder wizard (`mrp.production.backorder`) with its lines in
+  values, `{"mrp_production_ids": [(6, 0, [mo_id])], "mrp_production_backorder_line_ids":
+  [(0, 0, {"mrp_production_id": mo_id, "to_backorder": true})]}`, instead of its action's
+  `default_mrp_production_ids` and `default_mrp_production_backorder_line_ids` keys, and
+  the stock backorder wizard with `pick_ids: [(4, id)]` instead of `default_pick_ids`. A
+  plain default (`default_move_type: "out_invoice"`) still runs unless its field is
+  withheld, and `full` is unchanged.
 - Methods that return record data or filter it but are not search/read (`search_fetch`,
   `fetch`, `onchange`, `read_progress_bar`, `search_panel_select_range`,
   `search_panel_select_multi_range`, `copy_data`, the web `web_name_search`, the pivot
@@ -155,54 +171,38 @@ new option **Permission profile** to `full`. The tool count stays 28.
 - Odoo's stock and manufacturing validation wizards run under `standard`: the context keys
   they need to validate the records named (`button_validate_picking_ids`, `skip_backorder`,
   `picking_ids_not_to_backorder`, `skip_immediate`, `mo_ids_to_backorder`) are allowed, as
-  are `warehouse` and `location` (stock on hand), and `default_<field>` accepts a list such
-  as a wizard's `default_pick_ids: [(4, id)]`. None of the added keys suppress chatter
-  tracking.
+  are `warehouse` and `location` (stock on hand). None of the added keys suppress chatter
+  tracking. A wizard created directly through `odoo_execute` takes its pickings or lines in
+  values (`pick_ids: [(4, id)]`), not in a `default_` list (see Changed).
 - Posting a customer invoice runs under `standard`: `validate_analytic`, the context key the
   invoice Confirm/Post button sends (16+) so `account.move._post` validates the analytic
   distribution, is allowed. `action_post` was already a business verb; only the context key
   refused the flagship CFDI flow, and no allowed key suppresses chatter tracking.
-- Every `default_<field>` context key is decided exactly as the identical key in `values`,
-  through the one command check, so the context cannot smuggle a write the `values` path
-  would refuse. Odoo applies a `default_<field>` to the record a create fills
-  (`_add_missing_default_values`), so a `default_<x2many>` list is handed to the same
-  `_check_commands` a `values` key takes: a create, write or delete into a sensitive tier is
-  refused (`default_bank_ids: [(0, 0, {...})]` (create a `res.partner.bank`),
-  `default_user_ids` (create a `res.users`), `default_message_follower_ids` (create a
-  `mail.followers`) and a nested withheld field), a line on a business model runs, and a list
-  that is not a clean command list -- a command tuple mixed with a bare id such as
-  `[(4, 4), 99]` -- fails closed with rule `shape`, exactly as `values` does. Sharing the one
-  check closes the channel by construction: the earlier Layer A gate accepted that mixed list
-  as "link-only" while the guard skipped it (fail open), so a `(4, id)` link into a sealed
-  tier reached Odoo under `standard`. The call-class backstop's Mapping scan is closed the
-  same way. A link-only wizard default (`default_pick_ids: [(4, id)]`) still runs.
-- Odoo's manufacturing Mark-as-Done backorder wizard runs under `standard` again. Its action
-  context carries `default_mrp_production_backorder_line_ids` as `(0, 0, vals)` lines on a
-  business model; round four refused every `default_<x2many>` list that was not link-only,
-  structurally at Layer A, which stopped the wizard. The list is now decided against the
-  comodel, exactly as the same lines in `values` are (a create on a business line model), so
-  the wizard runs while the sealed-comodel cases stay refused.
+- The call-class backstop fails closed on a malformed x2many command list. A Mapping
+  handed to a module-specific `call` whose x2many value is not a clean command list, such
+  as a command tuple mixed with a bare id (`[(4, 4), 99]`), is refused with rule `shape`,
+  exactly as the same list in `values` is, instead of being scanned as a plain nested
+  value, so a `(4, id)` link into a sealed tier cannot slip past next to a bare id.
 - The create-only structural default rules (delegation link, `ir.attachment` create) run
-  only for a call that creates records. A `default_<field>` fills nothing on a read, a write
-  or an unlink, so a pinned `ir.attachment` search whose context names the record's parent
-  (`default_res_model: res.partner.bank`, readable but not writable under `standard`) is no
-  longer refused on the create rule, and neither is a read of a delegating child carrying its
-  link-field default. The rules still run for create, `web_save`/`load` and business-method
-  calls.
+  only for a call that creates records, or may (create, `web_save`/`load` and
+  business-method calls). A default fills nothing on a read, so a pinned `ir.attachment`
+  search whose context names the record's parent (`default_res_model: res.partner.bank`,
+  readable but not writable under `standard`) is no longer refused on the create rule, and
+  neither is a read of a delegating child carrying its link-field default.
 - The Odoo web client's `uid` context key is allowed. It carries the signed-in user's id on
   every call and is informational -- the acting user is the authenticated session, not
   `context['uid']` -- so `account.move.action_post` and `sale.order.action_confirm` replayed
   with the real web-client context run; it was the one key the allowlist still refused, and
   it suppresses no chatter tracking.
-- A scalar `default_<field>` context key can no longer bypass the delegation-link and
-  `ir.attachment` create rules. Odoo applies a `default_<field>` on create exactly as a
-  value, so the structural value checks that guard `values` now run over the context
-  defaults too: `default_ir_attachment_id` (re-pointing a delegating child such as
-  `product.document` at an existing, possibly secrets-tier, attachment), `default_public`,
-  `default_res_field` and a `default_res_model` on a write-sealed model are refused under
-  `standard`, exactly as the identical key in `values` is, and never reach Odoo. Round four
-  closed the context channel only for x2many commands; this closes the scalar links and
-  flags. A benign default (`default_name`) still runs.
+- A plain `default_<field>` context key no longer bypasses the delegation-link and
+  `ir.attachment` create rules when the call creates the model it names. Odoo applies a
+  `default_<field>` on create exactly as a value, so the structural value checks that guard
+  `values` now run over the plain context defaults too: `default_ir_attachment_id`
+  (re-pointing a delegating child such as `product.document` at an existing, possibly
+  secrets-tier, attachment), `default_public`, `default_res_field` and a
+  `default_res_model` on a write-sealed model are refused under `standard`, exactly as the
+  identical key in `values` is, and never reach Odoo. A benign default (`default_name`)
+  still runs.
 - An expired `call` method list is now ignored, not turned into a blanket refusal. A method
   list is an allowance, so expiry drops it exactly as it drops a `true` value: the operation
   falls through to the profile and only a `false` refusal survives. After a temporary

@@ -1,34 +1,27 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
-"""Sixth adversarial round: the context-default channel closed by construction, and
-three false refusals the round-four/five context checks introduced.
+"""Sixth adversarial round: the context-default channel, and three false refusals the
+round-four/five context checks introduced.
 
-The context-default channel leaked three rounds running because the guard
-reimplemented a *subset* of the values-checking machinery for ``default_<field>``,
-and the subset kept drifting from the real ``_check_values`` / ``_check_commands``
-path. Three concrete drifts:
+The context part of findings 1 and 2 is superseded by round seven
+(``test_policy_review7_followups.py``): a ``default_<field>`` holding a list or an object
+is refused at Layer A whatever it holds, because Odoo applies a context default to every
+record the call creates, nested lines and other models' records included, and no check
+against one model can follow that. What stays pinned here:
 
-  * finding 1 (blocker): Layer A ``_default_list_is_link_only`` accepted a list that
-    mixes an x2many command tuple with a bare id (``[[4, 4], 99]``) as "link-only",
-    while the guard's ``_commands`` returned None for it and the guard then SKIPPED
-    the field (fail open). So ``default_user_ids`` / ``default_bank_ids`` /
-    ``default_message_follower_ids`` carrying a LINK into a sealed tier reached Odoo
-    under ``standard`` -- while the identical value in ``values`` failed closed. The
-    fix hands every known-x2many ``default_<field>`` list to the same ``_check_commands``
-    a values key takes, so a list the values path refuses cannot pass here, whatever
-    its shape. The same fail-open twin in the call-class backstop (``_scan_call_mapping``)
-    is closed the same way.
-  * finding 2 (regression): round four refused ANY ``default_<x2many>`` list that was
-    not link-only, at Layer A, before any metadata. That broke the MRP Mark-as-Done
-    backorder wizard, whose action context carries ``default_mrp_production_backorder_line_ids``
-    as ``(0, 0, vals)`` lines. Deciding the list exactly as the same list in values
-    (a create on a business line model) lets the wizard run, while the sealed-comodel
-    cases round four closed stay refused.
-  * finding 3 (regression): the create-only structural default rules ran for every
-    class, so a pinned ir.attachment search_read whose context carried
-    ``default_res_model`` (a readable-but-not-writable parent) was refused on the
-    create rule. Defaults fill only records a call creates, so the rules now run only
-    for a creating class.
+  * finding 1 (blocker): a list that mixes an x2many command tuple with a bare id
+    (``[[4, 4], 99]``) slipped past the guard's command expansion through a context
+    default. That form now stops at Layer A (round seven keeps the reproductions); the
+    same list in ``values``, and in a call-class vals dict (the backstop,
+    ``_scan_call_mapping``), still fails closed with rule ``shape``.
+  * finding 2 (regression): the MRP Mark-as-Done backorder wizard. Its action context
+    carries the lines as ``default_mrp_production_backorder_line_ids``, which is refused
+    at Layer A with the remedy; the wizard runs with the same lines in values, where they
+    are decided against the comodel (a create on a business line model).
+  * finding 3 (regression): the create-only structural rules over the plain defaults ran
+    for every class, so a pinned ir.attachment search_read whose context carried
+    ``default_res_model`` (a readable-but-not-writable parent) was refused on the create
+    rule. They now run only for a creating class.
 
 Plus F1: the Odoo web client puts ``uid`` in every call's context; it was the one
 key not in the allowlist, so ``account.move.action_post`` / ``sale.order.action_confirm``
@@ -64,20 +57,9 @@ def _create(raw, model, context, *, p=None):
     return err, (model, "create") in raw.sent(), text
 
 
-# --- finding 1 (blocker): the mixed command/id list fails closed in the context -------------
-
-@pytest.mark.parametrize("context", [
-    {"default_user_ids": [[4, 4], 99]},            # one2many to res.users (security): LINK + id
-    {"default_user_ids": [[6, 0, [4]], 9]},        # SET then a trailing bare id
-    {"default_bank_ids": [[4, 7], 9]},             # res.partner.bank (security)
-    {"default_message_follower_ids": [[4, 7], 9]},  # mail.followers (outbound)
-])
-def test_a_mixed_command_id_list_in_a_context_default_fails_closed(context) -> None:
-    raw = ScriptedSession()
-    err, reached, text = _create(raw, "res.partner", context)
-    assert err is True, f"a mixed command/id list reached Odoo unrefused: {context}: {text[:160]}"
-    assert reached is False, f"the create reached Odoo carrying {context}"
-
+# --- finding 1 (blocker): the mixed command/id list fails closed ----------------------------
+# The context form of these lists stops at Layer A since round seven
+# (test_policy_review7_followups.py keeps the reproductions); the values form fails closed.
 
 def test_the_same_mixed_list_in_values_fails_closed_control() -> None:
     raw = ScriptedSession()
@@ -87,10 +69,13 @@ def test_the_same_mixed_list_in_values_fails_closed_control() -> None:
     assert "shape" in text  # the values path fails closed with rule shape; so does the default
 
 
-def test_a_clean_command_default_into_a_tier_is_still_refused_control() -> None:
+def test_a_clean_command_default_into_a_tier_stops_at_layer_a_control() -> None:
+    # A clean SET of res.users is a list too: refused at Layer A, never decided per command.
     raw = ScriptedSession()
-    err, reached, _ = _create(raw, "res.partner", {"default_user_ids": [[6, 0, [4]]]})
-    assert err is True and reached is False  # a clean SET of res.users is a tier write
+    err, reached, text = _create(raw, "res.partner", {"default_user_ids": [[6, 0, [4]]]})
+    assert err is True and reached is False
+    assert "rule context" in text and "Nothing was sent to Odoo." in text
+    assert raw.calls == [] and raw.metadata == []
 
 
 # --- finding 1 twin: the call-class backstop fails closed the same way ----------------------
@@ -119,40 +104,33 @@ def test_a_clean_link_in_a_call_class_vals_dict_still_runs_control() -> None:
     assert ("res.partner", "action_apply") in raw.sent()
 
 
-# --- finding 2 (regression): the MRP backorder wizard runs with its action context ---------
+# --- finding 2 (regression): the MRP backorder wizard takes its lines in values -------------
 
-def test_the_mrp_backorder_wizard_runs_with_its_action_context() -> None:
-    raw = ScriptedSession(fields=MRP_META)
-    context = {"default_mrp_production_ids": [5],
-               "default_mrp_production_backorder_line_ids": MRP_LINES}
-    err, reached, text = _create(raw, "mrp.production.backorder", context)
-    # args=[{"name": "x"}] in _create is a harmless extra value; the line create is the point.
-    assert err is False, text
-    assert reached is True
-
-
-def test_the_same_backorder_lines_in_values_run_control() -> None:
+def test_the_mrp_backorder_wizard_runs_with_its_lines_in_values() -> None:
+    # The flow the action context drove, with the lines and the productions in values:
+    # each line is a create on a business line model, decided against the comodel. The
+    # action's plain context keys ride along.
     raw = ScriptedSession(fields=MRP_META)
     err, text = call(server(raw, p=policy("standard")), "odoo_execute",
                      model="mrp.production.backorder", method="create",
                      args=[{"mrp_production_ids": [[6, 0, [5]]],
-                            "mrp_production_backorder_line_ids": MRP_LINES}])
+                            "mrp_production_backorder_line_ids": MRP_LINES}],
+                     kwargs={"context": {"active_model": "mrp.production", "active_id": 5,
+                                         "active_ids": [5]}})
     assert err is False, text
+    assert ("mrp.production.backorder", "create") in raw.sent()
 
 
-@pytest.mark.parametrize("context", [
-    {"default_bank_ids": [[0, 0, {"acc_number": "ATTACKER"}]]},     # create a bank (security)
-    {"default_user_ids": [[0, 0, {"login": "attacker"}]]},         # create a user (security)
-    {"default_message_follower_ids": [[0, 0, {"partner_id": 9}]]},  # a follower (outbound)
-    {"default_child_ids": [[0, 0, {"signup_token": "FORGED"}]]},    # a nested withheld field
-])
-def test_relaxing_layer_a_did_not_reopen_the_sealed_create_commands(context) -> None:
-    # Round four admitted these only to refuse them structurally at Layer A; the guard now
-    # decides the same commands against the comodel, so they stay refused -- at Layer B.
-    raw = ScriptedSession()
-    err, reached, _ = _create(raw, "res.partner", context)
-    assert err is True, f"a sealed create command was admitted: {context}"
-    assert reached is False
+def test_the_mrp_backorder_action_context_is_refused_at_layer_a_with_the_remedy() -> None:
+    raw = ScriptedSession(fields=MRP_META)
+    context = {"default_mrp_production_ids": [5],
+               "default_mrp_production_backorder_line_ids": MRP_LINES}
+    err, reached, text = _create(raw, "mrp.production.backorder", context)
+    assert err is True and reached is False
+    assert "rule context" in text and "Nothing was sent to Odoo." in text
+    assert "context key 'default_mrp_production_ids' holds a list or an object" in text
+    assert "pass those values in the record's values, where they are checked" in text
+    assert raw.calls == []
 
 
 # --- finding 3 (regression): the create-only default rules skip a read --------------------

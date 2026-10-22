@@ -242,7 +242,8 @@ WITHHELD_MODEL_FIELDS = frozenset({
     ("ir.actions.server", "webhook_url"), ("base.automation", "webhook_uuid"),
 })
 
-# Context keys a call may carry, besides default_<field> with a plain or list value.
+# Context keys a call may carry, besides default_<field> with a plain value (a list or an
+# object in a default_<field> is refused: policy/check.py check_context).
 # The keys that silence chatter tracking (tracking_disable, mail_notrack,
 # mail_create_nolog) are absent on purpose: tracking is evidence. The stock and
 # manufacturing validation wizards (stock.picking.button_validate ->

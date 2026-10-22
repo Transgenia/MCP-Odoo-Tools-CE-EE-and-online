@@ -285,28 +285,43 @@ notifies nobody by e-mail.
 ### Context keys
 
 A call may carry only these context keys, plus `default_<field>` with a plain
-value (text, number, boolean or null) or a list, on a field that is not withheld.
-Odoo applies a `default_<field>` to the record a create fills
-(`_add_missing_default_values`), so each default is decided exactly as the
-identical key in `values` is, and only for a call that creates records: on a read,
-a write or an unlink a `default_<field>` fills nothing, so it is inert and is not
-checked (checking it there would refuse a legitimate read, such as a pinned
-`ir.attachment` search whose context names the record's parent). For a creating
-call:
+value (text, number, boolean or null) on a field that is not withheld.
 
-- a `default_<x2many>` list is handed to the same command check a `values` key
-  takes, so a create, write or delete command (`(0, _, vals)`, `(1, id, vals)`,
-  `(2, id)`) is decided against the comodel -- a line on a business model runs (the
-  MRP backorder wizard's `default_mrp_production_backorder_line_ids`), a record in a
-  sealed tier is refused (`default_bank_ids`, `default_user_ids`) -- and a list that
-  is not a clean command list fails closed, exactly as `values` does. A link-only
-  wizard default on a field the transient defines (`default_pick_ids: [(4, id)]`)
-  still runs;
-- a `default_<link field>` of a delegating child (`default_ir_attachment_id`), and
-  `default_public`, `default_res_field` or a `default_res_model` on a write-sealed
-  model for an `ir.attachment` (or a child that delegates to it), are refused just
-  as the identical key in `values` is (delegation-link, 4.4; `ir.attachment`
-  create, 4.5).
+**A `default_<field>` that holds a list or an object is refused** (rule
+`context`), before anything is sent to Odoo, for every tool, method and model and
+wherever the context sits (`kwargs["context"]`, or a context nested in a read
+specification): x2many commands (`[(0, 0, {...})]`, `[(4, id)]`,
+`[(6, 0, ids)]`), a bare id list, nested values, even an empty list. Odoo applies a
+context default to every record created while the call runs: the record the call
+names, the lines its x2many commands create, and the records of other models that
+a business method, a wizard or an import creates (`action_confirm`, a validation
+wizard, `load`). Such a value cannot be checked against the one model the call
+names, so it is not checked at all. The refusal names the key, never its value.
+Pass those values in the record's values instead, where each command is decided
+against the model it reaches, or use profile `full`. For example, create the MRP
+backorder wizard with its lines in values,
+
+```json
+{"model": "mrp.production.backorder", "method": "create",
+ "args": [{"mrp_production_ids": [[6, 0, [5]]],
+           "mrp_production_backorder_line_ids": [[0, 0, {"mrp_production_id": 5,
+                                                          "to_backorder": true}]]}]}
+```
+
+instead of its action's `default_mrp_production_ids` and
+`default_mrp_production_backorder_line_ids` keys, and the stock backorder wizard
+with `pick_ids: [(4, id)]` in values instead of `default_pick_ids`.
+
+Odoo applies a plain default exactly as the identical key in `values`, so on a call
+that creates records, or may (create, `copy`, `name_create`, `web_save`, `load` and
+business methods), the structural rules that guard `values` run over the plain
+defaults too, against the model the call names: a `default_<link field>` of a
+delegating child (`default_ir_attachment_id`), and `default_public`,
+`default_res_field` or a `default_res_model` on a write-sealed model for an
+`ir.attachment` (or a child that delegates to it), are refused just as the identical
+key in `values` is (delegation-link, 4.4; `ir.attachment` create, 4.5). On a read a
+default fills nothing, so these rules do not run there: a pinned `ir.attachment`
+search whose context names the record's parent runs.
 
 The stock and manufacturing validation
 wizards need some of these keys: without, for example, `button_validate_picking_ids`
@@ -637,12 +652,15 @@ policy withholds in `unavailable` instead of failing.
 A refusal is a tool error. It names the operation, the model, the profile and
 the rule that decided, then says where the call stopped, gives the remedy, and
 asks the agent not to reach the same result through another tool. Only
-validated names are echoed (model, field, method and operation names), never an
-argument value.
+validated names are echoed (model, field, method, operation and context key
+names), never an argument value.
 
 - **Before sign-in** (most refusals): decided from the declared accesses and
   the arguments alone, before any session exists. It ends with `Nothing was
-  sent to Odoo.` and is not counted as a tool call.
+  sent to Odoo.` and is not counted as a tool call. A context key outside the
+  allowlist, and a `default_<field>` that holds a list or an object, are refused
+  here (rule `context`); the second names the key and says to pass those values
+  in the record's values, where they are checked, or to use profile `full`.
 - **After sign-in** (the guard): every Odoo call a tool makes is checked again,
   with its values and paths, as it is sent. Such a refusal ends with `The call
   was stopped before Odoo ran it: nothing was changed and no record data was

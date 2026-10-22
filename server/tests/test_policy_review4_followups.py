@@ -6,9 +6,10 @@ the false refusals the round-three checks had introduced.
 Each test pins one finding of that round:
 
   * a ``default_<x2many>`` context key can no longer carry a create/write/delete command,
-    or nested values, into a sensitive tier (the same payload in ``values`` is refused);
-    a link-only wizard default still runs, and the guard decides the link against the
-    comodel;
+    or nested values, into a sensitive tier (the same payload in ``values`` is refused).
+    Since round seven every list or object in a ``default_<field>`` is refused at Layer A
+    (``test_policy_review7_followups.py``), so the tests below pin that, and the wizard
+    and business-link flows pass their lists in values;
   * the call-class backstop strips a ``:function`` aggregate suffix, so a withheld field
     carried as a grouped term is refused;
   * ``onchange`` (a write-nothing simulation) runs with the record's existing lines;
@@ -47,10 +48,9 @@ def raw(**kw):
 
 # --- findings 1 / 3 / 10 (blockers): default_<x2many> context smuggling --------------------
 
-def _create(raw_s, context=None, values=None):
+def _create(raw_s, values):
     err, _text = call(server(raw_s, p=policy("standard")), "odoo_execute", model="res.partner",
-                      method="create", args=[values if values is not None else {"name": "x"}],
-                      kwargs={"context": context} if context is not None else {})
+                      method="create", args=[values])
     return err, ("res.partner", "create") in raw_s.sent()
 
 
@@ -61,7 +61,7 @@ def _create(raw_s, context=None, values=None):
     {"name": "x", "child_ids": [[0, 0, {"signup_token": "T"}]]},
 ])
 def test_the_explicit_values_route_is_sealed(values: dict) -> None:
-    err, sent = _create(raw(), values=values)
+    err, sent = _create(raw(), values)
     assert err is True and sent is False
 
 
@@ -72,40 +72,53 @@ def test_the_explicit_values_route_is_sealed(values: dict) -> None:
     {"default_message_follower_ids": [[0, 0, {"partner_id": 9}]]},     # a follower (outbound)
     {"default_child_ids": [[0, 0, {"signup_token": "FORGED"}]]},       # a withheld field
 ])
-def test_a_context_default_command_is_refused_like_the_same_command_in_values(context) -> None:
-    err, sent = _create(raw(), context=context)
+def test_a_context_default_command_is_refused_at_layer_a(context) -> None:
+    raw_s = raw()
+    err, text = call(server(raw_s, p=policy("standard")), "odoo_execute", model="res.partner",
+                     method="create", args=[{"name": "x"}], kwargs={"context": context})
     assert err is True, f"the policy allowed a sealed write via {context}"
-    assert sent is False, f"the create reached Odoo carrying {context}"
+    assert "rule context" in text and "Nothing was sent to Odoo." in text, text
+    assert raw_s.calls == [], f"the call went past Layer A carrying {context}"
 
 
-def test_a_link_only_wizard_default_still_runs() -> None:
-    # default_pick_ids: [(4, id)] on a transient whose pick_ids fields_get does not resolve
-    # is a link, carries no payload, and runs (the committed wizard-default case).
+def test_a_link_only_wizard_default_is_refused_and_its_values_form_runs() -> None:
+    # default_pick_ids: [(4, id)] is a list, refused at Layer A whatever it links; the
+    # wizard created with its pickings in values runs, the link decided against the comodel.
     raw_s = raw()
     err, text = call(server(raw_s, p=policy("standard")), "odoo_execute",
                      model="stock.backorder.confirmation", method="create",
                      args=[{"name": "x"}], kwargs={"context": {"default_pick_ids": [[4, 1]]}})
-    assert err is False, text
-
-
-def test_a_context_default_link_into_a_tier_is_decided_against_the_comodel() -> None:
-    # default_user_ids: [(4, 2)] passes the structural gate (a link, no payload) but the
-    # guard decides it against res.users: re-parenting a user is a write on the security
-    # tier, refused outside full.
+    assert err is True and "rule context" in text and raw_s.calls == []
     raw_s = raw()
-    err, _ = call(server(raw_s, p=policy("standard")), "odoo_execute", model="res.partner",
-                  method="create", args=[{"name": "x"}],
-                  kwargs={"context": {"default_user_ids": [[4, 2]]}})
-    assert err is True
-    assert ("res.partner", "create") not in raw_s.sent()
+    err, text = call(server(raw_s, p=policy("standard")), "odoo_execute",
+                     model="stock.backorder.confirmation", method="create",
+                     args=[{"pick_ids": [[4, 1]]}])
+    assert err is False, text
+    assert ("stock.backorder.confirmation", "create") in raw_s.sent()
 
 
-def test_a_benign_many2many_context_default_runs() -> None:
-    # default_category_id: a link to a business comodel (res.partner.category) is allowed.
+def test_a_context_default_link_into_a_tier_is_refused_before_any_lookup() -> None:
+    # default_user_ids: [(4, 2)] would re-parent a user (security tier). It is refused at
+    # Layer A as a list, before the comodel is looked up: no fields_get, nothing sent.
+    raw_s = raw()
+    err, text = call(server(raw_s, p=policy("standard")), "odoo_execute", model="res.partner",
+                     method="create", args=[{"name": "x"}],
+                     kwargs={"context": {"default_user_ids": [[4, 2]]}})
+    assert err is True and "rule context" in text
+    assert raw_s.calls == [] and raw_s.metadata == []
+
+
+def test_a_benign_many2many_link_runs_in_values_not_in_the_context() -> None:
+    # default_category_id: a SET of a business comodel (res.partner.category) is still a
+    # list in the context, so it is refused there; in values it is checked and runs.
     raw_s = raw()
     err, text = call(server(raw_s, p=policy("standard")), "odoo_execute", model="res.partner",
                      method="create", args=[{"name": "x"}],
                      kwargs={"context": {"default_category_id": [[6, 0, [1, 2]]]}})
+    assert err is True and "rule context" in text and raw_s.calls == []
+    raw_s = raw()
+    err, text = call(server(raw_s, p=policy("standard")), "odoo_execute", model="res.partner",
+                     method="create", args=[{"name": "x", "category_id": [[6, 0, [1, 2]]]}])
     assert err is False, text
     assert ("res.partner", "create") in raw_s.sent()
 

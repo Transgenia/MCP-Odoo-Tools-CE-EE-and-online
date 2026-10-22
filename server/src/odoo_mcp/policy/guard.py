@@ -121,11 +121,14 @@ CONTENT_FIELDS = frozenset({"datas", "raw", "db_datas"})
 # comodel (its result is still redacted, so nothing leaks), or previewing a quotation
 # that already has lines would be refused under standard (design 4.7 keeps it working).
 SIMULATION_METHODS = frozenset({"onchange"})
-# The method classes whose calls create records, so Odoo applies the context
-# default_<field> keys to them (_add_missing_default_values runs on create, not on a
-# read, write or unlink). The create-only default rules -- the structural value rules
-# and the x2many command decision -- run only for these classes; on a read or a write a
-# default_<field> fills nothing, so applying them there is a false refusal (design 4.11).
+# The method classes that create records (create, create_write) or may (a business
+# method, class call), so Odoo applies the context default_<field> keys to what they create
+# (_add_missing_default_values). The structural value rules over the plain defaults run
+# only for these classes, decided against the model the call names: on a read a
+# default_<field> fills nothing, so applying them there is a false refusal (design 4.11). A
+# default whose value is a list or an object never gets this far: check_context refuses it
+# on both layers, because Odoo also applies it to the lines and the other models' records a
+# call creates, which no check against one model can follow.
 DEFAULT_APPLYING_CLASSES = frozenset({"create", "create_write", "call"})
 _FIELD = re.compile(r"[A-Za-z0-9_]+")
 # A whole string that is a groupby/aggregate term: 'field', 'field:function' or
@@ -662,61 +665,35 @@ class GuardedSession:
                 continue
             if not isinstance(context, Mapping):
                 raise self._shape(op, model, "the context is not an object", method)
+            # The same check as Layer A, on the actual call: a key outside the allowlist, a
+            # withheld default and a default holding a list or an object are refused here
+            # too, so Layer B stands alone (defense in depth).
             check_context(self._policy, model, context, op=op, layer="B")
-            self._check_context_defaults(model, method, context, cls)
+            self._check_context_defaults(model, context, cls)
 
-    def _check_context_defaults(self, model: str, method: str, context: Mapping[str, Any],
+    def _check_context_defaults(self, model: str, context: Mapping[str, Any],
                                 cls: str) -> None:
-        """A ``default_<field>`` context key fills a field of the record this call creates,
-        so Odoo applies it exactly as the same key in ``values`` would
-        (``_add_missing_default_values``, design 6.5/6.6). A default fills nothing on a
-        read, a write or an unlink (Odoo runs ``_add_missing_default_values`` only on
-        create), so the create-only rules run only for a class that creates records; on any
-        other class a ``default_<field>`` is inert and checking it is a false refusal.
+        """A plain ``default_<field>`` context key fills a field of the record this call
+        creates, so Odoo applies it exactly as the same key in ``values`` would
+        (``_add_missing_default_values``, design 6.5/6.6): the metadata-free structural
+        value rules -- the delegation link (4.4) and the ir.attachment create rules (4.5:
+        public/res_field/res_model) -- run over the defaults, so
+        ``default_ir_attachment_id`` re-pointing a delegating child,
+        ``default_public``/``default_res_field``, or ``default_res_model`` on a write-sealed
+        model are refused exactly as the identical ``values`` key is. They are decided
+        against the model the call names, for a class that creates records
+        (``DEFAULT_APPLYING_CLASSES``); on a read a default fills nothing, so applying them
+        there would be a false refusal.
 
-        For a creating class, every default is decided exactly as the identical ``values``
-        key would be:
-
-          * the metadata-free structural value rules -- the delegation link (4.4) and the
-            ir.attachment create rules (4.5: public/res_field/res_model) -- run over the
-            defaults, so ``default_ir_attachment_id`` re-pointing a delegating child,
-            ``default_public``/``default_res_field``, or ``default_res_model`` on a
-            write-sealed model are refused exactly as the identical ``values`` key is;
-          * an x2many ``default_<field>`` list is handed to the same ``_check_commands`` a
-            ``values`` key takes, so a create/write/delete command is decided against the
-            comodel (``default_mrp_production_backorder_line_ids`` creates a business line
-            and runs; ``default_user_ids``/``default_bank_ids`` reach a sealed tier and are
-            refused) and a list that is not a clean command list fails closed with rule
-            ``shape``, exactly as ``values`` does. Sharing ``_check_commands`` is what keeps
-            the two paths from drifting: a list the ``values`` path would refuse cannot pass
-            here, whatever its shape.
-
-        A ``default_<field>`` the model's ``fields_get`` does not know (a wizard default
-        whose field lives only on the transient, such as ``default_pick_ids``) carries no
-        decidable comodel; Odoo ignores an unknown field on create, so it is left to Odoo.
-        The caller has checked ``rules_on``."""
+        ``check_context`` has already refused a default whose value is a list or an object
+        (x2many commands, ids, nested values), on this layer as on Layer A, so every default
+        left here is plain. The caller has checked ``rules_on``."""
         if cls not in DEFAULT_APPLYING_CLASSES:
             return
         defaults = {key[len("default_"):]: value for key, value in context.items()
                     if isinstance(key, str) and key.startswith("default_")}
         if defaults:
             self._check_structural_values(model, "create", defaults)
-        meta: Mapping[str, Any] | None = None
-        for key, value in context.items():
-            if not (isinstance(key, str) and key.startswith("default_")
-                    and isinstance(value, (list, tuple))):
-                continue
-            if meta is None:
-                meta = self._fields(model)
-            field = key[len("default_"):]
-            info = meta.get(field)
-            if not (isinstance(info, Mapping) and info.get("type") in X2MANY):
-                continue  # not a known x2many field: Odoo applies the scalar or ignores it
-            comodel = info.get("relation")
-            if not valid_model(comodel):
-                raise _Unverified()
-            self._check_commands(model, method, field, str(info["type"]), comodel, value,
-                                 creating=True, depth=0)
 
     # -- field metadata -----------------------------------------------------------------
     def _fields(self, model: str) -> Mapping[str, Any]:
@@ -1010,7 +987,7 @@ class GuardedSession:
 
     def _check_structural_values(self, model: str, op: str, values: Mapping[str, Any]) -> None:
         """The metadata-free structural value rules, applied to a ``values`` dict and to
-        the ``default_<field>`` values a context supplies alike (design 4.4, 4.5): the
+        the plain ``default_<field>`` values a context supplies alike (design 4.4, 4.5): the
         link field of a delegating child cannot be set (``product.document.ir_attachment_id``
         re-points the child at an existing attachment and exposes its content), and an
         ir.attachment -- or a child that delegates to it -- is never created public, as a

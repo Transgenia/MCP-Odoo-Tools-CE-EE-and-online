@@ -41,7 +41,7 @@ EXTRA = {
                       "user_id": m2o("res.users")},
     "product.product": {"name": CHAR, "qty_available": {"type": "float"}},
     "stock.picking": {"name": CHAR},
-    "stock.backorder.confirmation": {"name": CHAR},
+    "stock.backorder.confirmation": {"name": CHAR, "pick_ids": m2m("stock.picking")},
     "mrp.production": {"name": CHAR},
 }
 NOTE = {"subtype_xmlid": "mail.mt_note", "message_type": "comment"}
@@ -195,12 +195,23 @@ def test_validation_wizards_run_under_standard(model, method, ids, context) -> N
     assert (model, method) in raw_s.sent()
 
 
-def test_default_field_accepts_a_list_value() -> None:
+def test_the_backorder_wizard_runs_with_its_pickings_in_values() -> None:
+    # A wizard created directly takes its pickings in values, where the link is checked
+    # against stock.picking. The same list as a context default is refused at Layer A
+    # (round seven): Odoo would apply it to every record the call creates.
+    raw_s = raw()
+    err, text = call(server(raw_s, p=policy("standard")), "odoo_execute",
+                     model="stock.backorder.confirmation", method="create",
+                     args=[{"pick_ids": [[4, 1]]}],
+                     kwargs={"context": {"button_validate_picking_ids": [1]}})
+    assert err is False, text
+    assert ("stock.backorder.confirmation", "create") in raw_s.sent()
     raw_s = raw()
     err, text = call(server(raw_s, p=policy("standard")), "odoo_execute",
                      model="stock.backorder.confirmation", method="create",
                      args=[{"name": "x"}], kwargs={"context": {"default_pick_ids": [[4, 1]]}})
-    assert err is False, text
+    assert err is True and "rule context" in text and "Nothing was sent to Odoo." in text
+    assert raw_s.calls == []
 
 
 @pytest.mark.parametrize("context", [{"warehouse": 1}, {"location": 8}])

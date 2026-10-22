@@ -132,8 +132,16 @@ CONTEXT_ALLOWED = ("lang, tz, uid, active_test, allowed_company_ids, active_mode
                    "active_ids, bin_size, read_group_expand, mail_create_nosubscribe, "
                    "button_validate_picking_ids, skip_backorder, picking_ids_not_to_backorder, "
                    "skip_immediate, mo_ids_to_backorder, warehouse, location, validate_analytic, "
-                   "default_<field> with a plain value or a list")
+                   "default_<field> with a plain value")
 CONTEXT_HINT = "context key {key} is not allowed through these tools (allowed: {allowed})"
+# A default_<field> whose value is a list or an object: Odoo applies a context default to
+# every record the call creates, nested lines and other models' records included, so the
+# value cannot be decided against the model the call names (design 6.5 step 7).
+CONTEXT_DEFAULT_HINT = ("context key {key} holds a list or an object, and Odoo applies a "
+                        "context default to every record the call creates, including x2many "
+                        "lines and records of other models, so it cannot be checked; pass those "
+                        "values in the record's values, where they are checked, or use profile "
+                        "'full' (the user sets it in the plugin option 'Permission profile')")
 CALL_LIST_HINT = "method '{method}' is not among the methods allowed on '{model}' ({list})"
 FILE_HINT = "the policy file rule '{key}' refuses it"
 INVALID_MODEL_HINT = ("the model name is not a valid Odoo model name (lowercase letters, digits, "
@@ -346,6 +354,14 @@ def delegation_link(policy: Policy, op: str, model: str, field: str, parent: str
 def context(policy: Policy, op: str, model: str, key: Any, *, layer: str = "A") -> PolicyDenied:
     return _check(policy, op, model, "context",
                   CONTEXT_HINT.format(key=plain_name(key), allowed=CONTEXT_ALLOWED), layer=layer)
+
+
+def context_default(policy: Policy, op: str, model: str, key: Any, *,
+                    layer: str = "A") -> PolicyDenied:
+    """A ``default_<field>`` context key whose value is a list or an object: the key is
+    named (when it is a plain identifier), its value never is."""
+    return _check(policy, op, model, "context",
+                  CONTEXT_DEFAULT_HINT.format(key=plain_name(key)), layer=layer)
 
 
 def shape(policy: Policy, op: str, model: str, *, detail: str, method: str | None = None,

@@ -16,9 +16,11 @@ checks:
   * what the arguments name, read without any Odoo metadata: withheld fields
     in field lists, values, domains (every segment), groupby, order and
     import columns; the parent model an ``ir.attachment`` search must name;
-    the context keys of ``odoo_execute``. What needs field metadata (the
-    models a path or an x2many command reaches) is left to the guarded
-    session, which sees every actual Odoo call.
+    the context keys of ``odoo_execute``, ``kwargs["context"]`` and every
+    context nested in a specification, where a ``default_<field>`` must hold a
+    plain value. What needs field metadata (the models a path or an x2many
+    command reaches) is left to the guarded session, which sees every actual
+    Odoo call.
 
 A tool declares its accesses with ``registry.Access`` (duck-typed here:
 ``arg_ops``, ``fixed``, ``optional``, ``dynamic``, ``degrade``,
@@ -332,28 +334,31 @@ def _context(context: Any, label: str) -> Mapping[str, Any]:
 
 def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op: str = "call",
                   layer: str = "A") -> None:
-    """Every key is a safe one, or ``default_<field>`` with a plain value or a list,
-    for a field that is not withheld. The keys that silence chatter tracking are refused.
+    """Every key is a safe one, or ``default_<field>`` with a plain value (text, a number,
+    a boolean or null) for a field that is not withheld. The keys that silence chatter
+    tracking are refused.
 
-    A ``default_<field>`` whose value is a list carries x2many commands that Odoo applies
-    to the record a create fills (``_add_missing_default_values``), so the command decision
-    needs the comodel and is left to the guarded session, which checks the list through the
-    very same ``_check_commands`` an identical ``values`` key takes (design 4.11 / 6.5):
-    the two paths cannot drift apart. This layer, without field metadata, only gates the
-    key -- a safe key, or ``default_<field>`` with a plain or list value for a field that is
-    not withheld. Everything else (a withheld default, a tracking-suppression key, a dict
-    value, an unknown key) is refused here, before any session exists.
+    A ``default_<anything>`` whose value is a list, a tuple or an object is refused
+    outright, whatever the key names, for every tool, method and model (design 6.5 step 7).
+    Odoo applies a context default to every record created while the call runs: the record
+    the call names, the lines its x2many commands create, and the records of other models a
+    business method, a wizard or an import creates. Such a value (x2many commands, ids,
+    nested values) cannot be decided against the one model a call names, so it is not
+    decided at all: the refusal names the key, never its value, and the remedy is the
+    record's values, which are checked. The guarded session runs this same function on every
+    actual call (Layer B), so the two layers cannot drift apart.
     """
     for key, value in context.items():
         if not isinstance(key, str):
             raise texts.context(policy, op, model, key, layer=layer)
         if key in SAFE_CONTEXT_KEYS:
             continue
-        name = key[len("default_"):]
-        if (key.startswith("default_") and _FIELD_NAME.fullmatch(name)
-                and not policy.field_withheld(model, name)
-                and isinstance(value, (*_PLAIN_VALUE, list, tuple))):
-            continue
+        if key.startswith("default_"):
+            if not isinstance(value, _PLAIN_VALUE):
+                raise texts.context_default(policy, op, model, key, layer=layer)
+            name = key[len("default_"):]
+            if _FIELD_NAME.fullmatch(name) and not policy.field_withheld(model, name):
+                continue
         raise texts.context(policy, op, model, key, layer=layer)
 
 
