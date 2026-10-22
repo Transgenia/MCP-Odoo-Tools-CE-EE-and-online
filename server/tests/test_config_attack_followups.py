@@ -66,7 +66,9 @@ def test_odoo_connections_strips_the_url_userinfo(profile: str) -> None:
     text = result["content"][0]["text"]
     assert not result["isError"]
     assert canary not in text
-    assert "https://odoo.example" in text  # the host is still reported
+    # the URL is still reported, without its user:password@ part (an exact match,
+    # not a substring check, which CodeQL reads as URL sanitization)
+    assert [c["url"] for c in json.loads(text)["connections"]] == ["https://odoo.example"]
 
 
 # --- a null policy file locks, it is not read as "no file" ---------------------------
