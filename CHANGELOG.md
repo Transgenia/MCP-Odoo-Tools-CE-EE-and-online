@@ -174,11 +174,12 @@ new option **Permission profile** to `full`. The tool count stays 28.
   a `(1, '=', 1)` true leaf. A Mapping handed to a module-specific `call` has its keys
   checked as write field names (and its x2many commands expanded), so a withheld field such
   as `signup_token` cannot be set through a bespoke verb when `odoo_write` refuses it.
-- Assigning a user through a plain business relation runs under `standard`. A many2many link
-  to a write-withheld model is a `read` of it when the link only references the target
-  (`project.task.user_ids`, a `helpdesk.team` member link); it stays a `write`, and so
-  refused, only when it carries the target's rights (`res.users.groups_id`,
-  `res.company.user_ids`). Project task assignment and helpdesk membership no longer need
+- Assigning a user through two business relations runs under `standard`: task assignees
+  (`project.task.user_ids`) and helpdesk team members (`helpdesk.team.member_ids`), the
+  fixed `REFERENCE_LINKS` list in `policy/tiers.py`, count as a `read` of `res.users`.
+  Every other many2many link to a write-withheld model is still a `write` of it, and so
+  refused under `standard` (for example `res.users.groups_id` or `res.company.user_ids`,
+  which carry rights). Project task assignment and helpdesk membership no longer need
   profile `full`.
 - Odoo's stock and manufacturing validation wizards run under `standard`: the context keys
   they need to validate the records named (`button_validate_picking_ids`, `skip_backorder`,

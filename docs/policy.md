@@ -368,9 +368,13 @@ So `res.partner` `user_ids: [(1, uid, {"groups_id": ...})]` is a write on
 many2many link to a write-withheld model counts as a change to it when the link
 carries the target's rights -- a user's groups (`res.users.groups_id`) or a
 company's users (`res.company.user_ids`, the inverse of a user's allowed
-companies). A link that only references the target changes no field of it and no
-right, so a business assignment such as `project.task.user_ids` or a
-`helpdesk.team` member link is a read of `res.users` and runs under `standard`.
+companies). The exceptions are a fixed list of reference links, `REFERENCE_LINKS`
+in `policy/tiers.py`: `project.task.user_ids` (task assignees) and
+`helpdesk.team.member_ids` (helpdesk team members). They change no field of the user
+and no right, so they count as a read of `res.users` and run under `standard`. Every
+other many2many link to a write-withheld model still counts as a write to it and is
+refused under `standard`; a new business link is added to that list, not opened by a
+general rule.
 
 Reads are checked along their paths: every hop of a domain leaf (including
 `any` and `not any`), the nested `specification` of `web_read` and
@@ -641,7 +645,7 @@ as JSON. A team's policy repository can run it in CI.
 ## What `odoo_version` reports
 
 ```json
-"policy": {"profile": "standard", "file": null, "digest": "e033dc413852", "readonly": false,
+"policy": {"profile": "standard", "file": null, "digest": "5b13e821b143", "readonly": false,
            "hidden_tools": ["odoo_unlink", "odoo_add_field", "odoo_add_automation"],
            "opened_sensitive": [], "released_fields": [], "warnings": [],
            "error": null, "error_code": null}
