@@ -194,15 +194,30 @@ new option **Permission profile** to `full`. The tool count stays 28.
   `context['uid']` -- so `account.move.action_post` and `sale.order.action_confirm` replayed
   with the real web-client context run; it was the one key the allowlist still refused, and
   it suppresses no chatter tracking.
-- A plain `default_<field>` context key no longer bypasses the delegation-link and
-  `ir.attachment` create rules when the call creates the model it names. Odoo applies a
-  `default_<field>` on create exactly as a value, so the structural value checks that guard
-  `values` now run over the plain context defaults too: `default_ir_attachment_id`
-  (re-pointing a delegating child such as `product.document` at an existing, possibly
-  secrets-tier, attachment), `default_public`, `default_res_field` and a
-  `default_res_model` on a write-sealed model are refused under `standard`, exactly as the
-  identical key in `values` is, and never reach Odoo. A benign default (`default_name`)
-  still runs.
+- A plain `default_<field>` context key cannot ride a nested create past the delegation-link
+  (4.4) and `ir.attachment` create (4.5) rules. Odoo applies a context default to every
+  record a call creates, including a line of another model an x2many command builds (a
+  `product.document` created during a write on `product.template`), which no check against
+  the call's top model can follow. So under `readonly`, `standard` and `builder`, a scalar
+  `default_<field>` naming a structural field is refused by construction, at Layer A, on a
+  call that can create a record: the link field of a delegation whose parent is a tier, a
+  NEVER model or `ir.attachment` (`default_ir_attachment_id`, `default_view_id`, and the
+  other `DELEGATES` links), and `default_public` or `default_res_field`. The refusal (rule
+  `context`) names the key, never its value, and gives the remedy (pass the value in the
+  record's values, or use profile `full`). The refused field names are derived from
+  `DELEGATES` and the `ir.attachment` structural fields, so a new delegation row is covered
+  automatically. `default_res_model` and `default_res_id` stay allowed, because activity
+  scheduling and the mail composer pass them; a nested attachment can still be bound to a
+  record through them, which is an accepted, documented limit (`docs/policy.md`). On a read a
+  default fills nothing, so it is left alone (a pinned `ir.attachment` search whose context
+  names the record's parent runs); a benign default (`default_move_type`) still runs, and
+  `full` is unchanged.
+- A context nested in `onchange`'s `fields_spec` (Odoo 17+, the web_read specification form,
+  passed by name or positionally) is now collected, so a list default hidden inside it is
+  refused with rule `context` like any other nested context; before, it was the one
+  specification the collector skipped, contradicting `docs/policy.md`. `onchange` stays a
+  write-nothing simulation (its values are not checked as writes), and the pre-17 flat
+  `field_onchange` argument, which carries no nested context, still runs.
 - An expired `call` method list is now ignored, not turned into a blanket refusal. A method
   list is an allowance, so expiry drops it exactly as it drops a `true` value: the operation
   falls through to the profile and only a `false` refusal survives. After a temporary

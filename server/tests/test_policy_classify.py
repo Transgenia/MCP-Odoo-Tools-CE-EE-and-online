@@ -95,7 +95,13 @@ def test_method_classes(method: str, cls: str, ops: tuple[str, ...]) -> None:
 def test_every_value_checked_method_has_an_argument_shape() -> None:
     checked = READ_METHODS | CREATE_METHODS | WRITE_METHODS | CREATE_WRITE_METHODS | UNLINK_METHODS
     assert {method_class(m) for m in checked} == VALUE_CHECKED
-    assert checked == set(ARG_SHAPES)
+    assert checked <= set(ARG_SHAPES)
+    # The only shape beyond the value-checked methods is onchange, a call-class simulation
+    # whose fields_spec is read for the contexts nested in it (and its read paths), never as
+    # a write. A call-class method needs no shape unless it carries such a specification.
+    extra = set(ARG_SHAPES) - checked
+    assert extra == {"onchange"}
+    assert all(method_class(m) == "call" for m in extra)
 
 
 def test_the_shapes_agree_with_the_json2_signature_table() -> None:

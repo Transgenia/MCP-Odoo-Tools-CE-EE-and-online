@@ -121,6 +121,8 @@ GROUPING_SETS = "grouping_sets"  # read_grouping_sets: a list of groupby-term li
 PROGRESS_BAR = "progress_bar"  # read_progress_bar's progress_bar: its 'field' and 'sum_field'
 ORDER = "order"  # an order clause: 'name desc, partner_id.name'
 SPEC = "specification"  # a web_read specification, nested through "fields"
+ONCHANGE_SPEC = "onchange_specification"  # onchange's fields_spec (17+ web_read form, or the
+#                                           pre-17 flat field_onchange map)
 GROUPBY_SPEC = "groupby_specification"  # {groupby field: specification of its records}
 EXPORT = "export"  # export_data paths: 'partner_id/name', 'id'
 COLUMNS = "columns"  # load() columns, the same syntax as export paths
@@ -262,6 +264,15 @@ ARG_SHAPES: dict[str, ArgShape] = {
     # ids the caller already holds) but it still leaks a withheld field one guess at
     # a time, so its domain is read like any other.
     "filtered_domain": ArgShape(True, (("domain", DOMAIN),)),
+    # onchange(values, field_names, fields_spec) on 17+ (the pre-17 names are field_name and
+    # field_onchange): a write-nothing simulation, class "call". Only the specification is
+    # read, for the contexts nested in it (a list default hidden there is refused) and its
+    # read paths; its values are the record's existing lines and are NOT checked as a write
+    # (the call-class backstop scans them without expanding, design 4.7). Read by name and
+    # positionally; open_keywords lets the pre-17 keyword names pass without a shape refusal,
+    # and the flat pre-17 spec collects nothing.
+    "onchange": ArgShape(True, (("values", None), ("field_names", None),
+                                ("fields_spec", ONCHANGE_SPEC)), open_keywords=True),
     # writes
     "create": ArgShape(False, (("vals_list", VALUES),), aliases={"vals": "vals_list"}),
     "name_create": ArgShape(False, (("name", None),)),
@@ -406,6 +417,8 @@ def _collect(out: CallArgs, role: str | None, value: Any) -> None:
         out.paths.extend(order_paths(value, method=method))
     elif role == SPEC:
         out.paths.extend(specification_paths(value, method=method, contexts=out.contexts))
+    elif role == ONCHANGE_SPEC:
+        out.paths.extend(onchange_spec_paths(value, method=method, contexts=out.contexts))
     elif role == GROUPBY_SPEC:
         out.paths.extend(groupby_specification_paths(value, method=method,
                                                      contexts=out.contexts))
@@ -631,6 +644,25 @@ def specification_paths(spec: Any, *, method: str = "specification",
         if "context" in sub and contexts is not None:
             contexts.append(sub["context"])
     return paths
+
+
+def onchange_spec_paths(spec: Any, *, method: str = "onchange",
+                        contexts: list[Any] | None = None) -> list[tuple[str, ...]]:
+    """``onchange``'s fourth argument. Odoo 17+ passes ``fields_spec``, a web_read
+    specification ``{field: {"fields": {...}, "context": {...}}}`` whose nested contexts
+    must be collected like any other (a list default hidden in one is refused). Odoo 10-16
+    passes ``field_onchange``, a flat ``{dotted field path: marker}`` map with no nested
+    context, which is not a specification.
+
+    A context can sit only inside an entry object, so any spec that carries one has a
+    Mapping (or ``None``) value and is walked as a 17+ specification; a spec whose values are
+    all plain markers is the pre-17 flat form and carries nothing to collect. ``onchange``
+    writes nothing and stays class ``call``, and the flat form never fails closed here."""
+    if not isinstance(spec, Mapping):
+        return []
+    if any(sub is None or isinstance(sub, Mapping) for sub in spec.values()):
+        return specification_paths(spec, method=method, contexts=contexts)
+    return []
 
 
 def groupby_specification_paths(spec: Any, *, method: str = "groupby_specification",

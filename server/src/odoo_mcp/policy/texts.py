@@ -142,6 +142,17 @@ CONTEXT_DEFAULT_HINT = ("context key {key} holds a list or an object, and Odoo a
                         "lines and records of other models, so it cannot be checked; pass those "
                         "values in the record's values, where they are checked, or use profile "
                         "'full' (the user sets it in the plugin option 'Permission profile')")
+# A plain default_<field> naming a structural field (a delegation link, or an attachment's
+# visibility or binding) on a call that can create a record: it rides the nested record Odoo
+# creates past the checks, which run only against the call's top model.
+CONTEXT_STRUCTURAL_DEFAULT_HINT = ("context key {key} sets a field that binds or exposes a "
+                                   "related record (a delegation link, or an attachment's "
+                                   "visibility or binding), and Odoo applies a context default "
+                                   "to every record the call creates, including nested records "
+                                   "of other models, so it cannot be checked against the model "
+                                   "this call names; pass the value in the record's values, "
+                                   "where it is checked, or use profile 'full' (the user sets it "
+                                   "in the plugin option 'Permission profile')")
 CALL_LIST_HINT = "method '{method}' is not among the methods allowed on '{model}' ({list})"
 FILE_HINT = "the policy file rule '{key}' refuses it"
 INVALID_MODEL_HINT = ("the model name is not a valid Odoo model name (lowercase letters, digits, "
@@ -362,6 +373,14 @@ def context_default(policy: Policy, op: str, model: str, key: Any, *,
     named (when it is a plain identifier), its value never is."""
     return _check(policy, op, model, "context",
                   CONTEXT_DEFAULT_HINT.format(key=plain_name(key)), layer=layer)
+
+
+def context_structural_default(policy: Policy, op: str, model: str, key: Any, *,
+                               layer: str = "A") -> PolicyDenied:
+    """A plain ``default_<field>`` naming a structural field on a creating call: the key is
+    named (when it is a plain identifier), its value never is."""
+    return _check(policy, op, model, "context",
+                  CONTEXT_STRUCTURAL_DEFAULT_HINT.format(key=plain_name(key)), layer=layer)
 
 
 def shape(policy: Policy, op: str, model: str, *, detail: str, method: str | None = None,

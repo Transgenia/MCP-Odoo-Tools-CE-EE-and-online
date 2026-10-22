@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-TIERS_VERSION = "2026-10-22.1"
+TIERS_VERSION = "2026-10-22.2"
 
 OPERATIONS = ("read", "create", "write", "unlink", "call", "schema")
 WRITE_OPERATIONS = frozenset(OPERATIONS) - {"read"}
@@ -189,6 +189,17 @@ DELEGATES: dict[str, tuple[str, str]] = {
     "product.document": ("ir.attachment", "ir_attachment_id"),  # 17+, best-effort
     "documents.document": ("ir.attachment", "attachment_id"),  # EE, up to 17, best-effort
 }
+
+# The ir.attachment fields the create/write rules (4.5) treat as structural, and the one
+# place they are named: public and res_field are refused outright (a public attachment is
+# downloadable without a login; res_field marks a field attachment), and res_model must
+# point at a parent the agent may write. A plain default_<field> naming one of these,
+# except default_res_model and default_res_id, is refused by construction (policy/check.py),
+# because Odoo applies a context default to the nested attachment a call creates, which no
+# check against the call's top model can follow. res_model and res_id stay allowed, since
+# activity and composer flows pass default_res_model / default_res_id; a nested attachment
+# bound through them during a call is an accepted, documented limit (docs/policy.md).
+ATTACHMENT_STRUCTURAL_FIELDS = frozenset({"public", "res_field", "res_model"})
 
 # many2many links to a write-withheld (tier) model that only REFERENCE it: adding or
 # removing one changes no field of the target and grants no right, so it counts as a

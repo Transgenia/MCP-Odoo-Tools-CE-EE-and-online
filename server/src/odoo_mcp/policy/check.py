@@ -51,8 +51,8 @@ from .classify import (
     named_parts,
     valid_method,
 )
-from .model import Policy, Touch, model_aliases
-from .tiers import INSPECT, SAFE_CONTEXT_KEYS
+from .model import Policy, Touch, model_aliases, model_tiers
+from .tiers import ATTACHMENT_STRUCTURAL_FIELDS, DELEGATES, INSPECT, NEVER, SAFE_CONTEXT_KEYS
 
 __all__ = [
     "EFFECTIVE_LIMIT",
@@ -102,6 +102,42 @@ ATTACHMENT = "ir.attachment"
 _PLAIN_VALUE = (str, int, float, bool, type(None))
 _FIELD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,127}")
 EFFECTIVE_LIMIT = 50  # the audit keeps at most 50 effective touches per call
+
+
+def _sensitive_parent(parent: str) -> bool:
+    """Whether a delegation parent is one whose link must never be set from the generic
+    tools: ir.attachment (its content rides the child), a model in a tier, or a NEVER
+    model. Computed over the model's aliases, so a renamed parent still matches."""
+    names = model_aliases(parent)
+    if ATTACHMENT in names:
+        return True
+    if any(model_tiers(name) for name in names):
+        return True
+    return any(entry.model in names for entry in NEVER)
+
+
+# Field names that a plain ``default_<field>`` must not carry under the sealed profiles,
+# because Odoo applies the default to every record a call creates (the record it names, its
+# nested x2many lines, and the records a business method, a wizard or an import creates), so
+# the structural value rules (delegation link 4.4, ir.attachment create 4.5) that would
+# catch the same key in ``values`` cannot be applied against the one model a call names.
+# Derived from the policy's own data, so a new DELEGATES row or a change to 4.5's structural
+# fields is covered automatically:
+#   (a) the link field of every delegation whose parent is sensitive (``_sensitive_parent``);
+#   (b) ir.attachment's structural fields except res_model and res_id (public, res_field).
+# res_model and res_id stay allowed: activity and composer flows pass
+# default_res_model / default_res_id, and a nested attachment bound through them during a
+# call is an accepted, documented limit (docs/policy.md). The guard refuses the same fields
+# as a ``values`` key on the model a call names, so the two paths cannot drift.
+_DELEGATION_LINK_FIELDS = frozenset(
+    link for parent, link in DELEGATES.values() if _sensitive_parent(parent))
+STRUCTURAL_DEFAULT_FIELDS = _DELEGATION_LINK_FIELDS | (
+    ATTACHMENT_STRUCTURAL_FIELDS - frozenset({"res_model", "res_id"}))
+# The method-class operations of a call that can create a record, directly or through a
+# nested command or a business method, so Odoo applies its context defaults to a created
+# record. A read, an inspect or an unlink creates nothing, so a plain structural default is
+# inert there and is not refused (design 4.11: the create-only rules skip a read).
+_STRUCTURAL_DEFAULT_OPS = frozenset({"create", "write", "call"})
 
 
 @dataclass
@@ -288,8 +324,13 @@ def _check_arguments(policy: Policy, tool: Any, access: Any, model: str,
     _check_fields(policy, model, parts, write_op)
     rules_on = policy.profile is not None and not policy.profile.rules_off
     if rules_on:
+        # Whether the call creates a record decides if a plain structural default is refused
+        # (it rides a create) or inert (a read). odoo_execute names the method; a dedicated
+        # tool collects no agent context, so its gate never fires. The refusal keeps its
+        # Layer A label ('call'); only the structural gate reads the real class.
+        creating = method is not None and method_ops(method)[0] in _STRUCTURAL_DEFAULT_OPS
         for context in contexts:
-            check_context(policy, model, context)
+            check_context(policy, model, context, creating=creating)
         if ATTACHMENT in model_aliases(model):
             searches = method in SEARCH_METHODS if method is not None else (
                 "domain" in tool.input_schema.get("properties", {}) and "read" in access.arg_ops)
@@ -333,7 +374,7 @@ def _context(context: Any, label: str) -> Mapping[str, Any]:
 
 
 def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op: str = "call",
-                  layer: str = "A") -> None:
+                  layer: str = "A", creating: bool | None = None) -> None:
     """Every key is a safe one, or ``default_<field>`` with a plain value (text, a number,
     a boolean or null) for a field that is not withheld. The keys that silence chatter
     tracking are refused.
@@ -345,9 +386,21 @@ def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op:
     business method, a wizard or an import creates. Such a value (x2many commands, ids,
     nested values) cannot be decided against the one model a call names, so it is not
     decided at all: the refusal names the key, never its value, and the remedy is the
-    record's values, which are checked. The guarded session runs this same function on every
-    actual call (Layer B), so the two layers cannot drift apart.
+    record's values, which are checked.
+
+    For the same reason a plain ``default_<field>`` naming a structural field
+    (``STRUCTURAL_DEFAULT_FIELDS``: a delegation link, or an ir.attachment visibility or
+    binding field) is refused on a call that can create a record: it would ride a nested
+    create past the delegation-link (4.4) and ir.attachment (4.5) rules, which run only
+    against the call's top model. On a read the default fills nothing, so it is left alone
+    (design 4.11). ``creating`` says whether this call creates; when it is ``None`` it is
+    read from ``op`` (the Layer B op is the real one), so Layer A passes it explicitly while
+    keeping ``op`` at its label value.
+
+    The guarded session runs this same function on every actual call (Layer B), so the two
+    layers cannot drift apart.
     """
+    creates = (op in _STRUCTURAL_DEFAULT_OPS) if creating is None else creating
     for key, value in context.items():
         if not isinstance(key, str):
             raise texts.context(policy, op, model, key, layer=layer)
@@ -357,8 +410,11 @@ def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op:
             if not isinstance(value, _PLAIN_VALUE):
                 raise texts.context_default(policy, op, model, key, layer=layer)
             name = key[len("default_"):]
-            if _FIELD_NAME.fullmatch(name) and not policy.field_withheld(model, name):
-                continue
+            if _FIELD_NAME.fullmatch(name):
+                if creates and name in STRUCTURAL_DEFAULT_FIELDS:
+                    raise texts.context_structural_default(policy, op, model, key, layer=layer)
+                if not policy.field_withheld(model, name):
+                    continue
         raise texts.context(policy, op, model, key, layer=layer)
 
 

@@ -70,7 +70,7 @@ from .classify import (
     valid_model,
 )
 from .model import Policy, model_aliases
-from .tiers import DELEGATES, INSPECT, REFERENCE_LINKS
+from .tiers import ATTACHMENT_STRUCTURAL_FIELDS, DELEGATES, INSPECT, REFERENCE_LINKS
 
 __all__ = [
     "SYSTEM_CALLS",
@@ -115,6 +115,11 @@ USERS = "res.users"
 AUTOMATION = "$automation"  # registry.Internal: base.automation (base.action.rule on 10)
 # Fields of ir.attachment that hold the file itself.
 CONTENT_FIELDS = frozenset({"datas", "raw", "db_datas"})
+# The ir.attachment structural fields the create/write rule (4.5) refuses outright: the
+# structural set minus res_model, which is instead required to name a writable parent.
+# policy/check.py refuses the same fields as a plain default_<field> (minus res_id, which
+# is not structural), so the two paths cannot drift.
+ATTACHMENT_REFUSED_FIELDS = ATTACHMENT_STRUCTURAL_FIELDS - frozenset({"res_model"})
 # Write-nothing simulation verbs: onchange(values, field_names, field_onchange) saves
 # nothing, so the x2many commands in its values are the record's existing lines, not a
 # write. The call-class backstop must not expand them as writes or unlinks of the
@@ -675,19 +680,20 @@ class GuardedSession:
                                 cls: str) -> None:
         """A plain ``default_<field>`` context key fills a field of the record this call
         creates, so Odoo applies it exactly as the same key in ``values`` would
-        (``_add_missing_default_values``, design 6.5/6.6): the metadata-free structural
-        value rules -- the delegation link (4.4) and the ir.attachment create rules (4.5:
-        public/res_field/res_model) -- run over the defaults, so
-        ``default_ir_attachment_id`` re-pointing a delegating child,
-        ``default_public``/``default_res_field``, or ``default_res_model`` on a write-sealed
-        model are refused exactly as the identical ``values`` key is. They are decided
-        against the model the call names, for a class that creates records
-        (``DEFAULT_APPLYING_CLASSES``); on a read a default fills nothing, so applying them
-        there would be a false refusal.
+        (``_add_missing_default_values``, design 6.5/6.6): the metadata-free structural value
+        rules -- the delegation link (4.4) and the ir.attachment create rules (4.5:
+        public/res_field/res_model) -- run over the defaults, against the model the call
+        names, for a class that creates records (``DEFAULT_APPLYING_CLASSES``); on a read a
+        default fills nothing, so applying them there would be a false refusal.
 
-        ``check_context`` has already refused a default whose value is a list or an object
-        (x2many commands, ids, nested values), on this layer as on Layer A, so every default
-        left here is plain. The caller has checked ``rules_on``."""
+        ``check_context`` (run first, on both layers) has already refused a default whose
+        value is a list or an object, and a scalar default naming a sensitive delegation link,
+        ``public`` or ``res_field`` on a creating call (``STRUCTURAL_DEFAULT_FIELDS``),
+        whatever model the call names. What this adds is the check that only metadata here can
+        make: a ``default_res_model`` on a direct create of the attachment, or of a child that
+        delegates to it, must name a parent the agent may ``write`` (``default_res_model`` and
+        ``default_res_id`` stay allowed as keys, so a nested attachment bound through them is
+        an accepted limit). The caller has checked ``rules_on``."""
         if cls not in DEFAULT_APPLYING_CLASSES:
             return
         defaults = {key[len("default_"):]: value for key, value in context.items()
@@ -1148,7 +1154,7 @@ class GuardedSession:
     def _check_attachment_values(self, op: str, values: Mapping[str, Any]) -> None:
         """4.5, create and write: never public, never a field of a record, and the
         parent model must allow write."""
-        if values.get("res_field") or values.get("public"):
+        if any(values.get(name) for name in ATTACHMENT_REFUSED_FIELDS):
             raise texts.attachment_create(self._policy, op)
         parent = values.get("res_model")
         if parent:

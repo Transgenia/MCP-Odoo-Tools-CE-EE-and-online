@@ -289,8 +289,9 @@ value (text, number, boolean or null) on a field that is not withheld.
 
 **A `default_<field>` that holds a list or an object is refused** (rule
 `context`), before anything is sent to Odoo, for every tool, method and model and
-wherever the context sits (`kwargs["context"]`, or a context nested in a read
-specification): x2many commands (`[(0, 0, {...})]`, `[(4, id)]`,
+wherever the context sits (`kwargs["context"]`, a context nested in a read
+specification, or one nested in `onchange`'s `fields_spec`): x2many commands
+(`[(0, 0, {...})]`, `[(4, id)]`,
 `[(6, 0, ids)]`), a bare id list, nested values, even an empty list. Odoo applies a
 context default to every record created while the call runs: the record the call
 names, the lines its x2many commands create, and the records of other models that
@@ -312,16 +313,23 @@ instead of its action's `default_mrp_production_ids` and
 `default_mrp_production_backorder_line_ids` keys, and the stock backorder wizard
 with `pick_ids: [(4, id)]` in values instead of `default_pick_ids`.
 
-Odoo applies a plain default exactly as the identical key in `values`, so on a call
-that creates records, or may (create, `copy`, `name_create`, `web_save`, `load` and
-business methods), the structural rules that guard `values` run over the plain
-defaults too, against the model the call names: a `default_<link field>` of a
-delegating child (`default_ir_attachment_id`), and `default_public`,
-`default_res_field` or a `default_res_model` on a write-sealed model for an
-`ir.attachment` (or a child that delegates to it), are refused just as the identical
-key in `values` is (delegation-link, 4.4; `ir.attachment` create, 4.5). On a read a
-default fills nothing, so these rules do not run there: a pinned `ir.attachment`
-search whose context names the record's parent runs.
+Odoo applies a plain default exactly as the identical key in `values`, and it rides
+every record a call creates, a nested line of another model included (a
+`product.document` an x2many command builds during a write on `product.template`). So a
+plain `default_<field>` naming a **structural field** is refused by construction under
+the sealed profiles, on a call that can create a record (not a read, where it fills
+nothing): the link field of a delegation whose parent is sensitive
+(`default_ir_attachment_id`, `default_view_id`, and the other `DELEGATES` links to
+`ir.attachment`, a tier or a NEVER model), and `default_public` or `default_res_field`,
+are refused before anything is sent, with rule `context` and the remedy above. The
+refusal does not depend on the model the call names, since the `values` checks it mirrors
+(delegation-link 4.4, `ir.attachment` create 4.5) run only against that top model and
+cannot follow a nested create. A direct create of the model also still meets the `values`
+rules.
+
+`default_res_model` and `default_res_id` stay allowed: activity scheduling and the mail
+composer pass them to bind a new record to another. The known limits note the one thing
+this accepts.
 
 The stock and manufacturing validation
 wizards need some of these keys: without, for example, `button_validate_picking_ids`
@@ -844,3 +852,14 @@ To add a tool:
 7. **Inference** from counts and aggregates is not prevented.
 8. **In stdio, an agent with a shell can go around the policy**, and `builder`
    equals `full` for confidentiality.
+9. **A nested attachment can be bound to a record through a context default.**
+   `default_res_model` and `default_res_id` stay allowed, because activity
+   scheduling and the mail composer pass them, so a call that creates a nested
+   `ir.attachment` (directly, or through a delegating child such as
+   `product.document`) can set that attachment's `res_model` and `res_id` from the
+   context, binding it to another record. A direct create of the attachment with
+   these values is still checked (the parent must allow `write`); only the
+   nested-create path, which no check against the call's top model can follow, is
+   accepted. `public` and `res_field`, which would make the attachment
+   world-downloadable or a field attachment, are refused as defaults, so this binds
+   an attachment, it does not expose one.
