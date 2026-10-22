@@ -121,6 +121,12 @@ CONTENT_FIELDS = frozenset({"datas", "raw", "db_datas"})
 # comodel (its result is still redacted, so nothing leaks), or previewing a quotation
 # that already has lines would be refused under standard (design 4.7 keeps it working).
 SIMULATION_METHODS = frozenset({"onchange"})
+# The method classes whose calls create records, so Odoo applies the context
+# default_<field> keys to them (_add_missing_default_values runs on create, not on a
+# read, write or unlink). The create-only default rules -- the structural value rules
+# and the x2many command decision -- run only for these classes; on a read or a write a
+# default_<field> fills nothing, so applying them there is a false refusal (design 4.11).
+DEFAULT_APPLYING_CLASSES = frozenset({"create", "create_write", "call"})
 _FIELD = re.compile(r"[A-Za-z0-9_]+")
 # A whole string that is a groupby/aggregate term: 'field', 'field:function' or
 # 'name:function(source)', dotted paths allowed (classify._TERM, anchored at both
@@ -586,7 +592,7 @@ class GuardedSession:
             self._columns_checked = True
             self._check_tool_columns()
         if self._rules_on():
-            self._check_contexts(model, method, parts, ops[0])
+            self._check_contexts(model, method, parts, cls)
         if model in model_aliases(ATTACHMENT) and cls == "read":
             self._check_attachment_content(view, parts)
         return _Plan(model, method, cls, view.args, view.kwargs, record_ids=view.record_ids,
@@ -618,7 +624,7 @@ class GuardedSession:
         rules_on = self._rules_on()
         # 7. the context keys
         if rules_on:
-            self._check_contexts(model, method, parts, ops[0])
+            self._check_contexts(model, method, parts, cls)
         # 6. what the call reads, filters, groups or sorts on
         for path in parts.paths:
             self._check_path(model, method, path)
@@ -649,35 +655,48 @@ class GuardedSession:
                      redact=cls != INSPECT)
 
     # -- 7. context ---------------------------------------------------------------------
-    def _check_contexts(self, model: str, method: str, parts: CallArgs, op: str) -> None:
+    def _check_contexts(self, model: str, method: str, parts: CallArgs, cls: str) -> None:
+        op = CLASS_OPS[cls][0]
         for context in parts.contexts:
             if context is None:
                 continue
             if not isinstance(context, Mapping):
                 raise self._shape(op, model, "the context is not an object", method)
             check_context(self._policy, model, context, op=op, layer="B")
-            self._check_context_defaults(model, method, context)
+            self._check_context_defaults(model, method, context, cls)
 
-    def _check_context_defaults(self, model: str, method: str, context: Mapping[str, Any]) -> None:
+    def _check_context_defaults(self, model: str, method: str, context: Mapping[str, Any],
+                                cls: str) -> None:
         """A ``default_<field>`` context key fills a field of the record this call creates,
         so Odoo applies it exactly as the same key in ``values`` would
-        (``_add_missing_default_values``, design 6.5/6.6). ``check_context`` already refused
-        a withheld default and an x2many default carrying create/write/delete commands or
-        nested values structurally; here, with field metadata, the two remaining classes
-        are closed against the actual models:
+        (``_add_missing_default_values``, design 6.5/6.6). A default fills nothing on a
+        read, a write or an unlink (Odoo runs ``_add_missing_default_values`` only on
+        create), so the create-only rules run only for a class that creates records; on any
+        other class a ``default_<field>`` is inert and checking it is a false refusal.
+
+        For a creating class, every default is decided exactly as the identical ``values``
+        key would be:
 
           * the metadata-free structural value rules -- the delegation link (4.4) and the
             ir.attachment create rules (4.5: public/res_field/res_model) -- run over the
             defaults, so ``default_ir_attachment_id`` re-pointing a delegating child,
             ``default_public``/``default_res_field``, or ``default_res_model`` on a
             write-sealed model are refused exactly as the identical ``values`` key is;
-          * a remaining x2many link command (``default_user_ids: [(4, id)]``) is decided
-            against the actual comodel, so a default that re-parents a user or grants into
-            a security model (a ``default_<m2m>`` into a sealed model) is refused too.
+          * an x2many ``default_<field>`` list is handed to the same ``_check_commands`` a
+            ``values`` key takes, so a create/write/delete command is decided against the
+            comodel (``default_mrp_production_backorder_line_ids`` creates a business line
+            and runs; ``default_user_ids``/``default_bank_ids`` reach a sealed tier and are
+            refused) and a list that is not a clean command list fails closed with rule
+            ``shape``, exactly as ``values`` does. Sharing ``_check_commands`` is what keeps
+            the two paths from drifting: a list the ``values`` path would refuse cannot pass
+            here, whatever its shape.
 
         A ``default_<field>`` the model's ``fields_get`` does not know (a wizard default
-        whose field is defined only on the transient) carries no decidable comodel and is
-        left to Odoo, which refuses an unknown field. The caller has checked ``rules_on``."""
+        whose field lives only on the transient, such as ``default_pick_ids``) carries no
+        decidable comodel; Odoo ignores an unknown field on create, so it is left to Odoo.
+        The caller has checked ``rules_on``."""
+        if cls not in DEFAULT_APPLYING_CLASSES:
+            return
         defaults = {key[len("default_"):]: value for key, value in context.items()
                     if isinstance(key, str) and key.startswith("default_")}
         if defaults:
@@ -689,14 +708,15 @@ class GuardedSession:
                 continue
             if meta is None:
                 meta = self._fields(model)
-            info = meta.get(key[len("default_"):])
-            if (isinstance(info, Mapping) and info.get("type") in X2MANY
-                    and _commands(value) is not None):
-                comodel = info.get("relation")
-                if not valid_model(comodel):
-                    raise _Unverified()
-                self._check_commands(model, method, key[len("default_"):], str(info["type"]),
-                                     comodel, value, creating=True, depth=0)
+            field = key[len("default_"):]
+            info = meta.get(field)
+            if not (isinstance(info, Mapping) and info.get("type") in X2MANY):
+                continue  # not a known x2many field: Odoo applies the scalar or ignores it
+            comodel = info.get("relation")
+            if not valid_model(comodel):
+                raise _Unverified()
+            self._check_commands(model, method, field, str(info["type"]), comodel, value,
+                                 creating=True, depth=0)
 
     # -- field metadata -----------------------------------------------------------------
     def _fields(self, model: str) -> Mapping[str, Any]:
@@ -832,10 +852,14 @@ class GuardedSession:
                                       layer="B")
                 info = meta[key]
                 if (isinstance(info, Mapping) and info.get("type") in X2MANY
-                        and isinstance(value, (list, tuple)) and _commands(value) is not None):
+                        and isinstance(value, (list, tuple))):
                     comodel = info.get("relation")
                     if not valid_model(comodel):
                         raise _Unverified()
+                    # Hand the list to the same _check_commands a values key takes: a
+                    # recognised write command is decided against the comodel, and a list
+                    # that is not a clean command list fails closed with rule shape, so a
+                    # mixed command/id list cannot slip past as a plain nested value.
                     self._check_commands(model, method, key, str(info["type"]), comodel,
                                          value, creating=False, depth=0)
                     continue

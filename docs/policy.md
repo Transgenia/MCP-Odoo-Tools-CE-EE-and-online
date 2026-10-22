@@ -285,28 +285,40 @@ notifies nobody by e-mail.
 ### Context keys
 
 A call may carry only these context keys, plus `default_<field>` with a plain
-value (text, number, boolean or null) or a link-only list (a wizard default such
-as `default_pick_ids: [(4, id)]`) on a field that is not withheld. A list that
-carries a create, write or delete command (`(0, _, vals)`, `(1, id, vals)`,
-`(2, id)`) or nested values is a relational write channel: Odoo applies a
-`default_<field>` to the record a create fills, so the command would run against
-the comodel, and the identical command in `values` is expanded and refused. Such
-a list is refused as a context key, and the guard decides the remaining link
-commands against the actual comodel. A plain-value default meets the same
-structural value rules as a `values` key for the same field: a `default_<link
-field>` of a delegating child (`default_ir_attachment_id`), and `default_public`,
-`default_res_field` or a `default_res_model` on a write-sealed model for an
-`ir.attachment` (or a child that delegates to it), are refused just as the
-identical key in `values` is (delegation-link, 4.4; `ir.attachment` create, 4.5).
+value (text, number, boolean or null) or a list, on a field that is not withheld.
+Odoo applies a `default_<field>` to the record a create fills
+(`_add_missing_default_values`), so each default is decided exactly as the
+identical key in `values` is, and only for a call that creates records: on a read,
+a write or an unlink a `default_<field>` fills nothing, so it is inert and is not
+checked (checking it there would refuse a legitimate read, such as a pinned
+`ir.attachment` search whose context names the record's parent). For a creating
+call:
+
+- a `default_<x2many>` list is handed to the same command check a `values` key
+  takes, so a create, write or delete command (`(0, _, vals)`, `(1, id, vals)`,
+  `(2, id)`) is decided against the comodel -- a line on a business model runs (the
+  MRP backorder wizard's `default_mrp_production_backorder_line_ids`), a record in a
+  sealed tier is refused (`default_bank_ids`, `default_user_ids`) -- and a list that
+  is not a clean command list fails closed, exactly as `values` does. A link-only
+  wizard default on a field the transient defines (`default_pick_ids: [(4, id)]`)
+  still runs;
+- a `default_<link field>` of a delegating child (`default_ir_attachment_id`), and
+  `default_public`, `default_res_field` or a `default_res_model` on a write-sealed
+  model for an `ir.attachment` (or a child that delegates to it), are refused just
+  as the identical key in `values` is (delegation-link, 4.4; `ir.attachment`
+  create, 4.5).
+
 The stock and manufacturing validation
 wizards need some of these keys: without, for example, `button_validate_picking_ids`
 or `skip_backorder`, the wizard returns `True` and validates nothing. The invoice
 Confirm/Post button sends `validate_analytic` (16+), which `account.move._post`
-reads to force analytic-distribution validation. None of the allowed keys suppress
-chatter tracking.
+reads to force analytic-distribution validation, and the Odoo web client puts the
+signed-in user's id in `uid` on every call; it is informational, since the acting
+user is the authenticated session, not `context['uid']`. None of the allowed keys
+suppress chatter tracking.
 
 <!-- generated:context-keys -->
-`active_id`, `active_ids`, `active_model`, `active_test`, `allowed_company_ids`, `bin_size`, `button_validate_picking_ids`, `lang`, `location`, `mail_create_nosubscribe`, `mo_ids_to_backorder`, `picking_ids_not_to_backorder`, `read_group_expand`, `skip_backorder`, `skip_immediate`, `tz`, `validate_analytic`, `warehouse`
+`active_id`, `active_ids`, `active_model`, `active_test`, `allowed_company_ids`, `bin_size`, `button_validate_picking_ids`, `lang`, `location`, `mail_create_nosubscribe`, `mo_ids_to_backorder`, `picking_ids_not_to_backorder`, `read_group_expand`, `skip_backorder`, `skip_immediate`, `tz`, `uid`, `validate_analytic`, `warehouse`
 <!-- /generated:context-keys -->
 
 `tracking_disable`, `mail_notrack` and `mail_create_nolog` are absent on

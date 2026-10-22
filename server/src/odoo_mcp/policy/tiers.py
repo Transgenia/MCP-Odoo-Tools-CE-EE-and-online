@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-TIERS_VERSION = "2026-10-21.3"
+TIERS_VERSION = "2026-10-22.1"
 
 OPERATIONS = ("read", "create", "write", "unlink", "call", "schema")
 WRITE_OPERATIONS = frozenset(OPERATIONS) - {"read"}
@@ -253,6 +253,12 @@ WITHHELD_MODEL_FIELDS = frozenset({
 SAFE_CONTEXT_KEYS = frozenset({
     "lang", "tz", "active_test", "allowed_company_ids", "active_model", "active_id",
     "active_ids", "bin_size", "read_group_expand", "mail_create_nosubscribe",
+    # uid: the Odoo web client puts the signed-in user's id in every call's context. It
+    # is informational -- the acting user is the authenticated session, not context['uid']
+    # -- and suppresses no chatter tracking, so a replayed web-client context (which
+    # carries it) runs. action_post / action_confirm with the real web context were
+    # refused on this key alone before it was added (design section 10).
+    "uid",
     # stock / mrp validation wizards (design finding): they validate only the records
     # the context names; without the key the wizard returns True and changes nothing.
     "button_validate_picking_ids", "skip_backorder", "picking_ids_not_to_backorder",

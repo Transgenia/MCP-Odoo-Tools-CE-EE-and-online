@@ -99,12 +99,6 @@ SEARCH_METHODS = frozenset({"search", "search_read", "search_count", "read_group
 ATTACHMENT = "ir.attachment"
 _PLAIN_VALUE = (str, int, float, bool, type(None))
 _FIELD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,127}")
-# x2many commands that only link, unlink-by-id, clear or replace existing records
-# (3 remove a link, 4 add a link, 5 clear, 6 set to ids): they carry no values dict,
-# so they cannot create or write a comodel record through a context default. A
-# (0, _, vals) create, a (1, id, vals) write or a (2, id) delete carries that payload
-# and is refused structurally, before any metadata.
-_LINK_COMMANDS = frozenset({3, 4, 5, 6})
 EFFECTIVE_LIMIT = 50  # the audit keeps at most 50 effective touches per call
 
 
@@ -336,55 +330,30 @@ def _context(context: Any, label: str) -> Mapping[str, Any]:
     return context
 
 
-def _default_list_is_link_only(value: Any) -> bool:
-    """Whether a ``default_<x2many>`` list carries only ids and link commands.
-
-    Odoo applies a ``default_<field>`` context key to the record a create fills
-    (``_add_missing_default_values``), so an x2many command in the value runs
-    against the comodel exactly as one in ``values`` does. A link command
-    (3/4/5/6) or a bare id list re-points existing records and carries no payload;
-    a ``(0, _, vals)`` create, a ``(1, id, vals)`` write or a ``(2, id)`` delete
-    would create, change or remove a comodel record -- possibly in a sealed tier --
-    and is refused here, in both layers, without any field metadata. The guarded
-    session then decides the link commands against the actual comodel (design 6.6).
-    """
-    for item in value:
-        if isinstance(item, bool):
-            return False
-        if isinstance(item, int):
-            continue  # a bare id, the 6-command shorthand
-        if not isinstance(item, (list, tuple)) or not item:
-            return False
-        number = item[0]
-        if isinstance(number, bool) or not isinstance(number, int) or number not in _LINK_COMMANDS:
-            return False
-        if any(isinstance(part, Mapping) for part in item):
-            return False  # a vals payload rides no link command
-    return True
-
-
 def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op: str = "call",
                   layer: str = "A") -> None:
-    """Every key is a safe one, or ``default_<field>`` with a plain value, or a
-    link-only list, for a field that is not withheld. The keys that silence chatter
-    tracking are refused."""
+    """Every key is a safe one, or ``default_<field>`` with a plain value or a list,
+    for a field that is not withheld. The keys that silence chatter tracking are refused.
+
+    A ``default_<field>`` whose value is a list carries x2many commands that Odoo applies
+    to the record a create fills (``_add_missing_default_values``), so the command decision
+    needs the comodel and is left to the guarded session, which checks the list through the
+    very same ``_check_commands`` an identical ``values`` key takes (design 4.11 / 6.5):
+    the two paths cannot drift apart. This layer, without field metadata, only gates the
+    key -- a safe key, or ``default_<field>`` with a plain or list value for a field that is
+    not withheld. Everything else (a withheld default, a tracking-suppression key, a dict
+    value, an unknown key) is refused here, before any session exists.
+    """
     for key, value in context.items():
         if not isinstance(key, str):
             raise texts.context(policy, op, model, key, layer=layer)
         if key in SAFE_CONTEXT_KEYS:
             continue
         name = key[len("default_"):]
-        # default_<field> sets a default on the records this call creates. A plain
-        # value, or a link-only list (the wizard default default_pick_ids: [(4, id)]),
-        # is allowed for a field that is not withheld. A list that carries create/write
-        # commands or nested values is a relational write channel and is refused: the
-        # identical command in `values` is expanded and decided (design 4.11 / 6.5).
         if (key.startswith("default_") and _FIELD_NAME.fullmatch(name)
-                and not policy.field_withheld(model, name)):
-            if isinstance(value, _PLAIN_VALUE):
-                continue
-            if isinstance(value, (list, tuple)) and _default_list_is_link_only(value):
-                continue
+                and not policy.field_withheld(model, name)
+                and isinstance(value, (*_PLAIN_VALUE, list, tuple))):
+            continue
         raise texts.context(policy, op, model, key, layer=layer)
 
 

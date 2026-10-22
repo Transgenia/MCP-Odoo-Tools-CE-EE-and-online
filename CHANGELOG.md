@@ -155,23 +155,45 @@ new option **Permission profile** to `full`. The tool count stays 28.
 - Odoo's stock and manufacturing validation wizards run under `standard`: the context keys
   they need to validate the records named (`button_validate_picking_ids`, `skip_backorder`,
   `picking_ids_not_to_backorder`, `skip_immediate`, `mo_ids_to_backorder`) are allowed, as
-  are `warehouse` and `location` (stock on hand), and `default_<field>` accepts a link-only
-  list such as a wizard's `default_pick_ids: [(4, id)]`. None of the added keys suppress
-  chatter tracking.
+  are `warehouse` and `location` (stock on hand), and `default_<field>` accepts a list such
+  as a wizard's `default_pick_ids: [(4, id)]`. None of the added keys suppress chatter
+  tracking.
 - Posting a customer invoice runs under `standard`: `validate_analytic`, the context key the
   invoice Confirm/Post button sends (16+) so `account.move._post` validates the analytic
   distribution, is allowed. `action_post` was already a business verb; only the context key
   refused the flagship CFDI flow, and no allowed key suppresses chatter tracking.
-- A `default_<x2many>` context key can no longer smuggle a create, write or delete into a
-  sensitive tier. Odoo applies a `default_<field>` to the record a create fills, so an
-  x2many command in the value runs against the comodel exactly as the same command in
-  `values` does. A list that carries a `(0, _, vals)` create, a `(1, id, vals)` write or a
-  `(2, id)` delete, or nested values, is now refused as a context key -- so
-  `default_bank_ids: [(0, 0, {...})]` (create a `res.partner.bank`), `default_user_ids`
-  (create a `res.users`), `default_message_follower_ids` (create a `mail.followers`) and a
-  nested withheld field no longer reach Odoo under `standard` -- and the guard decides the
-  remaining link commands against the actual comodel. A link-only wizard default
-  (`default_pick_ids: [(4, id)]`) still runs.
+- Every `default_<field>` context key is decided exactly as the identical key in `values`,
+  through the one command check, so the context cannot smuggle a write the `values` path
+  would refuse. Odoo applies a `default_<field>` to the record a create fills
+  (`_add_missing_default_values`), so a `default_<x2many>` list is handed to the same
+  `_check_commands` a `values` key takes: a create, write or delete into a sensitive tier is
+  refused (`default_bank_ids: [(0, 0, {...})]` (create a `res.partner.bank`),
+  `default_user_ids` (create a `res.users`), `default_message_follower_ids` (create a
+  `mail.followers`) and a nested withheld field), a line on a business model runs, and a list
+  that is not a clean command list -- a command tuple mixed with a bare id such as
+  `[(4, 4), 99]` -- fails closed with rule `shape`, exactly as `values` does. Sharing the one
+  check closes the channel by construction: the earlier Layer A gate accepted that mixed list
+  as "link-only" while the guard skipped it (fail open), so a `(4, id)` link into a sealed
+  tier reached Odoo under `standard`. The call-class backstop's Mapping scan is closed the
+  same way. A link-only wizard default (`default_pick_ids: [(4, id)]`) still runs.
+- Odoo's manufacturing Mark-as-Done backorder wizard runs under `standard` again. Its action
+  context carries `default_mrp_production_backorder_line_ids` as `(0, 0, vals)` lines on a
+  business model; round four refused every `default_<x2many>` list that was not link-only,
+  structurally at Layer A, which stopped the wizard. The list is now decided against the
+  comodel, exactly as the same lines in `values` are (a create on a business line model), so
+  the wizard runs while the sealed-comodel cases stay refused.
+- The create-only structural default rules (delegation link, `ir.attachment` create) run
+  only for a call that creates records. A `default_<field>` fills nothing on a read, a write
+  or an unlink, so a pinned `ir.attachment` search whose context names the record's parent
+  (`default_res_model: res.partner.bank`, readable but not writable under `standard`) is no
+  longer refused on the create rule, and neither is a read of a delegating child carrying its
+  link-field default. The rules still run for create, `web_save`/`load` and business-method
+  calls.
+- The Odoo web client's `uid` context key is allowed. It carries the signed-in user's id on
+  every call and is informational -- the acting user is the authenticated session, not
+  `context['uid']` -- so `account.move.action_post` and `sale.order.action_confirm` replayed
+  with the real web-client context run; it was the one key the allowlist still refused, and
+  it suppresses no chatter tracking.
 - A scalar `default_<field>` context key can no longer bypass the delegation-link and
   `ir.attachment` create rules. Odoo applies a `default_<field>` on create exactly as a
   value, so the structural value checks that guard `values` now run over the context
