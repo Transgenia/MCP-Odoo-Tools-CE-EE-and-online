@@ -150,6 +150,18 @@ new option **Permission profile** to `full`. The tool count stays 28.
 
 ### Fixed
 
+- Release workflow: a skipped `tag` job no longer skips the release. On a
+  `release: published` event or a tag push the `tag` job does not run, and a job
+  whose condition had no status function got an implicit `success()`, which is false
+  when any job up its `needs` chain was skipped. Publishing the v1.4.1 draft on
+  2026-10-21 therefore ran only `verify`; v1.4.1 was then published with a manual run.
+  Every job after `verify` now starts with `!failure() && !cancelled()`, and
+  `tests/test_release_workflow.py` fails if one loses it.
+- Release workflow: `verify` checks the release state before any publishing job
+  starts (a full run stops while the tag's release is still a draft, and a draft run
+  stops if the tag already has a release), and the moving image tags `latest` and
+  `X.Y` compare against published releases plus the tag being released, so a tag kept
+  by an unpublished draft cannot hold them back.
 - The call-class argument backstop no longer refuses ordinary chatter. It scans a
   business method's arguments with the model's field metadata, so only a string that is
   really a field of the model is checked: an internal note or a customer reply whose body,
