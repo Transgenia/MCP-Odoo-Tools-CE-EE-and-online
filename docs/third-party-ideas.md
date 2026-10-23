@@ -79,6 +79,16 @@ The AGPL/GPL projects of that survey (`rosenvladimirov/odoo-claude-mcp`,
 were read for their READMEs only. Odoo's own source (LGPL-3) was read for
 facts (method names, parameters, access rules), never copied.
 
+## Permission policy (1.5.0): ideas only
+
+The permission policy of 1.5.0 (`server/src/odoo_mcp/policy/`,
+[`policy.md`](policy.md)) takes three ideas from the public Odoo Apps description
+of the OPL-1 `mcp_server` module, and nothing else:
+
+| Idea | Source | What is ours |
+|------|--------|--------------|
+| per-model × operation permissions, the read-only consent that hides write tools, curated verbs | the public Odoo Apps description of the `mcp_server` module (OPL-1) | everything: the profiles, tiers, NEVER list, file format, two enforcement layers, texts and tests. None of its code, tests or texts were read or used |
+
 ## License hygiene
 
 - AGPL-3.0 (`altinkaya-opensource/odoo-mcp`): concept-level inspiration only.

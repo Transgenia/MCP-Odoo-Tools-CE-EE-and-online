@@ -45,11 +45,22 @@ Odoo Online installs data modules only (no custom Python), takes API calls on Cu
 | --- | --- |
 | See the series and line, the API-key expiry, the transport and the plan limits in one read | `odoo_online_profile` |
 | Know why a call is refused: can this user read, write, create or unlink here, and export? | `odoo_access_check` |
-| Get a stored PDF or other attachment of a record (reports cannot be rendered over RPC on 14+) | `odoo_record_documents` |
+| Get a stored PDF or other attachment of a record (these tools render no reports: `odoo_report` is deprecated) | `odoo_record_documents` |
 | Find a method's parameter names for JSON-2 or `odoo_execute` | `odoo_api_catalog` |
 | Load many records: check the rows first, then import them atomically | `odoo_import_preview`, then `odoo_import` (write; confirm with the user first) |
 
 Pace bulk work on Online (about 1 call per second, no parallel calls) and use `odoo_import` (at most 500 rows per call) instead of one `odoo_create` per record. An `id` column in an import holds external ids and updates the records that already have them.
+
+## Permission profile
+
+Since 1.5.0 the MCP server applies a permission profile on top of the Odoo user's
+own rights (plugin option **Permission profile**). The default `standard` reads,
+creates, updates and runs business methods, but does not delete, make
+Studio-style changes, send e-mail out (internal notes are fine) or read stored
+secrets; `odoo-studio-style` needs `builder`, and `full` keeps the 1.4 behaviour.
+A refusal that names the permission policy is final: tell the user which option
+changes it, and do not try another tool or the shell. Reference:
+`docs/policy.md` in the plugin.
 
 ## What this is not
 

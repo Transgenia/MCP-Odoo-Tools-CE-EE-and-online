@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
-"""Connection manager mapping a tenant fingerprint to an OdooSession.
+"""Connection manager mapping a credential's session key to an OdooSession.
 
-Two modes:
-  * single-tenant (stdio, default): one session built from environment config.
-  * multi-tenant (HTTP): per-request ``X-Odoo-Url/Db/Login`` + ``Bearer`` secret
-    resolve to (and cache) a session. Secrets are held in memory only, never
-    persisted or logged.
+The stdio server is single-tenant: one session built from environment config.
+Sessions are cached by ``Credentials.session_key()`` (url, db, login and a
+per-process HMAC of the secret), so another secret never reuses a session.
+Secrets are held in memory only, never persisted or logged. A remote HTTP mode
+will resolve sessions from an authenticated identity, never from client-chosen
+headers; it needs its own design and is not built.
 """
 
 from __future__ import annotations
 
 import threading
 
-from .config import Settings
+from .config import Settings, _without_userinfo
 from .errors import ConfigError
 from .session import Credentials, OdooSession
 
@@ -34,7 +35,7 @@ class ConnectionManager:
         )
 
     def get(self, creds: Credentials) -> OdooSession:
-        key = creds.fingerprint()
+        key = creds.session_key()
         with self._lock:
             sess = self._sessions.get(key)
             if sess is None:
@@ -54,24 +55,14 @@ class ConnectionManager:
                             secret_kind="api_key" if s.api_key else "password")
         return self.get(creds)
 
-    def from_headers(self, headers: dict[str, str]) -> OdooSession:
-        """Resolve a session from HTTP headers (multi-tenant mode)."""
-        lower = {k.lower(): v for k, v in headers.items()}
-        url = (lower.get("x-odoo-url") or self.settings.url).rstrip("/")
-        db = lower.get("x-odoo-db") or self.settings.db
-        login = lower.get("x-odoo-login") or self.settings.login
-        auth = lower.get("authorization", "")
-        secret = auth[7:].strip() if auth.lower().startswith("bearer ") else self.settings.secret
-        if not (url and db and login and secret):
-            raise ConfigError(
-                "multi-tenant request missing X-Odoo-Url/Db/Login or Bearer secret"
-            )
-        return self.get(Credentials(url=url, db=db, login=login, secret=secret))
-
     def connections(self) -> list[dict[str, str]]:
+        # The userinfo of ODOO_URL (basic auth in front of Odoo) is a credential: the
+        # transport, CredsView, Settings.redacted() and the audit all strip it, so the
+        # odoo_connections tool must not hand it back either (it is read-only and
+        # visible under every profile, readonly included).
         with self._lock:
             return [
-                {"url": s.creds.url, "db": s.creds.db, "login": s.creds.login}
+                {"url": _without_userinfo(s.creds.url), "db": s.creds.db, "login": s.creds.login}
                 for s in self._sessions.values()
             ]
 

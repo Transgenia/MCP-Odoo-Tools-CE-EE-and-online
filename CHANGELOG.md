@@ -4,15 +4,312 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] - 2026-10-21
 
-### Changed
+Secure defaults: a permission policy on top of the Odoo user's own access rights,
+checked before and while each tool calls Odoo, and a local audit trail. The
+default tightens inside this minor release; to keep the 1.4 behaviour, set the
+new option **Permission profile** to `full`. The tool count stays 28.
 
+### Changed (secure defaults)
+
+- **Permission policy.** The MCP server now applies a permission profile on top of the
+  Odoo user's own access rights. The default, `standard`, reads, creates, updates and runs
+  business methods, but does not delete, make Studio-style changes, send e-mail or SMS
+  (internal notes are fine), change users, rights, modules, settings, bank accounts, fiscal
+  sequences or chatter history, or read stored secrets (system parameters, mail-server,
+  payment-provider and CFDI certificate credentials). Credential-like fields (passwords,
+  tokens, keys) are refused in field lists, values, filters, grouping and sorting, and are
+  removed from what reads return (the result names them in `policy_withheld_fields`).
+  Tools the profile forbids are not listed. **To keep 1.4 behaviour, set Permission
+  profile to `full`** (`ODOO_POLICY=full` in a container or a standalone run): API-key
+  changes and module uninstall stay refused in every profile, and, to enforce that, `full`
+  still refuses a call whose arguments the policy cannot read with certainty (pass them by
+  name) or whose related models it cannot look up with `fields_get`. The other profiles are
+  `readonly` and `builder` (adds fields, views and automations; for sandboxes and staging,
+  since automations run code on the server). Details: `docs/policy.md`.
+- Tools the profile forbids on every model are no longer listed: `standard` lists 25 of the
+  28 (not `odoo_unlink`, `odoo_add_field` or `odoo_add_automation`). A hidden tool called by
+  name explains why. Every refusal names the profile, the rule and what changes it. Most are
+  decided from the call's arguments before any session exists, so nothing reaches Odoo.
+- Every Odoo call a tool makes is checked again as it is sent, with its values and paths:
+  the records a write changes through one2many and many2many commands (a line a write
+  removes counts as a delete, and a link to users or groups as a change to them), the models
+  a filter, a read specification, a groupby, an order or an export or import column reaches,
+  and the parent of an attachment (a generic `ir.attachment` search must name the parent
+  model and never sees files stored in fields; writing an attachment's `public` or
+  `res_field` through a delegating child such as `product.document` is refused too). A
+  contact that is a user's login keeps its e-mail, and the link field of a model that
+  delegates to a closed one (`website.page` `view_id`) cannot be set. Such a refusal comes
+  after sign-in and says that Odoo did not run the call. A call outside a tool's declared
+  mapping is stopped as a bug.
+- **A context default must be a plain value.** Under `readonly`, `standard` and `builder`,
+  a `default_<field>` context key whose value is a list or an object (x2many commands, a
+  list of ids, nested values) is refused before anything is sent to Odoo, for every tool,
+  method and model (rule `context`); the refusal names the key, never its value. Odoo
+  applies a context default to every record created while the call runs, including the
+  lines that x2many commands create and the records of other models that a business
+  method, a wizard or an import creates (`action_confirm`, a validation wizard, `load`), so
+  such a value can never be checked soundly against the one model a call names. Pass those
+  values in the record's values, where they are checked, or use profile `full`. For
+  example, create the MRP backorder wizard (`mrp.production.backorder`) with its lines in
+  values, `{"mrp_production_ids": [(6, 0, [mo_id])], "mrp_production_backorder_line_ids":
+  [(0, 0, {"mrp_production_id": mo_id, "to_backorder": true})]}`, instead of its action's
+  `default_mrp_production_ids` and `default_mrp_production_backorder_line_ids` keys, and
+  the stock backorder wizard with `pick_ids: [(4, id)]` instead of `default_pick_ids`. A
+  plain default (`default_move_type: "out_invoice"`) still runs unless its field is
+  withheld, and `full` is unchanged.
+- Methods that return record data or filter it but are not search/read (`search_fetch`,
+  `fetch`, `onchange`, `read_progress_bar`, `search_panel_select_range`,
+  `search_panel_select_multi_range`, `copy_data`, the web `web_name_search`, the pivot
+  readers `read_grouping_sets` and `formatted_read_grouping_sets`, and `filtered_domain`)
+  are read, not opaque `call`s, so their domains, grouping sets, fields and specifications
+  go through the withheld-field and comodel checks and their results are redacted.
+  `read_progress_bar` also checks the field it buckets by (`progress_bar["field"]`, and any
+  `sum_field`), a second grouping dimension. As a backstop, a method that stays a plain
+  `call` (a business verb, or one no version lists) has its result redacted at any depth
+  too, and its arguments are scanned with the model's field metadata before it is sent: a
+  string that is a field path of the model is checked as a read of that path (a dotted leaf
+  that hops into a sealed model, such as `mapped("provider_id.name")` into a payment
+  provider, is refused), a Mapping whose keys are fields is checked as write values (a
+  withheld key such as `signup_token`, and the models its x2many commands reach, are
+  refused), and a domain-shaped argument goes through the read-path analysis. A string that
+  is not a field of the model -- a message body, a subject, an attachment file name, a
+  status word -- is left alone, so an internal note and a business verb with a plain word
+  argument still run. The bulk import engine (`base_import.import`) and the language wizards are in the
+  `customization` tier, reachable only through their tools, so `odoo_execute` cannot drive
+  the importer's `load()` into a closed model.
+- With Read-only mode on, the write tools are no longer listed (calling one still explains
+  why).
+- `odoo_report` now refuses before calling Odoo: it called the private method
+  `ir.actions.report._render_qweb_pdf`, which Odoo refuses over RPC on every
+  version, so it could never succeed. Use `odoo_record_documents` for the PDFs Odoo
+  already stored (for example an invoice PDF made when it was sent or printed). The
+  tool is deprecated and removed in 2.0.0. It says so even before a connection is
+  configured, since it never asks for a session.
+- `odoo_online_profile` reports a section the policy withholds in `unavailable` instead of
+  failing.
+- The write tools state `destructiveHint` in their annotations: false for `odoo_create`,
+  `odoo_add_field` and `odoo_import_preview`, true for the others.
+- Scope: a generic, declarative permission policy is part of the public core; approval
+  workflows, localization engines and backups are not (README, CONTRIBUTING,
+  `docs/architecture.md`).
+- The skills and the `odoo` agent say which profile a task needs: Studio-style changes need
+  `builder`, and the training's delete step archives under `standard`.
+
+### Added
+
+- Options **Permission profile** (`odoo_policy`: `readonly`, `standard`, `builder`, `full`;
+  default `standard`) and **Permission policy file** (`odoo_policy_file`, optional: an
+  absolute path to a JSON file with per-model rules, method lists, field rules and openings
+  that need a reason and may expire; `docs/policy.md`). Both have defaults. An unknown
+  profile or an invalid policy file locks every tool except `odoo_version`, which shows the
+  error; the server never looks for a policy file in a default place.
+- `docs/policy.md` (profiles, tiers, rules, the file format, every error and warning, the
+  tool mapping), `docs/policy.schema.json` for editors, and four examples in
+  `docs/policy-examples/` (`production-hardened`, `sales-team`, `read-only-analyst`,
+  `sandbox-builder`), each loaded by CI. Their tables are generated from the policy's own
+  data (`scripts/policy_docs.py`) and checked in CI.
+- `python3 server/run_stdio.py --check-policy FILE [--profile P] [--explain
+  MODEL:OP[:METHOD]] [--json]` checks a policy file offline as the server would load it
+  (with Read-only mode off, which the digest covers) and explains decisions, for example
+  `res.users write: REFUSED (tier:security)`; exit 0 valid, 1 invalid, 2 bad usage. It never
+  contacts Odoo.
+- **Audit log.** One JSON line per tool call, refusals included: the tool, the model
+  and operation names, the layer and rule of a refusal, counts and timings; never
+  values, domains, ids or secrets, and the Odoo login only on the line written at
+  start. The plugin writes daily files to its data folder, owner-only, kept 90 days
+  and hash-chained; `python3 server/run_stdio.py --verify-audit FILE` names the
+  first edited, reordered or inserted line, or an incomplete final line (it cannot,
+  from one file alone, catch whole trailing lines removed or a deleted day). The
+  plugin also pins `ODOO_AUDIT_RETENTION_DAYS`; containers and standalone runs set
+  `ODOO_AUDIT_DIR` (a folder, `stderr` or `off`) and `ODOO_AUDIT_RETENTION_DAYS`.
+- `odoo_version` returns a `policy` block (profile, file, digest, hidden tools, openings,
+  warnings, or the error that locked it) and warns (W10) when the Odoo user is an
+  administrator. `odoo_access_check` returns `policy` next to Odoo's own answer, with a note
+  when Odoo allows what the policy refuses. `odoo_list_models` leaves out the models the
+  policy allows nothing on (`hidden_by_policy`). The server instructions gain one line with
+  the profile, its digest and the hidden tools.
+- The SessionStart hook also checks the two policy options (and reads no other new
+  variable): when the server would start locked, it tells the user once a day and tells
+  Claude why. It still never reads the API key or password option.
+- The sandbox matrix (`sandbox-matrix.yml`, Odoo 10.0 to 19.0) also checks the permission
+  policy against each live series (`scripts/sandbox_smoke.py`): the `policy` block of
+  `odoo_version` against `--check-policy`; the `standard` refusals that need Odoo's own
+  metadata (a company's or a contact's user links, a user's contact e-mail, credential-like
+  fields in field lists, filters and full reads, `ir.attachment` pinned to `certificate.key`);
+  the link field of each delegating model that is installed; `odoo_add_field` and
+  `odoo_add_automation` under `builder` (`base.action.rule` on 10.0); and `--verify-audit`
+  on the audit trail of the run. It prints which tier model names exist on each series. A
+  check whose model or field a series lacks is skipped with its reason.
 - Release workflow: a manual run can now be a **draft** (`release.yml`, input
   `draft`). It creates the tag, runs the tests and leaves a draft GitHub Release with
   the artifacts, but builds no container image and uploads nothing to PyPI.
   Publishing the draft runs those jobs. `docs/packaging.md` describes the steps, and
   `tests/test_release_workflow.py` checks that a draft run publishes nothing.
+
+### Fixed
+
+- Release workflow: a skipped `tag` job no longer skips the release. On a
+  `release: published` event or a tag push the `tag` job does not run, and a job
+  whose condition had no status function got an implicit `success()`, which is false
+  when any job up its `needs` chain was skipped. Publishing the v1.4.1 draft on
+  2026-10-21 therefore ran only `verify`; v1.4.1 was then published with a manual run.
+  Every job after `verify` now starts with `!failure() && !cancelled()`, and
+  `tests/test_release_workflow.py` fails if one loses it.
+- Release workflow: `verify` checks the release state before any publishing job
+  starts (a full run stops while the tag's release is still a draft, and a draft run
+  stops if the tag already has a release), and the moving image tags `latest` and
+  `X.Y` compare against published releases plus the tag being released, so a tag kept
+  by an unpublished draft cannot hold them back.
+- The call-class argument backstop no longer refuses ordinary chatter. It scans a
+  business method's arguments with the model's field metadata, so only a string that is
+  really a field of the model is checked: an internal note or a customer reply whose body,
+  subject or attachment file name happens to read like a credential (`"Pass"`, a subject
+  `"Password"`, `VAT.pdf`, `Boarding_Pass.pdf`) now runs, and `mail.activity` feedback does
+  too. The same metadata resolves a dotted string or a domain-shaped argument through the
+  tier and read checks, closing a read of a secrets-tier model through `mapped`, `filtered`,
+  `sorted` or another value-returning `call` whose dotted leaf hops into it (for example
+  `mapped("provider_id.name")` into a payment provider), including through a domain carrying
+  a `(1, '=', 1)` true leaf. A Mapping handed to a module-specific `call` has its keys
+  checked as write field names (and its x2many commands expanded), so a withheld field such
+  as `signup_token` cannot be set through a bespoke verb when `odoo_write` refuses it.
+- Assigning a user through two business relations runs under `standard`: task assignees
+  (`project.task.user_ids`) and helpdesk team members (`helpdesk.team.member_ids`), the
+  fixed `REFERENCE_LINKS` list in `policy/tiers.py`, count as a `read` of `res.users`.
+  Every other many2many link to a write-withheld model is still a `write` of it, and so
+  refused under `standard` (for example `res.users.groups_id` or `res.company.user_ids`,
+  which carry rights). Project task assignment and helpdesk membership no longer need
+  profile `full`.
+- Odoo's stock and manufacturing validation wizards run under `standard`: the context keys
+  they need to validate the records named (`button_validate_picking_ids`, `skip_backorder`,
+  `picking_ids_not_to_backorder`, `skip_immediate`, `mo_ids_to_backorder`) are allowed, as
+  are `warehouse` and `location` (stock on hand). None of the added keys suppress chatter
+  tracking. A wizard created directly through `odoo_execute` takes its pickings or lines in
+  values (`pick_ids: [(4, id)]`), not in a `default_` list (see Changed).
+- Posting a customer invoice runs under `standard`: `validate_analytic`, the context key the
+  invoice Confirm/Post button sends (16+) so `account.move._post` validates the analytic
+  distribution, is allowed. `action_post` was already a business verb; only the context key
+  refused the flagship CFDI flow, and no allowed key suppresses chatter tracking.
+- The call-class backstop fails closed on a malformed x2many command list. A Mapping
+  handed to a module-specific `call` whose x2many value is not a clean command list, such
+  as a command tuple mixed with a bare id (`[(4, 4), 99]`), is refused with rule `shape`,
+  exactly as the same list in `values` is, instead of being scanned as a plain nested
+  value, so a `(4, id)` link into a sealed tier cannot slip past next to a bare id.
+- The create-only structural default rules (delegation link, `ir.attachment` create) run
+  only for a call that creates records, or may (create, `web_save`/`load` and
+  business-method calls). A default fills nothing on a read, so a pinned `ir.attachment`
+  search whose context names the record's parent (`default_res_model: res.partner.bank`,
+  readable but not writable under `standard`) is no longer refused on the create rule, and
+  neither is a read of a delegating child carrying its link-field default.
+- The Odoo web client's `uid` context key is allowed. It carries the signed-in user's id on
+  every call and is informational -- the acting user is the authenticated session, not
+  `context['uid']` -- so `account.move.action_post` and `sale.order.action_confirm` replayed
+  with the real web-client context run; it was the one key the allowlist still refused, and
+  it suppresses no chatter tracking.
+- A plain `default_<field>` context key cannot ride a nested create past the delegation-link
+  (4.4) and `ir.attachment` create (4.5) rules. Odoo applies a context default to every
+  record a call creates, including a line of another model an x2many command builds (a
+  `product.document` created during a write on `product.template`), which no check against
+  the call's top model can follow. So under `readonly`, `standard` and `builder`, a scalar
+  `default_<field>` naming a structural field is refused by construction, at Layer A, on a
+  call that can create a record: the link field of a delegation whose parent is a tier, a
+  NEVER model or `ir.attachment` (`default_ir_attachment_id`, `default_view_id`, and the
+  other `DELEGATES` links), and `default_public` or `default_res_field`. The refusal (rule
+  `context`) names the key, never its value, and gives the remedy (pass the value in the
+  record's values, or use profile `full`). The refused field names are derived from
+  `DELEGATES` and the `ir.attachment` structural fields, so a new delegation row is covered
+  automatically. `default_res_model` and `default_res_id` stay allowed, because activity
+  scheduling and the mail composer pass them; a nested attachment can still be bound to a
+  record through them, which is an accepted, documented limit (`docs/policy.md`). On a read a
+  default fills nothing, so it is left alone (a pinned `ir.attachment` search whose context
+  names the record's parent runs); a benign default (`default_move_type`) still runs, and
+  `full` is unchanged.
+- A context nested in `onchange`'s `fields_spec` (Odoo 17+, the web_read specification form,
+  passed by name or positionally) is now collected, so a list default hidden inside it is
+  refused with rule `context` like any other nested context; before, it was the one
+  specification the collector skipped, contradicting `docs/policy.md`. `onchange` stays a
+  write-nothing simulation (its values are not checked as writes), and the pre-17 flat
+  `field_onchange` argument, which carries no nested context, still runs.
+- An expired `call` method list is now ignored, not turned into a blanket refusal. A method
+  list is an allowance, so expiry drops it exactly as it drops a `true` value: the operation
+  falls through to the profile and only a `false` refusal survives. After a temporary
+  opening such as `account.move: {"call": ["action_post", "message_post"], "expires": ...}`
+  lapses, `action_post` and `action_confirm` keep working under `standard` (the opening's
+  outbound `message_post` correctly reverts to internal notes only); before, every `call` on
+  the model, business verbs included, was refused.
+- A value-returning `call` whose string argument names a withheld field carried as a grouped
+  term (`signup_token:count`, `name:sum(signup_token)`) is refused: the backstop strips the
+  `:function`/`:granularity` aggregate suffix before deciding the field, as the enumerated
+  grouping readers do, so the oracle is closed whichever form it takes.
+- `onchange`, a write-nothing simulation, runs under `standard` again. Its values are the
+  record's existing lines, encoded as x2many replace or clear commands
+  (`[(6, false, ids)]`, a bare id list, `[(5,)]`); the call-class backstop no longer expands
+  them as writes or unlinks of the comodel, so previewing the totals of a quotation or a
+  contact form that already has lines is not refused. Its result is still redacted.
+- An internal note with an attachment in Odoo's three-element `(name, content, info)` form
+  runs even when the file name reads like a credential (`password_policy.pdf`,
+  `Credentials_SAT.pdf`). A three-element list is a domain term, and so routed through
+  domain analysis, only when its middle element is a recognised domain operator; an
+  attachment tuple carries file content there, so it is not mistaken for a domain and its
+  file name is not read as a field path.
+- `read_progress_bar`'s result is no longer over-redacted. Its keys are the distinct values
+  of the (already checked) grouping fields, not field names, so a kanban column or bucket
+  whose value reads like a credential word (`Pass`, `Token`, a `pass` quality state) is kept
+  instead of being dropped with a misleading `policy_withheld_fields`.
+- The `ir.attachment` pin now covers every read-class model method that takes a top-level
+  domain, not a hand-kept subset: `search_fetch`, `read_progress_bar` and the
+  `search_panel_*` readers on `ir.attachment` are pinned to a readable parent and stopped
+  from filtering on `res_field`, closing an id/count/`res_model` oracle over a sealed model
+  (`certificate.key`, `payment.provider`). A `search_panel_*` reader carries no top-level
+  domain and so is refused on `ir.attachment`.
+- The `search_panel_*` readers and `read_progress_bar` accept the trailing options a series
+  adds (`hierarchize`, `group_by`, `group_domain`, `sum_field: false`) instead of failing
+  closed with rule `shape`, so mirroring a kanban or search panel through `odoo_execute`
+  runs; the field and the domains over the model are still checked.
+- `web_name_search` is read with the web module's own signature,
+  `(name, specification, domain=None, operator, limit)` -- the specification is the second
+  argument, not the domain -- so a positional call from the web client is no longer refused
+  with rule `shape`.
+- Harmless token relations and counts are no longer withheld. A field name ending in
+  `token_id`, `token_ids` or `token_count` (so `token_id`, `suitable_payment_token_ids`,
+  `payment_token_count`, alongside the existing `payment_token_id`/`payment_token_ids`/
+  `token_count`) references the secrets-tier `payment.token` rather than a token value, so
+  reading it is allowed; token VALUE fields (`access_token`, `refresh_token`) stay withheld.
+- Sessions are cached by `url|db|login` plus a per-process HMAC over the whole
+  connection identity and the secret (`Credentials.session_key()`), so the same url,
+  db and login with another secret never reuses an authenticated session, and two
+  credentials whose `url|db|login` strings collide only because a component contains
+  `|` still key apart. `fingerprint()` is unchanged, and the secret is never part of a
+  key or a log line.
+- `odoo_connections` no longer returns the `user:pass@` of `ODOO_URL` (the basic-auth
+  credential of a gateway in front of Odoo): it is stripped, as the transport, the
+  guard's credential view and the redacted settings already strip it. It was returned
+  verbatim under every profile, read-only included.
+- A policy file whose entire content is the JSON value `null` now locks with E7, like
+  any other non-object top level, instead of loading unlocked as the profile alone
+  while `odoo_version` and the audit reported a file in force.
+- The audit `start` line is written even when a path, database or login carries
+  non-UTF-8 bytes (surrogate escapes), and a pre-existing daily file with looser
+  permissions is tightened to `0600` before it is appended to.
+- `odoo_add_automation` on Odoo 10 now fills `base.action.rule`'s required trigger field,
+  which that version names `kind` (not `trigger`); the automation was created without it
+  before. The value is the same one the tool already maps (`on_create`, `on_write`,
+  `on_create_or_write`, `on_unlink`).
+
+### Removed
+
+- `ConnectionManager.from_headers`. It had no caller, and as written it fell back
+  to the server's own secret when a request had no `Authorization` header, took
+  the Odoo URL from a client header and passed the client's bearer through to Odoo.
+  A remote HTTP mode will resolve sessions from an authenticated identity.
+
+### Security
+
+- In the local (stdio) mode the policy limits what Claude can do through these tools; it
+  does not limit the holder of the API key, nor an agent with unrestricted shell access on
+  the same machine (`SECURITY.md`, "Permission policy"). Use a dedicated, least-privilege
+  Odoo user with an expiring API key.
 
 ## [1.4.1] - 2026-10-21
 

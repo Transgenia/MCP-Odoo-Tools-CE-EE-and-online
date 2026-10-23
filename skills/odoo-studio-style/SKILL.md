@@ -14,6 +14,21 @@ Be honest about the boundary: this covers **small, low-code** changes (a field,
 a view tweak, a simple automation). It is **not** a substitute for serious module
 development (packaged code, migrations, tests, complex business logic).
 
+## Permission profile: `builder`
+Since 1.5.0 the default permission profile (`standard`) treats fields, views and
+automations as customization: `odoo_add_field` and `odoo_add_automation` are not
+listed, and an `odoo_create` on `ir.ui.view` is refused. These recipes need the
+**Permission profile** `builder` (or `full`), which the user sets in `/plugin` →
+**odoo-tools** → **Configure options**, then reconnects (`/mcp`). Recommend
+`builder` on sandboxes and staging only: automations run Python on the Odoo
+server, so for confidentiality `builder` equals `full`. Never change the option
+or a policy file yourself; if a call is refused by the permission policy, tell
+the user which profile the step needs and stop.
+
+Two more limits hold under `builder`: a field whose name looks like a credential
+(`x_api_token`) is withheld from reads, and `website.page` writes also need its
+view (`ir.ui.view`), which `builder` opens.
+
 ## Where changes live
 In the **instance/DB**, exactly like Studio — not as module code in a repo. They
 survive upgrades as manual customizations. (If you need code-in-a-repo, that is

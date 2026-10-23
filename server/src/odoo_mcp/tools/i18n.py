@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..compat import has_capability, resolve_model
-from ..registry import ToolContext, obj, registry
+from ..registry import Access, ToolContext, obj, registry
 
 
 @registry.tool(
@@ -27,6 +27,7 @@ from ..registry import ToolContext, obj, registry
         },
         required=["model", "id", "field", "lang"],
     ),
+    access=Access(arg_ops=("read",)),
 )
 def odoo_translate_get(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model = resolve_model(args["model"], ctx.session.facts())
@@ -50,7 +51,9 @@ def odoo_translate_get(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "id", "field", "lang", "value"],
     ),
+    access=Access(arg_ops=("write",)),
     read_only=False,
+    destructive=True,
 )
 def odoo_translate_set(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = ctx.session.facts()

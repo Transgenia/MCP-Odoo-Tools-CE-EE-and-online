@@ -17,7 +17,7 @@ import pytest
 
 from odoo_mcp.config import Settings
 from odoo_mcp.errors import AuthError
-from odoo_mcp.registry import ToolDef, registry, validate_arguments
+from odoo_mcp.registry import NO_MODEL, ToolDef, registry, validate_arguments
 from odoo_mcp.server import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -81,7 +81,7 @@ def echo_tool(monkeypatch: pytest.MonkeyPatch) -> None:
         registry._tools,
         "t_echo",
         ToolDef(name="t_echo", description="echo", input_schema={"type": "object"},
-                handler=handler),
+                handler=handler, access=NO_MODEL),
     )
 
 
@@ -97,14 +97,38 @@ def test_initialize_echoes_supported_version_and_reports_plugin_version() -> Non
 
 
 def test_tools_list_exposes_every_registered_tool() -> None:
-    tools = _server().handle(_req("tools/list"))["result"]["tools"]
+    # Profile "full" hides nothing (1.4 behaviour); the default "standard" is below.
+    tools = _server(policy_profile="full").handle(_req("tools/list"))["result"]["tools"]
     assert [t["name"] for t in tools] == [t.name for t in registry.all()]
     by_name = {t["name"]: t for t in tools}
     assert by_name["odoo_search_read"]["annotations"] == {"readOnlyHint": True}
-    assert by_name["odoo_create"]["annotations"] == {"readOnlyHint": False}
+    # a write tool states destructiveHint, which MCP otherwise assumes true
+    assert by_name["odoo_create"]["annotations"] == {"readOnlyHint": False,
+                                                     "destructiveHint": False}
     for tool in tools:
         assert tool["description"]
         assert tool["inputSchema"]["type"] == "object"
+
+
+STANDARD_HIDDEN = {"odoo_unlink", "odoo_add_field", "odoo_add_automation"}
+WRITE_TOOLS = {"odoo_create", "odoo_write", "odoo_unlink", "odoo_translate_set",
+               "odoo_import_preview", "odoo_import", "odoo_add_field", "odoo_add_automation",
+               "odoo_execute"}
+
+
+@pytest.mark.parametrize(("settings", "hidden"), [
+    ({}, STANDARD_HIDDEN),  # the default profile
+    ({"policy_profile": "readonly"}, WRITE_TOOLS),
+    ({"policy_profile": "standard"}, STANDARD_HIDDEN),
+    ({"policy_profile": "builder"}, set()),
+    ({"policy_profile": "full"}, set()),
+    ({"policy_profile": "full", "readonly": True}, WRITE_TOOLS),
+    ({"policy_profile": "readonyl"}, {t.name for t in registry.all()} - {"odoo_version"}),
+])
+def test_tools_list_follows_the_permission_profile(settings: dict[str, Any],
+                                                   hidden: set[str]) -> None:
+    tools = _server(**settings).handle(_req("tools/list"))["result"]["tools"]
+    assert [t["name"] for t in tools] == [t.name for t in registry.all() if t.name not in hidden]
 
 
 def test_tool_call_success_error_and_bug(echo_tool: None) -> None:
@@ -200,8 +224,11 @@ def test_cancelled_request_gets_no_response(echo_tool: None) -> None:
     assert json.loads(out.getvalue())["id"] == 8
 
 
-def _entry_point(lines: list[dict[str, Any]], *extra_env: tuple[str, str]) -> list[Any]:
-    env = {"PATH": os.environ.get("PATH", ""), "ODOO_READONLY": "1", **dict(extra_env)}
+def _entry_point(lines: list[dict[str, Any]], *extra_env: tuple[str, str],
+                 readonly: bool = True) -> list[Any]:
+    env = {"PATH": os.environ.get("PATH", ""), **dict(extra_env)}
+    if readonly:
+        env["ODOO_READONLY"] = "1"
     # -S: no site-packages at all, so this proves the plugin needs only the stdlib.
     proc = subprocess.run(
         [sys.executable, "-S", str(RUN_STDIO)],
@@ -221,11 +248,19 @@ def test_entry_point_runs_on_the_standard_library_alone() -> None:
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         _req("tools/list", msg_id=2),
         _req("tools/call", {"name": "odoo_create", "arguments": {}}, 3),
-    ])
+        _req("tools/call", {"name": "odoo_unlink", "arguments": {}}, 4),
+    ], readonly=False)
     by_id = {r["id"]: r for r in replies}
     assert by_id[1]["result"]["protocolVersion"] == "2025-03-26"
-    assert len(by_id[2]["result"]["tools"]) == len(registry.all())
-    assert by_id[3]["result"]["isError"] is True
+    assert "profile 'standard'" in by_id[1]["result"]["instructions"]
+    # the default profile "standard" lists 25 of the 28 tools
+    listed = {t["name"] for t in by_id[2]["result"]["tools"]}
+    assert len(registry.all()) == 28
+    assert listed == {t.name for t in registry.all()} - STANDARD_HIDDEN and len(listed) == 25
+    assert by_id[3]["result"]["isError"] is True  # no model: refused before any session
+    # a hidden tool called by name explains itself instead of "unknown tool"
+    assert by_id[4]["result"]["isError"] is True
+    assert "odoo_unlink is not available" in by_id[4]["result"]["content"][0]["text"]
 
 
 def test_entry_point_ignores_unresolved_plugin_placeholders() -> None:
@@ -261,7 +296,8 @@ def typed_tool(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     }
     monkeypatch.setitem(
         registry._tools, "t_typed",
-        ToolDef(name="t_typed", description="typed", input_schema=schema, handler=handler),
+        ToolDef(name="t_typed", description="typed", input_schema=schema, handler=handler,
+                access=NO_MODEL),
     )
     return threads
 

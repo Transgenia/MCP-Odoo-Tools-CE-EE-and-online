@@ -76,7 +76,14 @@ READ_METHODS = frozenset(
         "name_search", "name_get", "default_get", "check_access_rights", "has_group",
         "web_search_read", "web_read", "get_views", "fields_view_get", "export_data",
         "formatted_read_group", "web_read_group", "context_get", "has_access",
-        "has_groups", "get_field_translations",
+        "has_groups", "get_field_translations", "copy_data",
+        # Pure reads classified alongside the above (policy/classify.READ_METHODS):
+        # safe to replay on another transport, and kept in step with the policy by
+        # test_the_policy_reads_exactly_what_the_transport_replays_as_reads.
+        "search_fetch", "fetch", "read_progress_bar",
+        "search_panel_select_range", "search_panel_select_multi_range",
+        "web_name_search", "read_grouping_sets", "formatted_read_grouping_sets",
+        "filtered_domain",
     }
 )
 

@@ -24,8 +24,11 @@ import ast
 from typing import Any
 
 from ..compat import requires_edition, resolve_model
-from ..errors import CompatError, OdooFault
-from ..registry import ToolContext, obj, registry
+from ..errors import CompatError, OdooFault, PolicyError
+from ..policy.classify import valid_model
+from ..policy.guard import found_id, id_list, ids_within, plain, same_model
+from ..policy.model import model_aliases
+from ..registry import Access, Internal, ToolContext, obj, registry
 
 _FIELD_TYPES = (
     "char", "text", "html", "boolean", "integer", "float", "monetary",
@@ -90,6 +93,91 @@ def validate_safe_eval(code: str) -> None:
             )
 
 
+# The fixed calls the two tools make besides their schema change, each for a
+# reason; "$automation" is base.automation (base.action.rule on Odoo 10). The
+# guarded session lets each one through only when its predicate holds on the
+# actual call (design 6.4).
+_SEARCH_KEYS = frozenset({"domain", "limit", "offset", "order"})
+_FIELD_KEYS = frozenset({"name", "field_description", "ttype", "model_id", "model", "state",
+                         "required", "help", "relation", "relation_field", "currency_field",
+                         "selection"})
+_AUTOMATION_KEYS = frozenset({"name", "model_id", "trigger", "kind", "filter_domain", "state",
+                              "code", "action_server_id", "action_server_ids",
+                              "server_action_ids"})
+_LINK_KEYS = ("action_server_id", "action_server_ids", "server_action_ids")
+_SERVER_ACTION_KEYS = frozenset({"name", "model_id", "state", "code"})
+
+
+def _target_model_search(call: Any, scope: Any) -> bool:
+    """ir.model search for the target model, and only that."""
+    domain = plain(call.named.get("domain"))
+    return (set(call.named) <= _SEARCH_KEYS and isinstance(domain, list) and len(domain) == 1
+            and isinstance(domain[0], list) and len(domain[0]) == 3
+            and domain[0][:2] == ["model", "="] and same_model(domain[0][2], scope))
+
+
+def _one_record(call: Any) -> dict[str, Any] | None:
+    values = call.values()
+    return values[0] if len(values) == 1 else None
+
+
+def _manual_field(call: Any, scope: Any) -> bool:
+    """A manual x_ field of the target model, on the ir.model id found in this call,
+    with no compute, depends or related (no key outside the field's description)."""
+    vals = _one_record(call)
+    if vals is None or not set(vals) <= _FIELD_KEYS:
+        return False
+    name = vals.get("name")
+    relation = scope.arguments.get("relation")
+    relation = relation.strip() if isinstance(relation, str) else ""
+    return (vals.get("state") == "manual" and isinstance(name, str) and name.startswith("x_")
+            and same_model(vals.get("model"), scope)
+            and found_id(vals.get("model_id"), scope.found.get("ir.model"))
+            and ("relation" not in vals or (valid_model(relation)
+                                            and vals["relation"] in model_aliases(relation))))
+
+
+def _linked_server_actions(value: Any) -> list[int] | None:
+    """The server actions an automation's link field points to: an id, or
+    [(6, 0, ids)]."""
+    if isinstance(value, list) and len(value) == 1:
+        command = plain(value[0])
+        if isinstance(command, list) and len(command) == 3 and command[0] == 6:
+            return id_list(command[2])
+        return None
+    return id_list(value) if not isinstance(value, (list, tuple)) else None
+
+
+def _automation(call: Any, scope: Any) -> bool:
+    """The automation, on the ir.model id found in this call, running code (never a
+    webhook), linked only to the server action this call created."""
+    vals = _one_record(call)
+    if vals is None or not set(vals) <= _AUTOMATION_KEYS or vals.get("state", "code") != "code":
+        return False
+    if not found_id(vals.get("model_id"), scope.found.get("ir.model")):
+        return False
+    created = scope.created.get("ir.actions.server")
+    return all(ids_within(_linked_server_actions(vals[key]), created)
+               for key in _LINK_KEYS if key in vals)
+
+
+def _server_action(call: Any, scope: Any) -> bool:
+    """The server action of a linked automation: code, on the ir.model id found."""
+    vals = _one_record(call)
+    return (vals is not None and set(vals) <= _SERVER_ACTION_KEYS
+            and vals.get("state") == "code"
+            and found_id(vals.get("model_id"), scope.found.get("ir.model")))
+
+
+def _orphan_server_action(call: Any, scope: Any) -> bool:
+    """Removing the server action this call created, and nothing else."""
+    return ids_within(call.record_ids, scope.created.get("ir.actions.server"))
+
+
+_MODEL_ID = Internal("ir.model", frozenset({"search"}), check=_target_model_search,
+                     reason="the id of the target model")
+
+
 def _model_id(ctx: ToolContext, model: str) -> int:
     ids = ctx.session.execute("ir.model", "search", [[["model", "=", model]]], {"limit": 1})
     if not ids:
@@ -127,7 +215,18 @@ def _model_id(ctx: ToolContext, model: str) -> int:
         },
         required=["model", "name", "label", "field_type"],
     ),
+    # A relation to a model whose fields the policy hides (secrets) is refused.
+    access=Access(
+        arg_ops=("schema",),
+        optional=(("inspect", "relation"),),
+        internal=(
+            _MODEL_ID,
+            Internal("ir.model.fields", frozenset({"create"}), check=_manual_field,
+                     reason="the new manual x_ field of the target model"),
+        ),
+    ),
     read_only=False,
+    destructive=False,
 )
 def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = ctx.session.facts()
@@ -245,7 +344,24 @@ def odoo_add_field(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "name", "code"],
     ),
+    access=Access(
+        arg_ops=("schema",),
+        fixed=(("create", "base.automation"), ("create", "ir.actions.server")),
+        internal=(
+            Internal("$automation", frozenset({"fields_get"}),
+                     reason="how the automation model links its code on this version"),
+            _MODEL_ID,
+            Internal("$automation", frozenset({"create"}), check=_automation,
+                     reason="the automation, on the target model"),
+            Internal("ir.actions.server", frozenset({"create"}), check=_server_action,
+                     reason="the server action of a linked automation (before 16)"),
+            Internal("ir.actions.server", frozenset({"unlink"}), check=_orphan_server_action,
+                     reason="removing the server action this call created, when the "
+                     "automation could not be created"),
+        ),
+    ),
     read_only=False,
+    destructive=True,
 )
 def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     facts = ctx.session.facts()
@@ -275,6 +391,10 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     base_vals: dict[str, Any] = {"name": name, "model_id": model_id}
     if "trigger" in fg:
         base_vals["trigger"] = trigger
+    elif "kind" in fg:
+        # Odoo 10's base.action.rule names its required trigger field 'kind' and takes
+        # the same values (on_create, on_write, on_create_or_write, on_unlink).
+        base_vals["kind"] = trigger
     if args.get("filter_domain") is not None and "filter_domain" in fg:
         base_vals["filter_domain"] = repr(args["filter_domain"])
 
@@ -303,6 +423,15 @@ def odoo_add_automation(ctx: ToolContext, args: dict[str, Any]) -> Any:
     base_vals[link_field] = [(6, 0, [server_id])] if link_field.endswith("_ids") else server_id
     try:
         auto_id = ctx.session.execute(automation_model, "create", [base_vals])
+    except PolicyError:
+        # The permission policy stopped the automation before Odoo ran it (an
+        # opening that expired between the two calls, or a bug the guard caught):
+        # remove the server action this call created, then report the refusal.
+        try:
+            ctx.session.execute("ir.actions.server", "unlink", [[server_id]])
+        except Exception:  # noqa: S110 - best effort; the refusal is what the user needs
+            pass
+        raise
     except OdooFault as exc:
         cleaned = True
         try:

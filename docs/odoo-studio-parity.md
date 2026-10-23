@@ -7,7 +7,7 @@ directly in the **instance/DB**, on **Community or Enterprise**, without the
 
 ## Where changes live
 
-| | Odoo Studio | This plugin (RPC) | Module development |
+| | Odoo Studio | This plugin (RPC, profile `builder`) | Module development |
 |---|---|---|---|
 | Edition | Enterprise only | Community **and** Enterprise | Any |
 | Storage | Instance/DB records | Instance/DB records | Code files in a repo/module |
@@ -19,6 +19,16 @@ directly in the **instance/DB**, on **Community or Enterprise**, without the
 So the parity is real for the **common low-code cases** — add a field, tweak a
 view, automate a small action — which is exactly what most "just add this one
 thing" requests are.
+
+## Permission profile
+
+Since 1.5.0 the default permission profile, `standard`, treats fields, views and
+automations as customization: `odoo_add_field` and `odoo_add_automation` are not
+listed, and `odoo_create` on `ir.ui.view` is refused. The plugin column above
+needs the **Permission profile** `builder` (or `full`), set in `/plugin` →
+**odoo-tools** → **Configure options**. Use `builder` on sandboxes and staging
+only: automations run Python on the Odoo server, so for confidentiality `builder`
+equals `full`. Details: [`policy.md`](policy.md).
 
 ## What this plugin is NOT
 

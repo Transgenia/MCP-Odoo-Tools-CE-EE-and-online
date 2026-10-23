@@ -27,8 +27,12 @@ from typing import Any
 
 from ..compat import has_capability, method_available, requires_edition, resolve_model
 from ..compat.detect import EnvFacts, parse_version
-from ..errors import CompatError, OdooFault, TransportError
-from ..registry import ToolContext, obj, registry
+from ..errors import CompatError, OdooFault, PolicyDenied, TransportError
+from ..policy.classify import valid_model
+from ..policy.guard import fields_within, id_list, ids_within, plain, same_model, user_has_group
+from ..policy.model import model_aliases
+from ..policy.texts import withheld_section
+from ..registry import Access, Internal, ToolContext, obj, registry
 from ..transport.json2_signatures import (
     JSON2_FIRST_SERIES,
     MODEL_SIGNATURES,
@@ -147,11 +151,15 @@ def _field_names(ctx: ToolContext, model: str) -> set[str]:
 
 
 def _attempt(unavailable: dict[str, str], section: str, fn: Callable[[], Any]) -> Any:
-    """Run one optional section; an Odoo refusal is recorded, not raised."""
+    """Run one optional section; an Odoo refusal is recorded, not raised, and so is a
+    refusal of the odoo-tools permission policy: that section degrades."""
     try:
         return fn()
     except OdooFault as exc:
         unavailable[section] = str(exc)
+        return None
+    except PolicyDenied as exc:
+        unavailable[section] = withheld_section(exc)
         return None
 
 
@@ -185,6 +193,12 @@ def _many2one(value: Any) -> Any:
     "plan, about 1 call/s, 5-200 e-mails/day, data modules only). Odoo 10-19; what a "
     "version lacks is null.",
     obj({}),
+    # A section the policy refuses is reported in "unavailable"; the rest still runs.
+    access=Access(
+        fixed=(("read", "res.users"), ("read", "res.company"), ("read", "res.users.apikeys"),
+               ("read", "ir.module.module"), ("inspect", "res.partner")),
+        degrade=True,
+    ),
 )
 def odoo_online_profile(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session
@@ -206,6 +220,9 @@ def odoo_online_profile(ctx: ToolContext, args: dict[str, Any]) -> Any:
         except (OdooFault, TransportError) as exc:
             doc_bearer = False
             unavailable["doc_bearer"] = str(exc)
+        except PolicyDenied as exc:  # the policy closes res.partner: only this probe goes
+            doc_bearer = False
+            unavailable["doc_bearer"] = withheld_section(exc)
 
     # -- the signed-in user
     def user_section() -> dict[str, Any]:
@@ -413,6 +430,7 @@ def builtin_methods(model: str, series: Series, facts: EnvFacts) -> list[dict[st
         },
         required=["model"],
     ),
+    access=Access(arg_ops=("inspect",)),
 )
 def odoo_api_catalog(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session
@@ -499,7 +517,8 @@ def odoo_api_catalog(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "may do on a model: read, write, create and unlink, or the subset in 'operations', plus "
     "export_allowed (group base.group_allow_export, Odoo 16+). Model level (access rights) "
     "by default; with 'ids' on Odoo 18+ the record rules of those records count too. Uses "
-    "has_access on Odoo 18+ and check_access_rights on 10-17. Changes nothing.",
+    "has_access on Odoo 18+ and check_access_rights on 10-17. 'policy' says what the "
+    "odoo-tools permission policy allows on top of that. Changes nothing.",
     obj(
         {
             "model": {"type": "string", "description": "technical model name, e.g. sale.order"},
@@ -517,6 +536,12 @@ def odoo_api_catalog(ctx: ToolContext, args: dict[str, Any]) -> Any:
             },
         },
         required=["model"],
+    ),
+    access=Access(
+        arg_ops=("inspect",),
+        internal=(Internal("res.users", frozenset({"has_group"}),
+                           check=user_has_group("base.group_allow_export"),
+                           reason="export_allowed: base.group_allow_export of this user"),),
     ),
 )
 def odoo_access_check(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -560,6 +585,16 @@ def odoo_access_check(ctx: ToolContext, args: dict[str, Any]) -> Any:
         notes.append("A refused operation comes from access rights (ir.model.access) or, at "
                      "record level, record rules (ir.rule) of this user's groups; an "
                      "administrator changes them in Settings > Users & Companies.")
+    policy_block: dict[str, bool] | None = None
+    if ctx.policy is not None:
+        # The odoo-tools permission policy is a second layer on top of Odoo's.
+        policy_block = {}
+        for operation in operations:
+            decision = ctx.policy.decide(operation, model)
+            policy_block[operation] = decision.allowed
+            if access[operation] and not decision.allowed:
+                notes.append(f"'{operation}' is allowed by Odoo for this user but refused by "
+                             f"the odoo-tools permission policy (rule {decision.rule})")
     result: dict[str, Any] = {
         "model": model,
         "uid": uid,
@@ -568,6 +603,8 @@ def odoo_access_check(ctx: ToolContext, args: dict[str, Any]) -> Any:
         "access": access,
         "export_allowed": export_allowed,
     }
+    if policy_block is not None:
+        result["policy"] = policy_block
     if ids:
         result["ids"] = ids
     if notes:
@@ -599,15 +636,75 @@ def _m2o_id(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+# The internal calls of odoo_record_documents (design 6.4). The guarded session
+# lets each one through only when its predicate holds on the actual call, which
+# pins it to this one record.
+_FLAG_FIELDS = ("message_main_attachment_id", "invoice_pdf_report_id")
+_READ_KEYS = frozenset({"fields", "load"})
+_LISTING_KEYS = frozenset({"domain", "fields", "limit", "offset", "order"})
+
+
+def _int_argument(scope: Any, name: str) -> int | None:
+    """An integer argument as the handler reads it (JSON may send 7.0)."""
+    value = scope.arguments.get(name)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value) if float(value).is_integer() else None
+
+
+def _record_attachments(call: Any, scope: Any) -> bool:
+    """The listing: the attachments of this record, with the listing fields only."""
+    domain = plain(call.named.get("domain"))
+    res_id = _int_argument(scope, "res_id")
+    return (res_id is not None and set(call.named) <= _LISTING_KEYS
+            and isinstance(domain, list) and len(domain) == 2
+            and isinstance(domain[0], list) and len(domain[0]) == 3
+            and domain[0][:2] == ["res_model", "="] and same_model(domain[0][2], scope)
+            and domain[1] == ["res_id", "=", res_id]
+            and fields_within(call.named.get("fields"), _ATTACHMENT_FIELDS))
+
+
+def _flagged_attachments(call: Any, scope: Any) -> bool:
+    """The main attachment and stored invoice PDF the record points to, as this call
+    read them from the record, with the listing fields only."""
+    res_id = _int_argument(scope, "res_id")
+    flagged: set[int] = set()
+    for name in model_aliases(scope.model) if valid_model(scope.model) else ():
+        row = scope.records.get(name, {}).get(res_id) or {}
+        flagged.update(i for i in (_m2o_id(row.get(f)) for f in _FLAG_FIELDS) if i)
+    return (set(call.named) <= _READ_KEYS and ids_within(call.record_ids, flagged)
+            and fields_within(call.named.get("fields"), _ATTACHMENT_FIELDS))
+
+
+def _attachment_ownership(call: Any, scope: Any) -> bool:
+    """Whether attachment_id belongs to this record: its res_model and res_id."""
+    attachment_id = _int_argument(scope, "attachment_id")
+    return (attachment_id is not None and id_list(call.record_ids) == [attachment_id]
+            and set(call.named) <= _READ_KEYS
+            and fields_within(call.named.get("fields"),
+                              [*_ATTACHMENT_FIELDS, "res_model", "res_id"]))
+
+
+def _attachment_content(call: Any, scope: Any) -> bool:
+    """The file of attachment_id, once this call read that it belongs to this record."""
+    attachment_id = _int_argument(scope, "attachment_id")
+    res_id = _int_argument(scope, "res_id")
+    row = scope.records.get("ir.attachment", {}).get(attachment_id) or {}
+    return (attachment_id is not None and res_id is not None
+            and id_list(call.record_ids) == [attachment_id]
+            and set(call.named) <= _READ_KEYS and plain(call.named.get("fields")) == ["datas"]
+            and same_model(row.get("res_model"), scope) and row.get("res_id") == res_id)
+
+
 @registry.tool(
     "odoo_record_documents",
     "Read-only. List the files attached to one record (id, name, mimetype, file_size in "
     "bytes, create_date), flagging its main attachment and, on invoices (Odoo 17+), the "
     "stored invoice PDF. With attachment_id and include_content=true it also returns that "
     "file base64-encoded, only if it belongs to this record and its size is at most "
-    "max_bytes (default 1048576 = 1 MiB, at most 5 MiB). Use it for PDFs on Odoo 14+, "
-    "where reports cannot be rendered over RPC: it returns documents Odoo already stored "
-    "(e.g. an invoice PDF made when the invoice was sent or printed). Odoo 10-19.",
+    "max_bytes (default 1048576 = 1 MiB, at most 5 MiB). Use it for PDFs: these tools "
+    "render no reports (odoo_report is deprecated), and it returns documents Odoo already "
+    "stored (e.g. an invoice PDF made when the invoice was sent or printed). Odoo 10-19.",
     obj(
         {
             "model": {"type": "string", "description": "technical model name, e.g. account.move"},
@@ -634,6 +731,22 @@ def _m2o_id(value: Any) -> int | None:
             },
         },
         required=["model", "res_id"],
+    ),
+    # The record's own attachments only, read through pinned calls.
+    access=Access(
+        arg_ops=("read",),
+        fixed=(("read", "ir.attachment"),),
+        internal=(
+            Internal("ir.attachment", frozenset({"search_read"}), check=_record_attachments,
+                     reason="the attachments of this one record"),
+            Internal("ir.attachment", frozenset({"read"}), check=_flagged_attachments,
+                     reason="the main attachment and invoice PDF the record points to"),
+            Internal("ir.attachment", frozenset({"read"}), check=_attachment_ownership,
+                     reason="whether attachment_id belongs to this record"),
+            Internal("ir.attachment", frozenset({"read"}), check=_attachment_content,
+                     reason="the content of attachment_id, once it is shown to be this "
+                     "record's"),
+        ),
     ),
 )
 def odoo_record_documents(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -801,6 +914,35 @@ def _messages(result: dict[str, Any]) -> tuple[list[Any], dict[str, Any]]:
 
 _ROWS_NOTE = "rows.from and rows.to in messages are 0-based indexes into 'rows'"
 
+# The internal calls of odoo_import_preview (design 6.4): the wizard of this dry
+# run, the dry run itself on that wizard, and its removal. The guarded session
+# checks the columns before the first of them, since the load runs inside Odoo.
+_WIZARD = "base_import.import"
+_WIZARD_KEYS = frozenset({"res_model", "file", "file_type", "file_name"})
+
+
+def _import_wizard(call: Any, scope: Any) -> bool:
+    """The wizard of this dry run: the target model and the file, nothing else."""
+    values = call.values()
+    return (len(values) == 1 and set(values[0]) <= _WIZARD_KEYS
+            and same_model(values[0].get("res_model"), scope))
+
+
+def _dry_run(call: Any, scope: Any) -> bool:
+    """The dry run, on the wizard this call created, with the columns the policy
+    checked."""
+    columns = scope.arguments.get("fields")
+    args = call.args
+    return (call.ids is None and len(args) == 4 and isinstance(columns, list)
+            and ids_within(args[0], scope.created.get(_WIZARD))
+            and plain(args[1]) == columns and plain(args[2]) == columns
+            and call.kwargs == {"dryrun": True})
+
+
+def _import_wizard_cleanup(call: Any, scope: Any) -> bool:
+    """Removing the wizard this call created, and nothing else."""
+    return ids_within(call.record_ids, scope.created.get(_WIZARD))
+
 
 @registry.tool(
     "odoo_import_preview",
@@ -819,7 +961,21 @@ _ROWS_NOTE = "rows.from and rows.to in messages are 0-based indexes into 'rows'"
         },
         required=["model", "fields", "rows"],
     ),
+    # load() upserts, so an import needs create and write.
+    access=Access(
+        arg_ops=("create", "write"),
+        columns_arg="fields",
+        internal=(
+            Internal(_WIZARD, frozenset({"create"}), check=_import_wizard,
+                     reason="the import wizard of this dry run"),
+            Internal(_WIZARD, frozenset({"execute_import"}), check=_dry_run,
+                     reason="the dry run, on the wizard this call created"),
+            Internal(_WIZARD, frozenset({"unlink"}), check=_import_wizard_cleanup,
+                     reason="removing the wizard this call created"),
+        ),
+    ),
     read_only=False,
+    destructive=False,
 )
 def odoo_import_preview(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session
@@ -894,7 +1050,9 @@ def odoo_import_preview(ctx: ToolContext, args: dict[str, Any]) -> Any:
         },
         required=["model", "fields", "rows"],
     ),
+    access=Access(arg_ops=("create", "write"), columns_arg="fields"),
     read_only=False,
+    destructive=True,
 )
 def odoo_import(ctx: ToolContext, args: dict[str, Any]) -> Any:
     session = ctx.session

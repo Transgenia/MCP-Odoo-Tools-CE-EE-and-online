@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/main/docs/policy.schema.json",
+  "title": "odoo-tools permission policy file, version 1",
+  "description": "Per-model rules layered on the permission profile of the odoo-tools MCP server (docs/policy.md). For editors only: the server validates the file in code (error codes E1 to E20), and some rules are checked there alone: a reason for each opening of a sensitive tier, the NEVER list, duplicate keys and the 256 KiB limit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "The file format version. 1.5.0 reads version 1 only."
+    },
+    "models": {
+      "type": "object",
+      "maxProperties": 1000,
+      "description": "Keys are an exact model name, 'prefix.*' or '*'. A pattern can never open a sensitive tier or an outbound method.",
+      "propertyNames": {
+        "maxLength": 128,
+        "pattern": "^(?:\\*|[a-z0-9_]+(?:\\.[a-z0-9_]+)*(?:\\.\\*)?)$"
+      },
+      "patternProperties": {
+        "^(?:\\*|.*\\.\\*)$": {
+          "$ref": "#/$defs/patternEntry"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/exactEntry"
+      }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "withhold": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "anyOf": [
+              {
+                "pattern": "^(?:[a-z0-9_]+(?:\\.[a-z0-9_]+)*\\.[a-z0-9_]+)$"
+              },
+              {
+                "pattern": "^(?:\\*\\.[a-z0-9_]+)$"
+              }
+            ]
+          },
+          "description": "More fields to withhold: 'model.field' or '*.field'."
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "reason"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "pattern": "^(?:[a-z0-9_]+(?:\\.[a-z0-9_]+)*\\.[a-z0-9_]+)$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 200
+              }
+            }
+          },
+          "description": "Built-in withheld fields to release, each 'model.field' with a reason."
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "odoo_access_check",
+              "odoo_add_automation",
+              "odoo_add_field",
+              "odoo_api_catalog",
+              "odoo_connections",
+              "odoo_create",
+              "odoo_execute",
+              "odoo_export_records_csv",
+              "odoo_export_records_json",
+              "odoo_fields_get",
+              "odoo_import",
+              "odoo_import_preview",
+              "odoo_list_models",
+              "odoo_module_info",
+              "odoo_online_profile",
+              "odoo_read",
+              "odoo_read_group",
+              "odoo_record_documents",
+              "odoo_report",
+              "odoo_search",
+              "odoo_search_count",
+              "odoo_search_read",
+              "odoo_telemetry_preview",
+              "odoo_translate_get",
+              "odoo_translate_set",
+              "odoo_unlink",
+              "odoo_version",
+              "odoo_write"
+            ]
+          },
+          "description": "Tools that are not listed and refuse every call."
+        }
+      }
+    },
+    "comment": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "exactEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'read'."
+        },
+        "create": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'create'."
+        },
+        "write": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'write'."
+        },
+        "unlink": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'unlink'."
+        },
+        "call": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 200,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:[A-Za-z][A-Za-z0-9_]{0,127})$"
+              }
+            }
+          ],
+          "description": "true opens call (and the tiers of an exactly named model, not its outbound methods); false refuses it; a list allows only these public methods, and opens the outbound methods it names."
+        },
+        "schema": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'schema'."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 200,
+          "description": "Why this entry opens a sensitive operation; required when it opens a tier operation or lists an outbound method. Shown in odoo_version and written to the audit log."
+        },
+        "expires": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "format": "date",
+          "description": "Last day (UTC) the entry's allowances apply; its refusals apply after it too."
+        },
+        "comment": {
+          "type": "string"
+        }
+      }
+    },
+    "patternEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'read'."
+        },
+        "create": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'create'."
+        },
+        "write": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'write'."
+        },
+        "unlink": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'unlink'."
+        },
+        "call": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 200,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:[A-Za-z][A-Za-z0-9_]{0,127})$"
+              }
+            }
+          ],
+          "description": "true opens call (and the tiers of an exactly named model, not its outbound methods); false refuses it; a list allows only these public methods, and opens the outbound methods it names."
+        },
+        "schema": {
+          "type": "boolean",
+          "description": "Allow (true) or refuse (false) 'schema'."
+        },
+        "comment": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

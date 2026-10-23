@@ -20,5 +20,7 @@ USER mcp
 # stdio MCP server: run interactively, e.g.
 #   docker run -i --rm --env-file ./odoo.env odoo-mcp-tools
 # where odoo.env (chmod 600, never committed) sets ODOO_URL, ODOO_DB, ODOO_LOGIN
-# and ODOO_API_KEY.
+# and ODOO_API_KEY, and optionally ODOO_POLICY (permission profile, default
+# standard), ODOO_POLICY_FILE (a file mounted read-only) and ODOO_AUDIT_DIR
+# (a mounted folder; without it the audit goes to docker logs).
 ENTRYPOINT ["odoo-mcp"]

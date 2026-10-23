@@ -1,6 +1,6 @@
 # Privacy policy — Odoo Tools plugin
 
-_Last updated: 2026-10-20. Applies to the `odoo-tools` Claude plugin in this
+_Last updated: 2026-10-21. Applies to the `odoo-tools` Claude plugin in this
 repository (MCP server, CLI fallback, skills, commands, agents and hooks)._
 
 Publisher: Transgenia (Centrum Transgenia SAS), dev@transgenia.org.
@@ -19,7 +19,7 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 | Data | Where it goes | Why |
 |------|---------------|-----|
-| Odoo URL, database, login, API key / password | Stored by Claude Code as plugin options; the API key and password are `sensitive` options kept in the OS secure credential store. Passed to the local MCP server process. Claude Code also exports every saved option to the environment of the plugin's hook processes; those hooks only check whether the URL, database and login are set and never read the API key or password. | To authenticate against **your** Odoo instance. |
+| Odoo URL, database, login, API key / password | Stored by Claude Code as plugin options; the API key and password are `sensitive` options kept in the OS secure credential store. Passed to the local MCP server process. Claude Code also exports every saved option to the environment of the plugin's hook processes; those hooks only check whether the URL, database and login are set, and check the two permission policy options (profile and policy file path), and never read the API key or password. | To authenticate against **your** Odoo instance. |
 | Odoo records you query (may include personal data) | Sent from your Odoo to the local MCP server, then returned to your MCP client, which sends tool results to your model provider (e.g. Anthropic, for Claude) as with any tool. | To answer your request. Governed by your Odoo's and your model provider's terms, not by Transgenia. |
 | Nothing | Transgenia | — |
 
@@ -41,15 +41,24 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
 
 - The MCP server does not write credentials or records to disk. Its schema cache
   is in memory.
+- **Audit log (1.5.0):** the MCP server writes one line per tool call, refusals
+  included, to daily files in the plugin's data folder
+  (`~/.claude/plugins/data/…/audit`, owner-only). A line holds tool, model and
+  operation names, counts, timings and the policy digest; the Odoo database and
+  login appear only on the line written when the server starts. It holds no
+  record data, argument values, filters, ids, URL or secret. Files are kept 90
+  days and are deleted with the plugin's data folder; in containers and
+  standalone runs, `ODOO_AUDIT_DIR=off` writes none.
 - **Exception — optional CLI fallback:** `/odoo-tools:odoo-setup-cli` creates an
   owner-only `.env` with placeholders under `~/.claude/tools/odoo-cli`; you type
   your credentials into it yourself (Claude never asks for the secret). Delete it
   when you stop using the CLI.
-- The SessionStart hook keeps one empty timestamp file, `options-notice`, in the
-  plugin's data folder (`~/.claude/plugins/data/…`) so that the missing-options
-  notice is shown at most once a day. It holds no data. The hook also checks
-  whether the container mode's `~/.odoo-tools/mcp/odoo.env` exists; it never opens
-  or reads that file.
+- The SessionStart hook keeps two empty timestamp files, `options-notice` and
+  `policy-notice`, in the plugin's data folder (`~/.claude/plugins/data/…`) so
+  that its notices are shown at most once a day. They hold no data. The hook also
+  checks whether the container mode's `~/.odoo-tools/mcp/odoo.env` exists; it
+  never opens or reads that file. When a permission policy file is configured, it
+  reads that file (rules, not credentials) to say whether it is valid.
 
 ## Retention
 
@@ -59,7 +68,10 @@ none is sent to Transgenia.
 ## Your choices
 
 - Use a least-privilege Odoo user and enable **Read-only mode** in the plugin
-  options for exploration.
+  options for exploration. The **Permission profile** option (`standard` by
+  default) and an optional policy file narrow further what the tools read: a
+  policy file can withhold fields such as personal e-mails (`fields.withhold`,
+  see [`docs/policy.md`](docs/policy.md)).
 - Revoke the API key in Odoo (Preferences → Account Security) to cut access
   immediately. Uninstalling the plugin (`/plugin`) also deletes its data
   directory (`~/.claude/plugins/data/…`).

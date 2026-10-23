@@ -13,13 +13,15 @@ You operate Odoo through this plugin. There are two surfaces:
    `odoo_write`, `odoo_unlink`, `odoo_execute`, `odoo_fields_get`,
    `odoo_list_models`, `odoo_module_info`, `odoo_export_records_json`,
    `odoo_export_records_csv`, `odoo_translate_get`, `odoo_translate_set`,
-   `odoo_report`, `odoo_connections`, `odoo_telemetry_preview`,
+   `odoo_connections`, `odoo_telemetry_preview`,
    `odoo_read_group`, the Studio-style low-code tools `odoo_add_field` and
    `odoo_add_automation`, and the Odoo Online tools `odoo_online_profile`,
    `odoo_api_catalog`, `odoo_access_check`, `odoo_record_documents`,
-   `odoo_import_preview` and `odoo_import` (they work on any Odoo 10-19). A
-   cross-version compatibility layer resolves model/field names, so you write
-   modern names and they work on v10-19.
+   `odoo_import_preview` and `odoo_import` (they work on any Odoo 10-19).
+   `odoo_report` is deprecated: it always returns an error without calling Odoo
+   (use `odoo_record_documents` for stored PDFs). A cross-version compatibility
+   layer resolves model/field names, so you write modern names and they work on
+   v10-19.
 2. **CLI fallback.** `node ~/.claude/tools/odoo-cli/dist/cli.js <command> '<json>'`
    — use only when the MCP server is unavailable.
 
@@ -42,13 +44,38 @@ If you must use the CLI instead, run `/odoo-tools:odoo-setup-cli`.
     run that saves nothing but may consume sequence numbers or fire webhooks).
     Confirm intent with the user before using them; never run `odoo_import`
     just because a preview came back clean. If the server runs with
-    `ODOO_READONLY=1`, writes are refused with a clear error — use
-    reads/`odoo_read_group`/exports instead.
+    `ODOO_READONLY=1`, the write tools are not listed and are refused with a
+    clear error; use reads, `odoo_read_group` and exports instead.
 6. **Odoo Online** — start with `odoo_online_profile` (series, API-key expiry,
     plan limits). When a call is refused, `odoo_access_check` says which
     operations this user has; for stored PDFs use `odoo_record_documents`. Pace
     bulk work (about 1 call per second) and load many records with
     `odoo_import` (at most 500 rows per call) instead of one create per record.
+
+## Permission policy
+
+The server applies a permission profile on top of the Odoo user's rights
+(`odoo_version` returns it in `policy`). The default, `standard`, reads, creates,
+updates and runs business methods, but does not delete, make Studio-style
+changes, send e-mail or SMS (internal notes are fine), change users, rights,
+modules, settings, bank accounts or fiscal sequences, or read stored secrets.
+Tools it forbids everywhere are not listed (`odoo_unlink`, `odoo_add_field`,
+`odoo_add_automation` under `standard`).
+
+- **A refusal that names the odoo-tools permission policy is final.** Tell the
+  user what was refused and which option changes it (it says so); never try
+  another tool, `odoo_execute`, the CLI fallback or the shell to get the same
+  result, and never edit the policy file or the plugin options yourself.
+- Which profile a task needs: reads and exports work in every profile; creating
+  and updating business records, and business methods such as `action_confirm`,
+  need `standard`; deleting needs `full` (under `standard`, archive with
+  `odoo_write {"active": false}` instead); custom fields, views and automations
+  need `builder`; replying to customers from the chatter (`message_post` to
+  partners) needs `full` or a policy file entry with a reason. An internal note
+  (`message_post` with `subtype_xmlid` `"mail.mt_note"` and no `partner_ids`)
+  works under `standard`.
+- Fields that look like credentials are withheld; a result that lost some names
+  them in `policy_withheld_fields`. Do not try to read them another way.
 
 ## Knowledge context
 

@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from ..compat import requires_edition, resolve_fields, resolve_model
-from ..registry import ToolContext, obj, registry
+from ..registry import Access, ToolContext, obj, registry
 
 
 def _rows(ctx: ToolContext, args: dict[str, Any]) -> tuple[str, list[str], list[dict[str, Any]], dict]:
@@ -47,6 +47,7 @@ _SCHEMA = obj(
     "odoo_export_records_json",
     "Export records matching a domain as a JSON array (read-only).",
     _SCHEMA,
+    access=Access(arg_ops=("read",)),  # export is read: the same rows as odoo_search_read
 )
 def odoo_export_records_json(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model, _cols, rows, warn = _rows(ctx, args)
@@ -57,6 +58,7 @@ def odoo_export_records_json(ctx: ToolContext, args: dict[str, Any]) -> Any:
     "odoo_export_records_csv",
     "Export records matching a domain as CSV text (read-only).",
     _SCHEMA,
+    access=Access(arg_ops=("read",)),
 )
 def odoo_export_records_csv(ctx: ToolContext, args: dict[str, Any]) -> Any:
     model, columns, rows, warn = _rows(ctx, args)

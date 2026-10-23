@@ -53,3 +53,46 @@ class CompatError(OdooMcpError):
 
 class ConfigError(OdooMcpError):
     """Server configuration is incomplete or invalid."""
+
+
+class PolicyError(CompatError):
+    """The odoo-tools permission policy stopped a call (``odoo_mcp.policy``).
+
+    ``touches`` are the ``op:model[:method]`` strings that were checked,
+    ``rule`` the rule that decided (``tier:security``, ``file:res.users``, ...)
+    and ``layer`` where it was stopped: ``tool`` (the tool itself), ``A`` (the
+    declared accesses, before any session exists) or ``B`` (an actual Odoo
+    call). Unlike connection errors it gets no setup hint: the fix is the
+    policy, not the connection.
+    """
+
+    def __init__(self, message: str, *, remediation: str | None = None,
+                 touches: tuple[str, ...] = (), rule: str = "", layer: str = "") -> None:
+        super().__init__(message, remediation=remediation)
+        self.touches = tuple(touches)
+        self.rule = rule
+        self.layer = layer
+
+
+class PolicyDenied(PolicyError):
+    """The policy refuses the call: a decision, not a bug."""
+
+
+class PolicyEnvelopeError(PolicyError):
+    """A tool tried an Odoo call its permission mapping does not declare.
+
+    This only fires on a bug in odoo-tools, in every profile, before the call
+    reaches the transport.
+    """
+
+
+class PolicyConfigError(ConfigError):
+    """The permission profile or policy file could not be loaded.
+
+    ``code`` is the stable error code (``E1`` to ``E20``). The loader turns it
+    into a locked policy, so it never reaches a tool.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
