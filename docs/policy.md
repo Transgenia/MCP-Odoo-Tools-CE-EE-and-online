@@ -891,3 +891,5 @@ To add a tool:
     outside the policy's argument table are not held to the allowlist, because the
     same object may be the method's values, which the policy cannot tell apart
     without the method's parameters. Pass a context by name, in `kwargs["context"]`.
+    Planned for 1.5.2: on Odoo 10 to 12, the guarded session refuses the keys of
+    such an object that are not fields of the model.

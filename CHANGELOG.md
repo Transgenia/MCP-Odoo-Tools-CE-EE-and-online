@@ -4,6 +4,142 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-10-29
+
+Honest on every surface, local diagnostics, and what the Claude plugin directory
+flagged. On 2026-10-28 a user who had installed the plugin in Cowork ran
+`/odoo-doctor`: with no Odoo tools loaded, Claude checked Python inside Cowork's
+virtual machine and then sent the user to check their Odoo Online plan. Neither
+could be the cause, and nothing on the user's computer recorded what had
+happened. 1.5.1 checks the surface first everywhere, keeps small metadata-only
+diagnostics on the user's computer, and stops reading a credential the plugin
+never asked for. The policy digest changes (`TIERS_VERSION` 2026-10-29.1) because
+the sealed profiles refuse a little more; the tool count stays 28.
+
+### Fixed
+
+- **The doctor checks where it runs before anything else.** `/odoo-tools:odoo-doctor`
+  starts with step 0: when `odoo_version` is not among the tools, it runs no shell
+  command, checks no Python and gives no Odoo-side advice (plan, API key,
+  database). It finds the surface, sends Cowork and Claude chat users to the Code
+  tab of Claude Desktop, where the plugin installed on their Claude account
+  appears as a synced plugin, or to Transgenia, and ends with a support report.
+  The same check opens every skill, command and agent that calls the Odoo tools
+  (`odoo-connect`, `odoo-crossversion`, `odoo-mcp-tools`, `odoo-studio-style`,
+  `/odoo-tools:odoo-export`, the `odoo` and `odoo-migrator` agents), and
+  `odoo-setup-mcp` says that a Python version read in Cowork belongs to its
+  virtual machine, not to the user's computer.
+- **Every listing says where the Odoo tools run.** The description of the
+  marketplace entry overrode the one in `plugin.json`, so the 1.4.1 surface note
+  never showed for marketplace installs. Both now say that the Odoo tools run in
+  Claude Code and that Cowork and Claude chat load the skills and commands
+  without them, with Transgenia's contact. The README says it above the badges,
+  since the directory shows the README as the listing's description, and
+  `plugin.json` gains the directory listing fields: icon, documentation, support,
+  privacy policy and terms URLs.
+- **The server reads no credential the plugin did not ask for.** It read
+  `ODOO_HTTP_BEARER` from its environment and never used it (SECURITY.md listed
+  it as reserved). In the plugin that value could only come from the user's own
+  environment, the pattern the directory holds for a reviewer ("Uses a credential
+  from the user's machine"). It is gone, and a test fails if the server reads a
+  credential-like variable that `plugin.json` does not pass from a `sensitive`
+  option.
+- **A context passed positionally, on Odoo 10 to 12.** Those series also take a
+  call's context from the positional argument that follows the method's own
+  parameters, and the policy read a context only by name, so a `default_<field>`
+  key with a list or object value could reach Odoo 10 to 12 that way through
+  `odoo_execute`. The context rules now apply to such an argument: at Layer A on
+  every series, before the series is known, and in the guarded session on 10 to
+  12. For a method the policy knows, an object after its parameters is the
+  context and meets every context rule; for any other method, the
+  `default_<field>` keys of every positional object meet them, while a values
+  object such as `{"default_code": "A-1"}` still runs. Profile `full` is
+  unchanged. Refusals keep rule `context`, name the key, never its value, and say
+  to pass the context by name. Not closed: on Odoo 10 to 12, the other keys of an
+  object passed positionally to a method outside the policy's table are not held
+  to the context allowlist (known limit 10 in `docs/policy.md`, planned for
+  1.5.2). `scripts/sandbox_smoke.py` checks the refusal on every live series.
+- **Release workflow.** The draft guard ran with the workflow's read-only token,
+  and GitHub lists draft releases only to a token with push access, so it never
+  saw a draft: a new `preflight` job, the only one with `contents: write`, runs
+  nothing but that query, and `verify` waits for it. The moving image tags
+  (`<major.minor>`, `latest`) are computed from the published releases and now
+  stop the run when that list cannot be read, instead of tagging from an empty
+  list.
+- `docs/design/json2-online-lite.md` no longer shows an inline install-and-run
+  command, which the directory listed as "Contains a download-and-run command".
+
+### Added
+
+- **Local diagnostics.** The MCP server writes small, metadata-only records to
+  `server.jsonl` in `ODOO_DIAG_DIR` (the plugin passes
+  `${CLAUDE_PLUGIN_DATA}/diagnostics`; unset or `off` writes none): `start`
+  (plugin, Python and OS versions, transport preference, read-only mode, policy
+  profile and digest or E-code, which connection settings are present, the kind
+  of credential, the audit mode, and the `CLAUDE_CODE_ENTRYPOINT` token),
+  `connect` (the Odoo major version, edition, deployment and transport, or an
+  error category with the HTTP status), `crash` (the exception class and the
+  plugin's own frames) and `stop` (uptime, calls, errors by category). Every key
+  is checked against an allowlist: no URL, host, database, login, key, password,
+  policy file path, record data, argument or error message is ever written.
+  Lines stay under 2 KB, each file rotates to `<name>.1` at 256 KiB, the folder
+  is created owner-only and files are 0600, and a failure to write never reaches
+  a tool call.
+- **The support report.** `python3 server/run_stdio.py --diagnose [--diag-dir DIR]
+  [--audit-dir DIR] [--json]` prints what a user can paste to support, under the
+  header "odoo-tools support report (no keys, URLs, logins or record data)": the
+  versions, the diagnostics folder (the home folder written as `~`), the last
+  server and hook events re-checked against the allowlist, the last 7 days of
+  audit counts by status and refusal rule, and the policy computed offline. It
+  never contacts Odoo. `/odoo-tools:odoo-doctor` runs it on the plugin's own
+  folders.
+- **A new session-start hook, `hooks/session_start.py`, replaces
+  `hooks/check_options.py`.** It reads no plugin option and no credential: only
+  `CLAUDE_PLUGIN_DATA`, `CLAUDE_CODE_ENTRYPOINT`, the event's source and session
+  id, the end of the server's `server.jsonl`, the container-mode marker, its
+  daily timestamps and the plugin's own version. When the last 14 days record
+  neither a successful connection nor a server start with every connection
+  setting, it tells Claude on every session, surface first (Cowork and Claude
+  chat never run the Odoo tools; the Code tab of Claude Desktop or Claude Code;
+  where the options are set; the doctor; Transgenia), with one
+  `odoo-tools session diagnostics:` line the doctor can report from any surface,
+  and shows a shorter notice at most once a day; a start locked by the policy is
+  named with its E-code. It writes one metadata line per session to
+  `hook.jsonl`. The first hook's message for a computer without `python3` now
+  says that in Cowork and Claude chat the Odoo tools do not run with or without
+  Python.
+- **Container mode marker.** `/odoo-tools:deploy-local` container mode creates
+  `${CLAUDE_PLUGIN_DATA}/diagnostics/container-mode`, so the hook stays silent
+  while the container server is the one in use.
+- **Claude Desktop extension preview.** `scripts/build_mcpb.py` builds
+  `odoo-tools-<version>.mcpb` from the same server and a manifest generated from
+  `plugin.json`, and `.github/workflows/mcpb-preview.yml` validates it with the
+  official MCPB tool at a pinned version, starts it with no network and uploads
+  it as a workflow artifact for manual testing. The bundle never enters the
+  plugin folder (the directory holds a plugin that ships one) and is not
+  published yet; `docs/desktop-extension.md` describes it.
+- **Product rules.** `docs/product-rules.md` states the rules for this plugin: it
+  installs on every surface Anthropic allows and is never blocked on one; it is
+  honest where its tools cannot run and leads to Transgenia; local is free and
+  hosted is premium; credentials never travel through a conversation;
+  diagnostics stay on the user's computer; the directory numbers are reviewed
+  every month; and every change is checked against the manual at
+  docs.transgenia.org, in Spanish, English and Chinese. `test_product_rules.py`
+  checks what a test can. A `CLAUDE.md` and a pull request template carry them to
+  contributors and to Claude Code sessions.
+- **Evals.** `evals/` holds three `claude plugin eval` cases (Cowork, Claude chat,
+  Claude Code with empty options); an eval run never starts the plugin's MCP
+  server, so each case sees what a Cowork user sees.
+
+### Changed
+
+- `PRIVACY.md` describes the diagnostics files and the support report, the hook
+  that reads no plugin option, and the desktop extension preview's storage.
+  `SECURITY.md` explains each finding the directory lists for this plugin and
+  where to verify it. `SUPPORT.md` puts the surface first and explains the
+  support report. The README, `SUPPORT.md`, `SECURITY.md` and `PRIVACY.md` drop
+  their em dashes (the README keeps the Claude Desktop label it quotes).
+
 ## [1.5.0] - 2026-10-23
 
 Secure defaults: a permission policy on top of the Odoo user's own access rights,

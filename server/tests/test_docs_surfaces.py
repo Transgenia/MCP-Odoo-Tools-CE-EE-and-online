@@ -117,7 +117,7 @@ def test_the_docs_show_the_full_escape() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## Permissions" in readme and "docs/policy.md" in readme
     assert "`full`" in readme.split("## Permissions", 1)[1].split("\n## ", 1)[0]
-    release = changelog.split("\n## [", 2)[1]  # the newest release
+    release = changelog.split("\n## [1.5.0]", 1)[1].split("\n## [", 1)[0]  # 1.5.0's notes
     assert re.findall(r"^### (.+)$", release, re.MULTILINE)[0] == "Changed (secure defaults)"
     assert "**Permission profile** to `full`" in release
 

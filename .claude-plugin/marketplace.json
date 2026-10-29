@@ -13,7 +13,7 @@
       "name": "odoo-tools",
       "source": "./",
       "description": "Connect Claude to Odoo Community, Enterprise and Online (versions 10-19) through an MCP server with a permission policy and a cross-version compatibility layer, plus a CLI fallback. The Odoo tools run in Claude Code, including the Code tab of Claude Desktop; in Cowork and Claude chat the skills and commands load without the tools. Assisted setup by Transgenia: dev@transgenia.org.",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "license": "MIT",
       "keywords": [
         "odoo",
