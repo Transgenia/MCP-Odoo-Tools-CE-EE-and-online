@@ -153,6 +153,28 @@ CONTEXT_STRUCTURAL_DEFAULT_HINT = ("context key {key} sets a field that binds or
                                    "this call names; pass the value in the record's values, "
                                    "where it is checked, or use profile 'full' (the user sets it "
                                    "in the plugin option 'Permission profile')")
+# The same three refusals for a key of an object passed positionally (design E1): Odoo 10 to 12
+# take an object that follows a method's own parameters as the call's context, so the policy
+# checks such an object as one. The hint says where the key sits and how to pass the call so
+# that nothing is read as a context by position.
+POSITIONAL_PLACE = "in a positional argument, which Odoo 10 to 12 take as the call's context"
+POSITIONAL_REMEDY = ("pass the context by name in kwargs 'context' (the same rules apply "
+                     "there) and the method's other arguments by name, or put the values in the "
+                     "record's values")
+CONTEXT_POSITIONAL_HINT = ("context key {key}, " + POSITIONAL_PLACE + ", is not allowed through "
+                           "these tools (allowed: {allowed}); " + POSITIONAL_REMEDY)
+CONTEXT_DEFAULT_POSITIONAL_HINT = (
+    "context key {key}, " + POSITIONAL_PLACE + ", holds a list or an object, and Odoo applies a "
+    "context default to every record the call creates, including x2many lines and records of "
+    "other models, so it cannot be checked; " + POSITIONAL_REMEDY + ", where they are checked, "
+    "or use profile 'full' (the user sets it in the plugin option 'Permission profile')")
+CONTEXT_STRUCTURAL_DEFAULT_POSITIONAL_HINT = (
+    "context key {key}, " + POSITIONAL_PLACE + ", sets a field that binds or exposes a related "
+    "record (a delegation link, or an attachment's visibility or binding), and Odoo applies a "
+    "context default to every record the call creates, including nested records of other "
+    "models, so it cannot be checked against the model this call names; " + POSITIONAL_REMEDY
+    + ", where they are checked, or use profile 'full' (the user sets it in the plugin option "
+    "'Permission profile')")
 CALL_LIST_HINT = "method '{method}' is not among the methods allowed on '{model}' ({list})"
 FILE_HINT = "the policy file rule '{key}' refuses it"
 INVALID_MODEL_HINT = ("the model name is not a valid Odoo model name (lowercase letters, digits, "
@@ -362,25 +384,32 @@ def delegation_link(policy: Policy, op: str, model: str, field: str, parent: str
                   layer=layer)
 
 
-def context(policy: Policy, op: str, model: str, key: Any, *, layer: str = "A") -> PolicyDenied:
+def context(policy: Policy, op: str, model: str, key: Any, *, layer: str = "A",
+            positional: bool = False) -> PolicyDenied:
+    """A context key outside the allowlist. ``positional``: the key sits in an object passed
+    positionally, which Odoo 10 to 12 take as the context (design E1)."""
+    template = CONTEXT_POSITIONAL_HINT if positional else CONTEXT_HINT
     return _check(policy, op, model, "context",
-                  CONTEXT_HINT.format(key=plain_name(key), allowed=CONTEXT_ALLOWED), layer=layer)
+                  template.format(key=plain_name(key), allowed=CONTEXT_ALLOWED), layer=layer)
 
 
 def context_default(policy: Policy, op: str, model: str, key: Any, *,
-                    layer: str = "A") -> PolicyDenied:
+                    layer: str = "A", positional: bool = False) -> PolicyDenied:
     """A ``default_<field>`` context key whose value is a list or an object: the key is
     named (when it is a plain identifier), its value never is."""
-    return _check(policy, op, model, "context",
-                  CONTEXT_DEFAULT_HINT.format(key=plain_name(key)), layer=layer)
+    template = CONTEXT_DEFAULT_POSITIONAL_HINT if positional else CONTEXT_DEFAULT_HINT
+    return _check(policy, op, model, "context", template.format(key=plain_name(key)),
+                  layer=layer)
 
 
 def context_structural_default(policy: Policy, op: str, model: str, key: Any, *,
-                               layer: str = "A") -> PolicyDenied:
+                               layer: str = "A", positional: bool = False) -> PolicyDenied:
     """A plain ``default_<field>`` naming a structural field on a creating call: the key is
     named (when it is a plain identifier), its value never is."""
-    return _check(policy, op, model, "context",
-                  CONTEXT_STRUCTURAL_DEFAULT_HINT.format(key=plain_name(key)), layer=layer)
+    template = (CONTEXT_STRUCTURAL_DEFAULT_POSITIONAL_HINT if positional
+                else CONTEXT_STRUCTURAL_DEFAULT_HINT)
+    return _check(policy, op, model, "context", template.format(key=plain_name(key)),
+                  layer=layer)
 
 
 def shape(policy: Policy, op: str, model: str, *, detail: str, method: str | None = None,
