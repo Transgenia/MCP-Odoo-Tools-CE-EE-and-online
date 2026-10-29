@@ -93,6 +93,8 @@ class Settings:
     audit_dir: str = ""
     # Days a daily audit file is kept (0 keeps them forever), clamped to 0..3650.
     audit_retention_days: int = 90
+    # The local diagnostics (odoo_mcp.diagnostics): a folder, or "off"; unset is off.
+    diag_dir: str = ""
 
     extra: dict = field(default_factory=dict)
 
@@ -125,6 +127,7 @@ class Settings:
             policy_file=os.path.expanduser(_env("ODOO_POLICY_FILE").strip()),
             audit_dir=_env("ODOO_AUDIT_DIR").strip(),
             audit_retention_days=min(max(_get_int("ODOO_AUDIT_RETENTION_DAYS", 90), 0), 3650),
+            diag_dir=_env("ODOO_DIAG_DIR").strip(),
         )
 
     def redacted(self) -> dict:
@@ -144,6 +147,7 @@ class Settings:
             "policy_profile": self.policy_profile,
             "policy_file": self.policy_file,  # a path, not a secret
             "audit": self.audit_dir.strip().lower() != "off",
+            "diagnostics": self.diag_dir.strip().lower() not in ("", "off"),
         }
 
     def __repr__(self) -> str:

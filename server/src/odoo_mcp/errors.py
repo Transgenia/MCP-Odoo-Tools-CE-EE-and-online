@@ -31,7 +31,15 @@ class RateLimited(TransportError):
 
 
 class OdooFault(OdooMcpError):
-    """The Odoo server returned an application-level fault."""
+    """The Odoo server returned an application-level fault.
+
+    ``odoo_name`` is the Odoo exception class the reply named (for example
+    ``odoo.exceptions.AccessError``) when the transport knows it. It is never
+    shown: only the local diagnostics read it, to count access errors without
+    reading the message.
+    """
+
+    odoo_name: str | None = None
 
 
 class CompatError(OdooMcpError):

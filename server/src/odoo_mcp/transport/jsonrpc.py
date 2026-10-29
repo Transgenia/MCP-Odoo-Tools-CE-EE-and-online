@@ -145,7 +145,9 @@ class JsonRpcTransport:
             message = _flatten_error(err)
             if any(marker in message.lower() for marker in API_KEY_MARKERS):
                 raise ApiKeyRejected(message)
-            raise OdooFault(message)
+            fault = OdooFault(message)
+            fault.odoo_name = _error_name(err)  # for the local diagnostics only
+            raise fault
         return data.get("result")
 
     def version(self) -> dict[str, Any]:
@@ -176,6 +178,13 @@ class JsonRpcTransport:
 
     def close(self) -> None:
         """Nothing to release: each call opens and closes its own connection."""
+
+
+def _error_name(err: Any) -> str | None:
+    """The Odoo exception class a JSON-RPC error object names (``data.name``), if any."""
+    data = err.get("data") if isinstance(err, dict) else None
+    name = data.get("name") if isinstance(data, dict) else None
+    return name if isinstance(name, str) and name else None
 
 
 def _flatten_error(err: Any) -> str:
