@@ -28,6 +28,12 @@ what reads return (the result names them in ``policy_withheld_fields``).
 Every ``tools/call`` of a known tool leaves one audit line (``odoo_mcp.audit``),
 refusals included, at whichever step it ends: names and counts only, never a
 value, a domain, an id or a secret.
+
+The local diagnostics (``odoo_mcp.diagnostics``, off unless ODOO_DIAG_DIR names a
+folder) note the lifecycle for support, metadata only: ``start`` when ``serve``
+starts, ``connect`` after the first tool call that reached a connection outcome,
+``crash`` for an unexpected exception, and ``stop`` with the call and error counts
+when the stdio loop ends. They never change what a tool does or answers.
 """
 
 from __future__ import annotations
@@ -43,6 +49,7 @@ from typing import Any, BinaryIO
 from . import tools as _tools  # noqa: F401  (import registers all tools)
 from .audit import AuditLog
 from .config import Settings
+from .diagnostics import Diagnostics
 from .errors import (
     AuthError,
     CompatError,
@@ -148,6 +155,7 @@ class McpServer:
         obs: Observability | None = None,
         policy: Policy | None = None,
         audit: AuditLog | None = None,
+        diagnostics: Diagnostics | None = None,
     ) -> None:
         self.settings = settings
         # Read once, here: the policy is fixed for the life of the process (a
@@ -157,6 +165,9 @@ class McpServer:
         self.manager = manager or ConnectionManager(settings)
         # One line per tool call; serve() writes the start line.
         self.audit = audit if audit is not None else AuditLog.from_settings(settings)
+        # Metadata for support (ODOO_DIAG_DIR); serve() writes start and stop.
+        self.diag = diagnostics if diagnostics is not None else Diagnostics.from_settings(
+            settings)
         self.obs = obs or Observability(
             metrics=settings.metrics,
             metrics_port=settings.metrics_port,
@@ -225,25 +236,31 @@ class McpServer:
             check_readonly(self.settings, tool)  # disabled tools say so, whatever the args
         except OdooMcpError as exc:
             self.audit.refused(name, exc, layer="tool", rule="readonly", policy=self.policy)
+            self.diag.tool_call(category="policy")
             return _tool_result(str(exc), is_error=True)
         try:
             self.policy.check_tool(tool)  # locked, unmapped, disabled or hidden: the same
         except OdooMcpError as exc:
             self.audit.refused(name, exc, layer="tool", policy=self.policy)
+            self.diag.tool_call(category="policy")
             return _tool_result(str(exc), is_error=True)
         problem = validate_arguments(tool.input_schema, arguments)
         if problem:
             self.audit.call(name, policy=self.policy, status="invalid")
+            self.diag.tool_call(category="other")
             return _tool_result(f"Input validation error: {problem}", is_error=True)
         try:
             scope = self.policy.check(tool, arguments)  # Layer A: the arguments alone
         except PolicyError as exc:
             self.audit.refused(name, exc, layer="A", policy=self.policy)
+            self.diag.tool_call(category="policy")
             return _tool_result(str(exc), is_error=True)
         except Exception as exc:
             log.exception("the permission policy could not check a call of %s", name)
             self.audit.call(name, policy=self.policy, status="error", exc=exc, layer="A",
                             rule="internal", decision="deny")
+            self.diag.crash(exc, "policy")
+            self.diag.tool_call(category="other")
             return _tool_result(
                 f"internal error: the odoo-tools permission policy could not check this {name} "
                 "call, so it was refused (fail closed). Nothing was sent to Odoo.",
@@ -252,6 +269,7 @@ class McpServer:
         started = time.monotonic()
         status = "ok"
         failure: BaseException | None = None
+        raw = None
         try:
             # stdio = single-tenant from env
             raw = self.manager.default() if self._needs_session(tool) else None
@@ -274,6 +292,7 @@ class McpServer:
         except Exception as exc:
             status, failure = "error", exc
             log.exception("tool %s failed unexpectedly", name)
+            self.diag.crash(exc, "tool")
             return _tool_result(f"internal error in {name}: {exc}", is_error=True)
         finally:
             elapsed = time.monotonic() - started
@@ -286,6 +305,9 @@ class McpServer:
                 self.manager.record_tool_call(name)
             except Exception:  # noqa: S110 - counters must never fail a tool call
                 pass
+            # Never raise (a raise here would replace the answer), never contact Odoo.
+            self.diag.tool_call(failure)
+            self.diag.connection(raw, failure)
 
     # ------------------------------------------------------------- dispatch
 
@@ -365,8 +387,9 @@ class McpServer:
         """``handle()`` that turns an unexpected exception into -32603."""
         try:
             return self.handle(msg)
-        except Exception:
+        except Exception as exc:
             log.exception("unexpected error while handling a message")
+            self.diag.crash(exc, "request")
             msg_id = msg.get("id") if isinstance(msg, dict) else None
             if isinstance(msg, dict) and "id" in msg and _valid_id(msg_id):
                 return _error(msg_id, INTERNAL_ERROR, "internal error")
@@ -431,8 +454,9 @@ class McpServer:
                     self._dispatch(raw, worker)
                 except BrokenPipeError:
                     break  # the client closed our stdout: nothing left to answer
-                except Exception:  # one bad message must never stop the server
+                except Exception as exc:  # one bad message must never stop the server
                     log.exception("unexpected error in the stdio loop")
+                    self.diag.crash(exc, "loop")
         finally:
             # Answer every request already received before exiting.
             worker.shutdown(wait=True)
@@ -445,16 +469,26 @@ def serve(
 ) -> None:
     settings = settings or Settings.from_env()
     log.info("odoo-mcp-tools %s starting: %s", PLUGIN_VERSION, settings.redacted())
-    inp = stdin if stdin is not None else sys.stdin.buffer
-    out = stdout if stdout is not None else sys.stdout.buffer
-    if stdout is None:
-        # stdout is the MCP channel: send any stray print() to stderr instead.
-        sys.stdout = sys.stderr
-    server = McpServer(settings)
-    log_policy(server.policy)
-    log.info("audit: %s", server.audit.describe())
-    server.audit.start(settings, server.policy)
-    server.run(inp, out)
+    # First, so a failure while starting still leaves a crash and a stop line.
+    diag = Diagnostics.from_settings(settings)
+    try:
+        inp = stdin if stdin is not None else sys.stdin.buffer
+        out = stdout if stdout is not None else sys.stdout.buffer
+        if stdout is None:
+            # stdout is the MCP channel: send any stray print() to stderr instead.
+            sys.stdout = sys.stderr
+        server = McpServer(settings, diagnostics=diag)
+        log_policy(server.policy)
+        log.info("audit: %s", server.audit.describe())
+        log.info("diagnostics: %s", diag.describe())
+        server.audit.start(settings, server.policy)
+        diag.start(settings, server.policy, server.audit.mode)
+        server.run(inp, out)
+    except Exception as exc:
+        diag.crash(exc, "serve")
+        raise
+    finally:
+        diag.stop()  # the end of input, a crash or an interrupt
 
 
 def log_policy(policy: Policy) -> None:

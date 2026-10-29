@@ -12,6 +12,10 @@ Thanks for helping improve MCP-Odoo-Tools.
   code, tests, prompts or tool descriptions. Interoperate with them only over the
   network. Rely on Odoo's public XML-RPC/JSON-RPC/JSON-2 interfaces and public
   model/field names only.
+- **Product rules:** read [`docs/product-rules.md`](docs/product-rules.md) before a
+  change that affects where the plugin installs, what it says on a surface where
+  its tools cannot run, credentials or diagnostics. The plugin installs on every
+  surface Anthropic allows and is never blocked on one.
 - **Scope:** this repo is the generic public core. A generic, declarative
   permission policy is part of the public core; approval workflows, localization
   engines (CFDI and the like), backups and other tenant-specific engines are not,
@@ -58,5 +62,9 @@ cd cli && npm install && npm run build
 ## Pull requests
 
 - Keep changes focused; include tests for logic.
+- Say in the pull request what changes in the manual at docs.transgenia.org, or why
+  nothing does ([product rule 8](docs/product-rules.md#8-every-change-is-checked-against-the-manual)).
+  Transgenia's maintainers update the manual in Spanish, English and Chinese in the
+  same release.
 - Update `docs/compat-matrix.md` when the delta map changes.
 - Note any new Odoo version/edition you verified against.

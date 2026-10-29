@@ -195,7 +195,8 @@ def test_the_docs_say_what_full_keeps() -> None:
     assert "Two parts stay on in every profile" in built_in
     readme = _flat((ROOT / "README.md").read_text(encoding="utf-8"))
     assert "`full` still refuses a call whose arguments it cannot read with certainty" in readme
-    changelog = _flat((ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split("\n## [", 2)[1])
+    changelog = _flat((ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+                      .split("\n## [1.5.0]", 1)[1].split("\n## [", 1)[0])
     assert "`full` still refuses a call whose arguments the policy cannot read" in changelog
 
 

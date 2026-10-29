@@ -645,7 +645,7 @@ as JSON. A team's policy repository can run it in CI.
 ## What `odoo_version` reports
 
 ```json
-"policy": {"profile": "standard", "file": null, "digest": "5b13e821b143", "readonly": false,
+"policy": {"profile": "standard", "file": null, "digest": "9f3166860347", "readonly": false,
            "hidden_tools": ["odoo_unlink", "odoo_add_field", "odoo_add_automation"],
            "opened_sensitive": [], "released_fields": [], "warnings": [],
            "error": null, "error_code": null}
@@ -867,3 +867,32 @@ To add a tool:
    accepted. `public` and `res_field`, which would make the attachment
    world-downloadable or a field attachment, are refused as defaults, so this binds
    an attachment, it does not expose one.
+10. **A context passed positionally, on Odoo 10 to 12.** These series also take a
+    call's context from the positional argument that follows the method's own
+    parameters; from 13 only `kwargs["context"]` is read. The policy reads such an
+    argument as a context: Layer A on every series, before anything is sent, through
+    `odoo_execute` with or without `ids`, and the guarded session again on 10 to 12.
+    Those series build the context with `dict()`, so a list of `[key, value]` pairs
+    counts as an object below, read as the context it builds; a list of field names,
+    ids or domain terms builds none.
+    - For a method whose parameters the policy knows (`search_read`, `create`,
+      `write` and the other methods it reads), an object after the parameters, or
+      at a parameter that never holds an object (`search_count`'s `limit`, which
+      Odoo 10 to 12 do not have), meets every context rule. A call with an argument
+      after the parameters is still refused as before (rule `shape`) when the
+      context rules let it pass.
+    - For any other method (a business method such as `action_confirm`), the
+      policy cannot know where the parameters end, so every object passed
+      positionally may be the context: its `default_<field>` keys meet the context
+      rules (a list or an object, a structural field on a call that can create, a
+      withheld field), and a values object such as `{"default_code": "A-1"}` still
+      runs.
+
+    The refusal (rule `context`) names the key, never its value, and says to pass
+    the context by name or to put the values in the record's values. What remains:
+    on Odoo 10 to 12, the other keys of an object passed positionally to a method
+    outside the policy's argument table are not held to the allowlist, because the
+    same object may be the method's values, which the policy cannot tell apart
+    without the method's parameters. Pass a context by name, in `kwargs["context"]`.
+    Planned for 1.5.2: on Odoo 10 to 12, the guarded session refuses the keys of
+    such an object that are not fields of the model.

@@ -84,6 +84,16 @@ class OdooSession:
                     )
         return self._uid
 
+    @property
+    def authenticated(self) -> bool:
+        """Whether the sign-in succeeded. Never contacts Odoo (local diagnostics)."""
+        return self._uid is not None
+
+    def known_facts(self) -> EnvFacts | None:
+        """The version/edition/deployment facts once probed, else ``None``. Never
+        contacts Odoo (local diagnostics)."""
+        return self._facts
+
     # -- core ORM call ------------------------------------------------------
     def execute(self, model: str, method: str, args: list[Any] | None = None,
                 kwargs: dict[str, Any] | None = None, *, ids: list[int] | None = None,

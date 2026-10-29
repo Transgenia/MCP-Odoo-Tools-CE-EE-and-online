@@ -13,12 +13,15 @@ keywords some series still take (``args`` for a domain, ``fields_list``,
 keyword, too many positional arguments, a domain that is not a domain) raises
 :class:`ShapeError`, which the guard turns into the ``shape`` refusal: the
 policy never guesses what an argument means.
+
+Odoo 10 to 12 also take a call's context from a positional argument; the objects
+that may be one are found by :func:`positional_contexts` (design E1).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sized
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -112,7 +115,9 @@ def method_ops(method: str) -> tuple[str, ...]:
 
 
 # --- argument shapes -----------------------------------------------------------
-# What an argument holds. None: nothing the policy checks (limit, offset, a name).
+# What an argument holds. None: a number, text, a boolean, or a list of names or numbers,
+# which the policy does not check (limit, offset, a name, langs); never an object or a list
+# of pairs, which are OBJECT and ROWS below.
 DOMAIN = "domain"  # a search domain: the field paths of its leaves
 HAVING = "having"  # a domain over aggregates ('amount:sum', '__count')
 FIELDS = "fields"  # a list of field names
@@ -128,6 +133,14 @@ EXPORT = "export"  # export_data paths: 'partner_id/name', 'id'
 COLUMNS = "columns"  # load() columns, the same syntax as export paths
 VALUES = "values"  # a dict of field values, or a list of them (create)
 FIELD = "field"  # one field name (the translation methods)
+# An object the policy does not read (copy_data's default, onchange's values, the
+# translations of update_field_translations). Every other parameter without a role takes
+# a number, text, a boolean or a list of names or numbers, never an object: an object there
+# can only be a context that Odoo 10 to 12 read by position (``positional_contexts``).
+OBJECT = "object"
+# load()'s data: rows of text, which the policy does not read. A two-column row is a
+# [text, text] pair, so this is the one parameter where a list of pairs is not a context.
+ROWS = "rows"
 
 
 @dataclass(frozen=True)
@@ -204,7 +217,7 @@ ARG_SHAPES: dict[str, ArgShape] = {
     "get_field_translations": ArgShape(True, (("field_name", FIELD), ("langs", None))),
     "export_data": ArgShape(True, (("fields_to_export", EXPORT), ("raw_data", None))),
     # ``default`` only overrides values of the answer: copy_data writes nothing.
-    "copy_data": ArgShape(True, (("default", None),)),
+    "copy_data": ArgShape(True, (("default", OBJECT),)),
     # 17+: search_read / read with the records fetched into cache. Same field
     # references, so the same domain and field checks apply.
     "search_fetch": ArgShape(False, (("domain", DOMAIN), ("field_names", FIELDS),
@@ -271,7 +284,7 @@ ARG_SHAPES: dict[str, ArgShape] = {
     # (the call-class backstop scans them without expanding, design 4.7). Read by name and
     # positionally; open_keywords lets the pre-17 keyword names pass without a shape refusal,
     # and the flat pre-17 spec collects nothing.
-    "onchange": ArgShape(True, (("values", None), ("field_names", None),
+    "onchange": ArgShape(True, (("values", OBJECT), ("field_names", None),
                                 ("fields_spec", ONCHANGE_SPEC)), open_keywords=True),
     # writes
     "create": ArgShape(False, (("vals_list", VALUES),), aliases={"vals": "vals_list"}),
@@ -279,12 +292,13 @@ ARG_SHAPES: dict[str, ArgShape] = {
     "copy": ArgShape(True, (("default", VALUES),)),
     "write": ArgShape(True, (("vals", VALUES),), aliases={"values": "vals"}),
     "update": ArgShape(True, (("values", VALUES),)),
-    "update_field_translations": ArgShape(True, (("field_name", FIELD), ("translations", None),
+    "update_field_translations": ArgShape(True, (("field_name", FIELD),
+                                                 ("translations", OBJECT),
                                                  ("source_lang", None))),
     "action_archive": ArgShape(True),
     "action_unarchive": ArgShape(True),
     "toggle_active": ArgShape(True),
-    "load": ArgShape(False, (("fields", COLUMNS), ("data", None))),
+    "load": ArgShape(False, (("fields", COLUMNS), ("data", ROWS))),
     "web_save": ArgShape(True, (("vals", VALUES), ("specification", SPEC), ("next_id", None))),
     "unlink": ArgShape(True),
 }
@@ -397,9 +411,90 @@ def named_parts(label: str, arguments: Mapping[str, Any],
     return out
 
 
+# --- the positional context (Odoo 10 to 12) --------------------------------------------
+# Up to Odoo 12 the RPC dispatcher also takes the context of a call from a positional
+# argument: the one that follows the method's own parameters (any after it are dropped).
+# From 13 on only kwargs["context"] is read. The policy reads such an argument as a context
+# (design E1); Layer A on every series, since it runs before the series is known.
+POSITIONAL_CONTEXT_UNTIL = 12  # the last major series that reads a positional context
+
+
+@dataclass
+class PositionalContexts:
+    """The positional arguments of a call that Odoo 10 to 12 may take as its context, each
+    as the context Odoo would build from it (``as_context``).
+
+    ``certain``: a method ``ARG_SHAPES`` names, where an object after its parameters, or at
+    a parameter that never holds an object, can only be the context (an override or a series
+    with fewer parameters puts the context there: ``search_count`` has no ``limit`` on Odoo
+    10 to 12). ``possible``: a method outside the table, whose parameters are unknown, so
+    every object passed positionally may be the context, or one of the method's values.
+    "Object" here is anything Odoo makes a context of: a Mapping, or a list of pairs.
+    """
+
+    certain: list[Mapping[Any, Any]] = field(default_factory=list)
+    possible: list[Mapping[Any, Any]] = field(default_factory=list)
+
+
+def as_context(value: Any) -> Mapping[Any, Any] | None:
+    """The context Odoo 10 to 12 would build from ``value`` read by position, or None.
+
+    Those series build it with ``dict(value)``, which takes a Mapping, and also a list (or a
+    tuple) whose every item has exactly two elements: ``[["lang", "es_MX"], ["default_x",
+    1]]`` is the same context as ``{"lang": "es_MX", "default_x": 1}``. This calls
+    ``dict()`` itself, so whatever it takes counts, with its own reading: a later pair wins,
+    a two-letter text is a pair of letters and a two-key object a pair of its keys, and a
+    list mixing a ``[key, value]`` pair with an x2many command such as ``[4, 5]`` is still a
+    context. What ``dict()`` refuses (a domain, whose leaves have three items; ids; a key
+    that cannot be one) makes Odoo fail as well, so it builds none. A list made only of text
+    builds none either: ``dict()`` would split two-letter names into one-letter keys, which
+    are no context key, and a list of field names or langs is an ordinary argument."""
+    if isinstance(value, Mapping):
+        return value
+    if not isinstance(value, (list, tuple)) or all(isinstance(item, str) for item in value):
+        return None
+    # Only items of two elements make a pair (dict() raises on any other length): checked
+    # first, so a long item is never copied element by element just to be refused.
+    if not all(isinstance(item, Sized) and len(item) == 2 for item in value):
+        return None
+    try:
+        return dict(value)
+    except (TypeError, ValueError):  # Odoo's dict() raises too: no context
+        return None
+
+
+def positional_contexts(method: str, args: Any, *, ids_given: bool) -> PositionalContexts:
+    """The objects among ``args`` that Odoo 10 to 12 may take as the call's context.
+
+    ``ids_given``: the records came apart from ``args`` (``odoo_execute``'s ``ids``);
+    without them the first positional argument of a record method is the ids, as in
+    ``execute_kw``. Arguments that are not a list find nothing here (``extract`` refuses
+    them with rule ``shape``)."""
+    out = PositionalContexts()
+    if not isinstance(args, (list, tuple)):
+        return out
+    positional = list(args)
+    shape = ARG_SHAPES.get(method)
+    if shape is None:
+        for value in positional:
+            context = as_context(value)
+            if context is not None:
+                out.possible.append(context)
+        return out
+    if shape.record and not ids_given and positional:
+        positional.pop(0)
+    for index, value in enumerate(positional):
+        if index < len(shape.params) and shape.params[index][1] is not None:
+            continue  # a parameter that takes this kind of value, read by its role
+        context = as_context(value)
+        if context is not None:
+            out.certain.append(context)
+    return out
+
+
 def _collect(out: CallArgs, role: str | None, value: Any) -> None:
     method = out.method
-    if role is None:
+    if role is None or role in (OBJECT, ROWS):
         return
     if role == DOMAIN:
         out.paths.extend(domain_paths(value, method=method))

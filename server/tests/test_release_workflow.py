@@ -53,16 +53,33 @@ def test_the_release_job_only_drafts_in_a_draft_run() -> None:
 
 
 def test_a_pending_draft_stops_the_run_before_anything_is_published() -> None:
-    verify = _jobs()["verify"]
-    preflight = verify.split("- name: Release state for this tag", 1)[1].split("- name:", 1)[0]
+    jobs = _jobs()
+    preflight = jobs["preflight"]
     assert "isDraft" in preflight and "exit 1" in preflight
-    assert verify.index("Release state for this tag") < verify.index("Pytest")
-    assert "needs: verify" in _jobs()["container"]
+    # GitHub lists draft releases only to a token with push access: with the
+    # workflow's contents: read the query saw no draft, and the guard never fired
+    # (1.5.0). The job that holds the write token runs nothing but the query.
+    assert "contents: write" in preflight
+    assert "uses:" not in preflight and "checkout" not in preflight
+    # a failing gh stops the run instead of reading as "no release"
+    assert "set -euo pipefail" in preflight and "|| {" in preflight
+    assert "needs: preflight" in jobs["verify"]
+    assert "needs: verify" in jobs["container"]
+    assert "Release state for this tag" not in jobs["verify"]
 
 
 def test_a_draft_tag_never_holds_latest_back() -> None:
     meta = _jobs()["container"].split("- name: Image tags", 1)[1].split("- uses:", 1)[0]
     assert "--exclude-drafts" in meta and "git tag -l" not in meta
+
+
+def test_the_moving_image_tags_fail_closed() -> None:
+    # Before 1.5.1 a failing `gh release list` inside the pipe left only this tag in
+    # the list, so a re-run of an older tag would have moved `latest` back to it.
+    meta = _jobs()["container"].split("- name: Image tags", 1)[1].split("- uses:", 1)[0]
+    query = meta.split("published=$(gh release list", 1)[1]
+    assert query.index("|| {") < query.index("versions=")
+    assert "exit 1" in query.split("versions=", 1)[0]
 
 
 def test_a_skipped_tag_job_does_not_skip_the_rest() -> None:

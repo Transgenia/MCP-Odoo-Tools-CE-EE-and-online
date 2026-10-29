@@ -1,11 +1,17 @@
-# MCP-Odoo-Tools — CE, EE & online (Odoo 10-19)
+# MCP-Odoo-Tools: CE, EE & online (Odoo 10-19)
+
+> **Where it runs:** the Odoo tools run in Claude Code (terminal, VS Code, JetBrains
+> and the **Code** tab of Claude Desktop). In Cowork and Claude chat the plugin
+> installs and its skills and commands load, but the Odoo tools do not run: open the
+> Code tab, where the plugin is synced to the same Claude account, or ask Transgenia
+> for assisted setup (dev@transgenia.org, WhatsApp +52 55 8034 0405). See
+> [Where it works](#where-it-works).
 
 [![CI](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml/badge.svg)](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](server/pyproject.toml)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-orange)](https://modelcontextprotocol.io)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
-[![Claude AI](https://img.shields.io/badge/Claude-AI-D97757?logo=claude&logoColor=white)](https://claude.ai)
 [![Odoo ERP 10-19](https://img.shields.io/badge/Odoo_ERP-10--19-714B67?logo=odoo&logoColor=white)](https://www.odoo.com)
 [![Odoo CE | EE | Online](https://img.shields.io/badge/Odoo-CE_%7C_EE_%7C_Online-714B67?logo=odoo&logoColor=white)](docs/compat-matrix.md)
 [![M8ven Score](https://m8ven.ai/badge/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)](https://m8ven.ai/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)
@@ -16,19 +22,19 @@ A **Claude Code plugin** that unifies Odoo tooling into one install. Its skills 
 commands also load in Cowork and Claude chat, but the Odoo tools themselves run in
 Claude Code only (see [Where it works](#where-it-works)):
 
-- **MCP server (primary)** — a clean-room, MIT-licensed Python server exposing
+- **MCP server (primary):** a clean-room, MIT-licensed Python server exposing
   native Odoo tools (`odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`,
   `odoo_export_records_json/csv`, `odoo_version`, ...) over **JSON-2** (Odoo's
   new API, saas~18.4 / 19.0+) or JSON-RPC, with automatic XML-RPC fallback, and
   a **cross-version compatibility layer** that
   makes a single tool call work across **Community, Enterprise and online (SaaS)
   from Odoo 10 through 19**.
-- **CLI fallback** — a lightweight TypeScript XML-RPC CLI (Node-only) for when
+- **CLI fallback:** a lightweight TypeScript XML-RPC CLI (Node-only) for when
   you can't run the MCP server, or for scripted batch access.
 - **Agents, skills, commands and domain context** to drive both surfaces.
 
 Built and maintained by [Transgenia](https://transgenia.org), a **Registered
-partner of Anthropic**. (Registered tier — this plugin is an independent
+partner of Anthropic**. (Registered tier: this plugin is an independent
 open-source project, not an Anthropic-certified or first-party product.)
 
 ## Why this exists
@@ -73,8 +79,9 @@ its **Connectors** tab lists **odoo — Runs in each session**, and opening that
 shows an empty panel with no fields to fill in. Anthropic's docs say that on the
 web the Connectors tab marks a local MCP server that way while chat does not start
 it, and there is no form because those apps do not prompt for plugin options.
-In Claude Code the plugin also says at session start which required options are
-missing (whether Cowork shows that notice has not been verified yet).
+When the plugin's local diagnostics record no recent connection or setup, its
+session-start hook says where the Odoo tools run and how to reach them (see
+[What runs on your machine](#what-runs-on-your-machine)).
 
 1. **Use Claude Code** (terminal, VS Code or JetBrains, or the **Code** tab of
    Claude Desktop). A plugin installed on your Claude account appears there as a
@@ -127,7 +134,7 @@ Claude Code prompts for the connection options when the plugin is enabled
 (change them later in `/plugin` → **odoo-tools** → **Configure options**; these
 options exist only in Claude Code, see [Where it works](#where-it-works)). The
 API key and password are `sensitive` options stored in the OS secure credential
-store — never in `settings.json` or your shell profile. The setup skill then
+store, never in `settings.json` or your shell profile. The setup skill then
 verifies the connection with `odoo_version`.
 
 ### Requirements
@@ -151,35 +158,37 @@ verifies the connection with `odoo_version`.
 
 ### What runs on your machine
 
-- **MCP server** — `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: readable
+- **MCP server:** `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`, readable
   Python source shipped in this plugin, with zero third-party runtime
   dependencies. It talks only to the Odoo URL you configure (plus your own
   OTLP collector, if you opt in with `ODOO_OTEL_ENDPOINT`). It writes one audit
   line per tool call to daily files in the plugin's data folder, kept 90 days
-  (see [Permissions](#permissions)).
-- **SessionStart hooks** — two, and neither contacts anything:
+  (see [Permissions](#permissions)), and small metadata-only diagnostics
+  (`diagnostics/server.jsonl`: when it starts, connects, crashes or stops, never
+  a value) that `/odoo-tools:odoo-doctor` turns into a support report. It reads
+  only the credentials the plugin options pass to it.
+- **SessionStart hooks:** two, and neither contacts anything:
   - runs `python3 --version` and prints a warning only when `python3` is not
     runnable (the MCP server could not start);
-  - `hooks/check_options.py`, started only when `python3` is 3.9 or newer, checks
-    whether the three required, non-sensitive options (URL, database, login) have a
-    saved value. It never reads the API key or password option and never prints,
-    stores or sends a value. When some are missing it tells you, at most once a day
-    at the start of a session, and tells Claude why the Odoo tools are off; when
-    the container mode's `~/.odoo-tools/mcp/odoo.env` exists (it checks that the
-    file exists, without opening it) it tells only Claude. When **Permission
-    profile** or **Permission policy file** is set, it also checks them with the
-    server's own loader (reading the policy file, which holds rules, not
-    credentials) and says when the server would start locked. Its only state is
-    two timestamp files in the plugin's data folder; a non-interactive session
-    started that day (`claude -p`, the Agent SDK) also uses up the daily notice.
+  - `hooks/session_start.py`, started only when `python3` is 3.9 or newer, reads
+    no plugin option and no credential: only the plugin's own data folder (the
+    server's diagnostics) and the name of the Claude app that started the
+    session. When the last 14 days record neither a successful connection to Odoo
+    nor a server start with every connection setting, it says where the Odoo
+    tools run (not in Cowork or Claude chat), at most once a day at the start of
+    a session, and tells Claude, with one diagnostics line for the doctor; when
+    the last server start was locked by the permission policy, it says so with
+    its E-code. It writes one metadata line per session to
+    `diagnostics/hook.jsonl` and keeps two timestamp files for the daily notices;
+    with the container mode of `/odoo-tools:deploy-local` it stays silent.
   - Claude Code exports every saved plugin option, sensitive ones included, to
     the environment of each plugin hook process as `CLAUDE_PLUGIN_OPTION_*`. The
-    plugin's hooks do not read the sensitive ones.
+    plugin's hooks read none of them.
 - **Local infrastructure (only if you run `/odoo-tools:deploy-local` and
-  confirm)** — Docker containers on your machine: the sandbox (PostgreSQL + Odoo
+  confirm):** Docker containers on your machine: the sandbox (PostgreSQL + Odoo
   on `127.0.0.1`, files in `~/.odoo-tools/sandbox`) or the MCP server image.
   Nothing starts automatically; no hook runs Docker.
-- **CLI fallback (only if you run `/odoo-tools:odoo-setup-cli`)** — copies the
+- **CLI fallback (only if you run `/odoo-tools:odoo-setup-cli`):** copies the
   bundled CLI source to `~/.claude/tools/odoo-cli`, runs `npm install` and
   `npm run build` there, and creates an owner-only `.env` with placeholders that
   you fill in with your credentials yourself.
@@ -188,7 +197,7 @@ verifies the connection with `odoo_version`.
 
 Provided by Transgenia, started only when you run the command (Docker required):
 
-- **Sandbox** — PostgreSQL + **Odoo Community** 10.0 to 19.0 on your machine, bound to
+- **Sandbox:** PostgreSQL + **Odoo Community** 10.0 to 19.0 on your machine, bound to
   `127.0.0.1`, with a database (demo data optional) ready for the plugin. Images
   come from `ghcr.io/transgenia` (mirrors of the official `odoo` and `postgres`
   images) with automatic fallback to Docker Hub. Passwords are generated locally
@@ -199,9 +208,9 @@ Provided by Transgenia, started only when you run the command (Docker required):
   latest series); images up to 15.0 are amd64-only (ARM Linux needs binfmt/QEMU
   emulation). Each series gets a PostgreSQL it supports.
   **Community (CE) only**: Transgenia cannot provide Odoo Enterprise (licensed by
-  Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances — connect your own
+  Odoo S.A.) or Odoo Online (Odoo S.A.'s SaaS) instances: connect your own
   instance to use them (on Odoo Online, the plan must include external API access).
-- **MCP server as a container** — `ghcr.io/transgenia/odoo-mcp-tools`, for
+- **MCP server as a container:** `ghcr.io/transgenia/odoo-mcp-tools`, for
   machines without Python 3.9+, connected to an existing Odoo.
 
 ### Configuration
@@ -310,7 +319,7 @@ No usage data leaves your machine unless you opt in with `ODOO_TELEMETRY=opt-in`
 and manually share the payload shown by `/odoo-doctor` (which calls the
 read-only `odoo_telemetry_preview` tool). When enabled, only
 `plugin_version`, `odoo_version_major`, edition/deployment labels and aggregate
-generic tool counters are included — never URL, DB, login, secrets, PII,
+generic tool counters are included, never URL, DB, login, secrets, PII,
 modules or billing. No schedules, no boot hooks, no background sends.
 (This covers the telemetry payload only; `ODOO_METRICS`/`ODOO_OTEL_ENDPOINT`
 remain separate explicit opt-ins for local Prometheus/OTLP observability.)
@@ -367,9 +376,9 @@ server keeps the Odoo credential, the same policy becomes real enforcement.
 this plugin. It reads records (which may include personal data such as names,
 emails and addresses) from your own Odoo only when asked. Services it contacts:
 
-- **Your Odoo instance** (the URL you configure) — from the MCP server, or from
+- **Your Odoo instance** (the URL you configure): from the MCP server, or from
   the optional CLI fallback.
-- **Your model provider** — tool results go back to your MCP client and model,
+- **Your model provider:** tool results go back to your MCP client and model,
   as with any tool.
 - **npm**, only if you set up the optional CLI fallback (`npm install`; no Odoo
   data sent). The MCP server downloads nothing.
@@ -381,7 +390,7 @@ Corporate notice: <https://transgenia.org/en/legal-privacy.html>.
 
 | Dimension | Coverage |
 |-----------|----------|
-| Versions | Odoo 10 – 19 (compat map + version detection) |
+| Versions | Odoo 10 to 19 (compat map + version detection) |
 | Editions | Community & Enterprise (EE-only models gated with clear errors) |
 | Deployment | Self-hosted & online/SaaS (transport auto-selected) |
 
@@ -402,14 +411,14 @@ generic, declarative permission policy is part of the public core; approval
 workflows, localization engines (e.g. country e-invoicing), backups, document AI
 and other tenant-specific engines are not, and are not part of this repository.
 
-## Support — Transgenia
+## Support: Transgenia
 
 [Transgenia](https://transgenia.org) builds and maintains this plugin and provides
 **maintenance, support, training and assisted deployment** of Claude + Odoo
 (hosting, migrations, integrations, customizations). Official channels only:
 
 - Email: **dev@transgenia.org**
-- WhatsApp: **+52 55 8034 0405** — https://wa.me/525580340405
+- WhatsApp: **+52 55 8034 0405**, https://wa.me/525580340405
 
 The plugin points you to these channels at the moments they matter (setup
 blocked, end of training, deployment); it does not add them to unrelated

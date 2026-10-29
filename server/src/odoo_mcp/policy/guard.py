@@ -27,7 +27,8 @@ transport is touched:
      every model a path reaches must allow ``read`` and no segment may be
      withheld; an ir.attachment search must name its parent, and the guard
      adds ``["res_field", "=", False]`` to it;
-  7. the context keys.
+  7. the context keys, and on Odoo 10 to 12, which also take the context from a
+     positional argument, the objects the call passes positionally (design E1).
 
 Then the call is sent. What it created, found and read is recorded in the
 scope for the internal predicates, and withheld fields are removed from what a
@@ -55,17 +56,25 @@ from ..compat.resolve import resolve_model
 from ..config import _without_userinfo
 from ..errors import AuthError, ConfigError, OdooMcpError, TransportError
 from . import texts
-from .check import SEARCH_METHODS, CallScope, check_attachment_pin, check_context
+from .check import (
+    SEARCH_METHODS,
+    CallScope,
+    check_attachment_pin,
+    check_context,
+    check_positional_contexts,
+)
 from .classify import (
     ARG_SHAPES,
     CLASS_OPS,
     CREATE_METHODS,
+    POSITIONAL_CONTEXT_UNTIL,
     CallArgs,
     ShapeError,
     column_paths,
     domain_paths,
     extract,
     method_class,
+    positional_contexts,
     valid_method,
     valid_model,
 )
@@ -593,13 +602,16 @@ class GuardedSession:
             decision = policy.decide(touch.op, touch.model, touch.method)
             if not decision.allowed:
                 raise texts.refused(policy, decision, layer="B")
+        rules_on = self._rules_on()
+        if rules_on:  # 7a. a positional context (Odoo 10 to 12), before the shape as in _generic
+            self._check_positional_contexts(model, method, view, cls)
         if shape_error is not None or parts is None:
             detail = shape_error.detail if shape_error is not None else "unreadable"
             raise self._shape(ops[0], model, detail, method)
         if not self._columns_checked:
             self._columns_checked = True
             self._check_tool_columns()
-        if self._rules_on():
+        if rules_on:
             self._check_contexts(model, method, parts, cls)
         if model in model_aliases(ATTACHMENT) and cls == "read":
             self._check_attachment_content(view, parts)
@@ -626,10 +638,14 @@ class GuardedSession:
                                      note if op == "call" else None)
             if not decision.allowed:
                 raise texts.refused(policy, decision, layer="B")
+        rules_on = self._rules_on()
+        # 7a. on Odoo 10 to 12, an object passed positionally may be the context (design E1):
+        # checked before the shape, so it is refused as a context there, as at Layer A
+        if rules_on:
+            self._check_positional_contexts(model, method, view, cls)
         if shape_error is not None or parts is None:
             detail = shape_error.detail if shape_error is not None else "unreadable"
             raise self._shape(ops[0], model, detail, method)
-        rules_on = self._rules_on()
         # 7. the context keys
         if rules_on:
             self._check_contexts(model, method, parts, cls)
@@ -675,6 +691,32 @@ class GuardedSession:
             # too, so Layer B stands alone (defense in depth).
             check_context(self._policy, model, context, op=op, layer="B")
             self._check_context_defaults(model, context, cls)
+
+    def _check_positional_contexts(self, model: str, method: str, view: CallView,
+                                   cls: str) -> None:
+        """Odoo 10 to 12 also take a call's context from a positional argument, the one after
+        the method's own parameters (design E1). On those series the objects of the actual
+        call that may be its context (a Mapping, or a list of pairs, as the dict Odoo builds
+        from it) meet the same rules as at Layer A
+        (``check_positional_contexts``), as a backstop, and the metadata-free structural rules
+        over their ``default_<field>`` keys that a named context meets here. From 13 Odoo
+        reads only ``kwargs["context"]``, so the positional objects are values, checked as
+        before. The caller has checked ``rules_on``."""
+        found = positional_contexts(method, view.args, ids_given=view.ids is not None)
+        if not (found.certain or found.possible) or not self._reads_positional_context():
+            return
+        check_positional_contexts(self._policy, model, found, op=CLASS_OPS[cls][0], layer="B")
+        for context in (*found.certain, *found.possible):
+            self._check_context_defaults(model, context, cls)
+
+    def _reads_positional_context(self) -> bool:
+        """Whether the connected Odoo takes a context from a positional argument: 10 to 12
+        (``classify.POSITIONAL_CONTEXT_UNTIL``). A series the session cannot tell counts as
+        one, so the check runs (fail closed)."""
+        version = getattr(self._raw.facts(), "version", None)
+        if not isinstance(version, int) or isinstance(version, bool):
+            return True
+        return version <= POSITIONAL_CONTEXT_UNTIL
 
     def _check_context_defaults(self, model: str, context: Mapping[str, Any],
                                 cls: str) -> None:

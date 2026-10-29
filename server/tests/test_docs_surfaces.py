@@ -117,6 +117,91 @@ def test_the_docs_show_the_full_escape() -> None:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "## Permissions" in readme and "docs/policy.md" in readme
     assert "`full`" in readme.split("## Permissions", 1)[1].split("\n## ", 1)[0]
-    release = changelog.split("\n## [", 2)[1]  # the newest release
+    release = changelog.split("\n## [1.5.0]", 1)[1].split("\n## [", 1)[0]  # 1.5.0's notes
     assert re.findall(r"^### (.+)$", release, re.MULTILINE)[0] == "Changed (secure defaults)"
     assert "**Permission profile** to `full`" in release
+
+
+# --- 1.5.1: the tools-missing gate and the listings (the Cowork incident of 2026-10-28)
+#
+# A Cowork user ran /odoo-doctor: with no Odoo tools loaded, Claude checked Python in
+# Cowork's virtual machine (3.13, "Pass") and then sent the user to check their Odoo
+# Online plan. Neither could be the cause. Every component that calls the Odoo tools
+# now checks first that they loaded.
+
+GATE = "if `odoo_version` is not in your tool list"
+_TOOL = re.compile(r"`odoo_[a-z_]+`")
+# Exempt, with the reason: the guided route has its own Phase 0 and 0b, the shortcut
+# loads it, the doctor's step 0 is the gate itself, and deploy-local and the CLI
+# fallback do not need the plugin's MCP tools to start.
+_GATE_EXEMPT = {"skills/odoo-setup-mcp/SKILL.md", "commands/setup-odoo-tools.md",
+                "commands/odoo-doctor.md", "commands/deploy-local.md",
+                "skills/odoo-setup-cli/SKILL.md"}
+
+
+def _body(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    return text.split("---", 2)[2] if text.startswith("---") else text
+
+
+def test_every_component_that_calls_the_odoo_tools_checks_they_loaded_first() -> None:
+    checked = 0
+    for pattern in ("skills/*/SKILL.md", "commands/*.md", "agents/*.md"):
+        for path in sorted(ROOT.glob(pattern)):
+            rel = path.relative_to(ROOT).as_posix()
+            body = _body(path)
+            first_tool = _TOOL.search(body)
+            if rel in _GATE_EXEMPT or not first_tool:
+                continue
+            assert GATE in body, rel
+            assert body.index(GATE) < first_tool.start(), rel
+            checked += 1
+    assert checked >= 7
+
+
+def test_the_doctor_checks_the_surface_before_anything_else() -> None:
+    text = (ROOT / "commands/odoo-doctor.md").read_text(encoding="utf-8")
+    step0, step1 = text.index("## 0."), text.index("## 1.")
+    assert step0 < step1 < text.index("`odoo_version`", step1)
+    gate = text[step0:step1]
+    for phrase in ("Do not run shell commands", "virtual machine", "Odoo side",
+                   "odoo-tools session diagnostics:", "**Code** tab",
+                   "dev@transgenia.org", "+52 55 8034 0405"):
+        assert phrase in gate, phrase
+    # the support report runs the server's --diagnose on the plugin's own folders
+    assert ('run_stdio.py" --diagnose --diag-dir "${CLAUDE_PLUGIN_DATA}/diagnostics" '
+            '--audit-dir "${CLAUDE_PLUGIN_DATA}/audit"') in text
+    assert "Never ask for the API key" in text
+
+
+_SURFACE_NOTE = "in Cowork and Claude chat the skills and commands load without the tools"
+
+
+def test_both_listings_say_where_the_tools_run() -> None:
+    market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+    # A display field set on the marketplace entry is what users see, even when
+    # plugin.json sets another one (Claude Code marketplace reference, "Display
+    # fields"): in 1.4.1 the surface note was in plugin.json only, under an entry
+    # description that hid it.
+    for where, description in (("plugin.json", _manifest()["description"]),
+                               ("marketplace entry", market["plugins"][0].get("description", ""))):
+        assert _SURFACE_NOTE in description, where
+        assert "dev@transgenia.org" in description, where
+
+
+def test_the_readme_says_where_it_runs_before_the_badges() -> None:
+    # The directory shows the README as the listing's description.
+    head = (ROOT / "README.md").read_text(encoding="utf-8").split("[![", 1)[0]
+    for phrase in ("Where it runs", "Code** tab", "Cowork and Claude chat",
+                   "dev@transgenia.org"):
+        assert phrase in head, phrase
+
+
+def test_the_manifests_carry_the_directory_listing_fields() -> None:
+    manifest = _manifest()
+    for key in ("documentationUrl", "supportUrl", "privacyPolicyUrl", "termsOfServiceUrl"):
+        assert manifest[key].startswith("https://"), key
+    assert (ROOT / manifest["icon"]).is_file()
+    for name in ("plugin.json", "marketplace.json"):
+        text = (ROOT / ".claude-plugin" / name).read_text(encoding="utf-8")
+        assert "—" not in text and "–" not in text, name

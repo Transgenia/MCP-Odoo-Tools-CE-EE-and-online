@@ -273,7 +273,10 @@ class Json2Transport:
                 # signature.bind failed before the method was called: nothing ran.
                 raise Json2SignatureMismatch(f"json2: {message}", missing=bind.group("missing"))
             # Odoo ran the call and rolled it back: a definite failure, never replayed.
-            raise OdooFault(message)
+            fault = OdooFault(message)
+            name = data.get("name")
+            fault.odoo_name = name if isinstance(name, str) and name else None  # diagnostics
+            raise fault
         if status == 404 and b"No database is selected" in raw:
             raise ConfigError(
                 f"Odoo does not serve the database {db!r} on this host (it answered its "

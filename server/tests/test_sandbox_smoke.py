@@ -87,6 +87,7 @@ EXPECTED_REFUSALS = [
     ("odoo_search_read", "tier:secrets"),
     ("odoo_search_read", "attachment-pin"),
     ("odoo_search_read", "attachment-pin"),
+    ("odoo_execute", "context"),  # a trailing positional context with a list default
 ]
 
 
@@ -126,6 +127,21 @@ def test_the_standard_refusals_hold_on_the_real_policy(smoke: Any) -> None:
     assert raw.sent("write") == []
     assert ("ir.attachment", "search_read") in raw.sent()  # the allowed one only
     assert len([c for c in raw.sent() if c == ("ir.attachment", "search_read")]) == 1
+    # the read with a positional context never reached Odoo (the other res.partner
+    # search_read, the signup_token field list, is refused before Odoo too)
+    assert ("res.partner", "search_read") not in raw.sent()
+    assert any(c.startswith("odoo_execute with a trailing positional context holding a list "
+                            "default: refused (rule context)") for c in checks.checked)
+
+
+@pytest.mark.parametrize("version", [10, 12, 13, 19])
+def test_the_positional_context_check_holds_on_every_series(smoke: Any, version: int) -> None:
+    # Layer A refuses it before the series matters; the guard is never reached.
+    raw = session(version=version)
+    checks = smoke.check_standard(runner(smoke, server(raw)), "bot@example.com")
+    assert [p for p in checks.problems if p.startswith("odoo_execute")] == []
+    assert ("odoo_execute", "context") in checks.refusals
+    assert ("res.partner", "search_read") not in raw.sent()
 
 
 def test_a_policy_that_lets_the_calls_through_is_reported(smoke: Any) -> None:

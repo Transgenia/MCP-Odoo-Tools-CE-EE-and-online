@@ -18,9 +18,10 @@ checks:
     import columns; the parent model an ``ir.attachment`` search must name;
     the context keys of ``odoo_execute``, ``kwargs["context"]`` and every
     context nested in a specification, where a ``default_<field>`` must hold a
-    plain value. What needs field metadata (the models a path or an x2many
-    command reaches) is left to the guarded session, which sees every actual
-    Odoo call.
+    plain value, and the objects in ``args`` that Odoo 10 to 12 may take as the
+    context (``check_positional_contexts``). What needs field metadata (the
+    models a path or an x2many command reaches) is left to the guarded session,
+    which sees every actual Odoo call.
 
 A tool declares its accesses with ``registry.Access`` (duck-typed here:
 ``arg_ops``, ``fixed``, ``optional``, ``dynamic``, ``degrade``,
@@ -43,12 +44,14 @@ from .classify import (
     TERMS,
     VALUES,
     CallArgs,
+    PositionalContexts,
     ShapeError,
     domain_conjuncts,
     domain_paths,
     extract,
     method_ops,
     named_parts,
+    positional_contexts,
     valid_method,
 )
 from .model import Policy, Touch, model_aliases, model_tiers
@@ -62,7 +65,9 @@ __all__ = [
     "check",
     "check_attachment_pin",
     "check_context",
+    "check_positional_contexts",
     "check_tool",
+    "default_keys",
     "execute_touches",
     "scope_for",
     "touches_for",
@@ -307,6 +312,19 @@ def _check_arguments(policy: Policy, tool: Any, access: Any, model: str,
     write_op = next((t.op for t in touches if t.model == model
                      and t.op not in ("read", INSPECT, "call")), "write")
     method = arguments.get("method") if access.dynamic is not None else None
+    rules_on = policy.profile is not None and not policy.profile.rules_off
+    # Whether the call creates a record decides if a plain structural default is refused (it
+    # rides a create) or inert (a read). odoo_execute names the method; a dedicated tool
+    # collects no agent context, so its gate never fires. The refusal keeps its Layer A label
+    # ('call'); only the structural gate reads the real class.
+    creating = method is not None and method_ops(method)[0] in _STRUCTURAL_DEFAULT_OPS
+    if rules_on and method is not None:
+        # Odoo 10 to 12 also take the context from a positional argument (design E1), and the
+        # series is not known yet: checked on every series, before the shape, so an object the
+        # context rules refuse is refused as a context even where the shape would be refused
+        # anyway (an argument after the method's parameters, which stays a shape refusal).
+        found = positional_contexts(method, arguments.get("args"), ids_given="ids" in arguments)
+        check_positional_contexts(policy, model, found, creating=creating)
     try:
         if method is not None:
             ids = {"ids": arguments["ids"]} if "ids" in arguments else {}
@@ -322,13 +340,7 @@ def _check_arguments(policy: Policy, tool: Any, access: Any, model: str,
         raise texts.shape(policy, op, model, detail=exc.detail, method=method,
                           tool=tool.name) from None
     _check_fields(policy, model, parts, write_op)
-    rules_on = policy.profile is not None and not policy.profile.rules_off
     if rules_on:
-        # Whether the call creates a record decides if a plain structural default is refused
-        # (it rides a create) or inert (a read). odoo_execute names the method; a dedicated
-        # tool collects no agent context, so its gate never fires. The refusal keeps its
-        # Layer A label ('call'); only the structural gate reads the real class.
-        creating = method is not None and method_ops(method)[0] in _STRUCTURAL_DEFAULT_OPS
         for context in contexts:
             check_context(policy, model, context, creating=creating)
         if ATTACHMENT in model_aliases(model):
@@ -374,7 +386,8 @@ def _context(context: Any, label: str) -> Mapping[str, Any]:
 
 
 def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op: str = "call",
-                  layer: str = "A", creating: bool | None = None) -> None:
+                  layer: str = "A", creating: bool | None = None,
+                  positional: bool = False) -> None:
     """Every key is a safe one, or ``default_<field>`` with a plain value (text, a number,
     a boolean or null) for a field that is not withheld. The keys that silence chatter
     tracking are refused.
@@ -398,24 +411,62 @@ def check_context(policy: Policy, model: str, context: Mapping[str, Any], *, op:
     keeping ``op`` at its label value.
 
     The guarded session runs this same function on every actual call (Layer B), so the two
-    layers cannot drift apart.
+    layers cannot drift apart. ``positional``: the context is an object passed positionally
+    (``check_positional_contexts``), which the refusal says, with its remedy.
     """
     creates = (op in _STRUCTURAL_DEFAULT_OPS) if creating is None else creating
+    where: dict[str, Any] = {"layer": layer, "positional": positional}
     for key, value in context.items():
         if not isinstance(key, str):
-            raise texts.context(policy, op, model, key, layer=layer)
+            raise texts.context(policy, op, model, key, **where)
         if key in SAFE_CONTEXT_KEYS:
             continue
         if key.startswith("default_"):
             if not isinstance(value, _PLAIN_VALUE):
-                raise texts.context_default(policy, op, model, key, layer=layer)
+                raise texts.context_default(policy, op, model, key, **where)
             name = key[len("default_"):]
             if _FIELD_NAME.fullmatch(name):
                 if creates and name in STRUCTURAL_DEFAULT_FIELDS:
-                    raise texts.context_structural_default(policy, op, model, key, layer=layer)
+                    raise texts.context_structural_default(policy, op, model, key, **where)
                 if not policy.field_withheld(model, name):
                     continue
-        raise texts.context(policy, op, model, key, layer=layer)
+        raise texts.context(policy, op, model, key, **where)
+
+
+def default_keys(value: Mapping[Any, Any]) -> dict[str, Any]:
+    """The ``default_<field>`` keys of an object, with their values."""
+    return {key: item for key, item in value.items()
+            if isinstance(key, str) and key.startswith("default_")}
+
+
+def check_positional_contexts(policy: Policy, model: str, found: PositionalContexts, *,
+                              op: str = "call", layer: str = "A",
+                              creating: bool | None = None) -> None:
+    """The context rules over the objects of ``args`` that Odoo 10 to 12 may take as the
+    call's context (design E1); ``classify.positional_contexts`` finds them, each as the dict
+    Odoo would build from it: a Mapping, or a list of ``[key, value]`` pairs, which those
+    series turn into a context with ``dict()`` as well (``classify.as_context``).
+
+    An object that can only be the context (``found.certain``: after the parameters of a
+    method the policy knows, or at a parameter that never holds an object) meets every rule
+    of ``check_context``, the allowlist included. An object passed positionally to a method
+    outside the table (``found.possible``) may be the context or one of the method's values,
+    which the policy cannot tell apart without the method's parameters: its ``default_<field>``
+    keys meet the context rules (a list or an object, a structural field on a call that can
+    create, a withheld field), so no context default rides a positional context on any series,
+    while a values object of ordinary fields, and a real field whose name starts with
+    ``default_`` holding a plain value (``default_code``), still run. Its other keys are
+    checked as values, as before (the guard's call-class backstop); holding them to the
+    allowlist would refuse every positional values object. The refusals name the key, never
+    its value, and give the remedy: pass the context by name, or put the values in the
+    record's values. Layer A runs this on every series (the series is not known yet); the
+    guarded session runs it again on 10 to 12."""
+    for context in found.certain:
+        check_context(policy, model, context, op=op, layer=layer, creating=creating,
+                      positional=True)
+    for value in found.possible:
+        check_context(policy, model, default_keys(value), op=op, layer=layer,
+                      creating=creating, positional=True)
 
 
 def check_attachment_pin(policy: Policy, domain: Any, label: str, *, layer: str = "A") -> None:

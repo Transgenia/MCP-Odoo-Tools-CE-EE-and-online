@@ -92,9 +92,42 @@ jobs:
           git push origin "refs/tags/$TAG"
           echo "Created $TAG at $(git rev-parse HEAD)"
 
-  verify:
+  preflight:
     needs: tag
-    # Runs after `tag` on manual runs; on tag pushes `tag` is skipped.
+    # Before any publishing job starts: a draft run needs a tag with no release yet,
+    # and a full run must not push an image for a tag whose release still waits as a
+    # draft (publishing that draft runs the rest). GitHub lists draft releases only to
+    # a token with push access ("Only users with push access will receive listings for
+    # draft releases"), so this job gets contents: write and, to keep that token away
+    # from any code, checks out and runs nothing but the gh query.
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Release state for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must look like vX.Y.Z, got '$TAG'"; exit 1
+          fi
+          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
+            --jq ".[] | select(.tagName == \"$TAG\") | .isDraft") \
+            || { echo "::error::could not list the releases, so the release state of $TAG is unknown"; exit 1; }
+          echo "release for $TAG: ${existing:-none} (isDraft)"
+          if [ "$DRAFT" = "true" ] && [ -n "$existing" ]; then
+            echo "::error::a release for $TAG already exists (draft: $existing); delete it first"; exit 1
+          fi
+          if [ "$DRAFT" != "true" ] && echo "$existing" | grep -qx true; then
+            echo "::error::$TAG has a draft release: publish it (that runs the rest) or delete it"; exit 1
+          fi
+
+  verify:
+    needs: preflight
+    # Runs after `tag` and `preflight` on manual runs; on tag pushes and release
+    # events `tag` is skipped.
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -108,21 +141,6 @@ jobs:
         run: |
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::tag must look like vX.Y.Z, got '$TAG'"; exit 1
-          fi
-      - name: Release state for this tag
-        # Before any publishing job starts: a draft run needs a tag with no
-        # release yet, and a full run must not push an image for a tag whose
-        # release still waits as a draft (publishing that draft runs the rest).
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
-            --jq ".[] | select(.tagName == \"$TAG\") | .isDraft")
-          if [ "$DRAFT" = "true" ] && [ -n "$existing" ]; then
-            echo "::error::a release for $TAG already exists (draft: $existing); delete it first"; exit 1
-          fi
-          if [ "$DRAFT" != "true" ] && echo "$existing" | grep -qx true; then
-            echo "::error::$TAG has a draft release: publish it (that runs the rest) or delete it"; exit 1
           fi
       - name: Versions match the tag
         run: python3 scripts/check_release_version.py "$TAG"
@@ -210,8 +228,12 @@ jobs:
           # dispatch) must not point `latest` or `X.Y` back at an older image.
           # Compare with published releases plus this tag: a tag kept by an
           # unpublished draft is not a release and must not hold `latest` back.
-          versions=$( { gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --exclude-drafts \
-                          --json tagName --jq '.[].tagName'; echo "$TAG"; } \
+          # A failing gh must stop the job: with an empty list this tag would look
+          # like the newest one and move `latest` and `X.Y` to it.
+          published=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --exclude-drafts \
+                        --json tagName --jq '.[].tagName') \
+            || { echo "::error::could not list the published releases, so the moving tags cannot be decided"; exit 1; }
+          versions=$( { printf '%s\n' "$published"; echo "$TAG"; } \
                       | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -u -V -r)
           newest=$(echo "$versions" | head -n1)
           newest_minor=$(echo "$versions" | grep -F "v${V%.*}." | head -n1)

@@ -9,6 +9,14 @@ The MCP server routes every model/field name through a compatibility layer
 before hitting the ORM. You write against the **modern** name; it resolves to
 whatever exists on the target version.
 
+**Before you call an Odoo tool:** if `odoo_version` is not in your tool list,
+this plugin's MCP server is not running in this session. Follow step 0 of
+`/odoo-tools:odoo-doctor` before anything else, and do not run shell commands,
+check Python or give Odoo-side advice first. In Cowork and Claude chat the Odoo
+tools do not run at all: the user can open the **Code** tab of Claude Desktop or
+Claude Code, where the plugin is synced to the same account, or ask Transgenia for
+assisted setup (dev@transgenia.org · WhatsApp +52 55 8034 0405).
+
 ## Model name resolution
 
 Accounting is a **merge, not a rename**: `account.move` (journal entries)

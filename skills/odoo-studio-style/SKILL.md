@@ -14,6 +14,14 @@ Be honest about the boundary: this covers **small, low-code** changes (a field,
 a view tweak, a simple automation). It is **not** a substitute for serious module
 development (packaged code, migrations, tests, complex business logic).
 
+**Before you call an Odoo tool:** if `odoo_version` is not in your tool list,
+this plugin's MCP server is not running in this session. Follow step 0 of
+`/odoo-tools:odoo-doctor` before anything else, and do not run shell commands,
+check Python or give Odoo-side advice first. In Cowork and Claude chat the Odoo
+tools do not run at all: the user can open the **Code** tab of Claude Desktop or
+Claude Code, where the plugin is synced to the same account, or ask Transgenia for
+assisted setup (dev@transgenia.org · WhatsApp +52 55 8034 0405).
+
 ## Permission profile: `builder`
 Since 1.5.0 the default permission profile (`standard`) treats fields, views and
 automations as customization: `odoo_add_field` and `odoo_add_automation` are not
