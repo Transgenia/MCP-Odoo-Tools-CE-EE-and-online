@@ -372,8 +372,17 @@ def test_the_preview_workflow_builds_validates_smokes_and_uploads() -> None:
     # The smoke test runs in an empty network namespace and checks that it is one.
     assert re.search(r"sudo unshare --net -- .*scripts/build_mcpb\.py \\\n\s*--smoke \S+ --offline",
                      text)
-    upload = text.split("actions/upload-artifact@", 1)[1]
+    build, validate = text.split("\n  validate:\n", 1)
+    # No package from the npm registry runs in the job that builds and uploads the file.
+    assert "npx" not in build.split("\njobs:\n", 1)[1] and "setup-node" not in build
+    upload = build.split("actions/upload-artifact@", 1)[1]
     assert "path: dist/*.mcpb" in upload and "archive: false" in upload
+    # Never an installable file from a fork's pull request.
+    assert ("if: github.event_name == 'workflow_dispatch' || "
+            "github.event.pull_request.head.repo.full_name == github.repository") in build
+    # The validate job runs the CLI on its own build, after checking it is the same bytes.
+    assert "needs: build" in validate and "needs.build.outputs.sha256" in validate
+    assert validate.index("differs from the uploaded one") < validate.index("npx -y")
 
 
 def test_the_desktop_doc_is_plain_ascii() -> None:

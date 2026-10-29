@@ -14,16 +14,18 @@ step 1.
 If it is not, this plugin's MCP server is not running in this session. Until it
 runs, nothing else can be the cause, so:
 
-- Do not run shell commands and do not check Python. In Cowork, shell commands run
-  in a virtual machine, not on the user's computer: a Python version read there says
-  nothing about the computer, so never report one.
+- Do not run shell commands and do not check Python. In Cowork, the commands you
+  run go to a virtual machine, not to the user's computer: a Python version read
+  there says nothing about the computer, so never report one. (The plugin's own
+  hooks are different: Cowork runs them on the computer itself.)
 - Do not give advice about the Odoo side yet (subscription plan, API key, transport,
   database). It only matters once the tools load and Odoo refuses the connection.
 
 Then:
 
 1. Read any line in your context that starts with `odoo-tools session diagnostics:`.
-   The plugin's session-start hook writes it on the user's computer. Note its
+   The plugin's session-start hook writes it from the user's computer, outside any
+   virtual machine. Note its
    `entrypoint`, `server_last`, `age_h` and `diag_dir`.
 2. Find the surface. If the user already said it (Cowork, Claude chat, claude.ai,
    the Code tab, a terminal, VS Code, JetBrains), use that. Otherwise ask one
@@ -96,7 +98,8 @@ Always end with a support report the user can send to Transgenia:
 - **Cowork or Claude chat:** write a short report from step 0: the surface, the
   `entrypoint`, `server_last` and `age_h` values of the session diagnostics line,
   and that the diagnostics files are in `diag_dir` on the user's computer (they can
-  attach them to an e-mail).
+  attach them to an e-mail). Claude chat runs no plugin hooks, so there is no such
+  line there: report the surface only.
 
 Say that the report holds no keys, URLs, logins or record data, and that they can
 send it to **dev@transgenia.org** or by WhatsApp **+52 55 8034 0405**

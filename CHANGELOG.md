@@ -105,17 +105,24 @@ the sealed profiles refuse a little more; the tool count stays 28.
   `odoo-tools session diagnostics:` line the doctor can report from any surface,
   and shows a shorter notice at most once a day; a start locked by the policy is
   named with its E-code. It writes one metadata line per session to
-  `hook.jsonl`. The first hook's message for a computer without `python3` now
-  says that in Cowork and Claude chat the Odoo tools do not run with or without
-  Python.
+  `hook.jsonl`. It reads the rotated `server.jsonl.1` too, tells only Claude on
+  the first session after an install or an upgrade (this session's server may
+  not have written its start yet) and wherever it has no data folder to keep the
+  notice to once a day, writes the home folder as `~` in its line, and never
+  writes through a symbolic link. The first hook's message for a computer without
+  `python3` now says that in Cowork and Claude chat the Odoo tools do not run
+  with or without Python.
 - **Container mode marker.** `/odoo-tools:deploy-local` container mode creates
   `${CLAUDE_PLUGIN_DATA}/diagnostics/container-mode`, so the hook stays silent
   while the container server is the one in use.
 - **Claude Desktop extension preview.** `scripts/build_mcpb.py` builds
   `odoo-tools-<version>.mcpb` from the same server and a manifest generated from
-  `plugin.json`, and `.github/workflows/mcpb-preview.yml` validates it with the
-  official MCPB tool at a pinned version, starts it with no network and uploads
-  it as a workflow artifact for manual testing. The bundle never enters the
+  `plugin.json`, and `.github/workflows/mcpb-preview.yml` starts it with no
+  network and uploads it as a workflow artifact for manual testing (never for a
+  pull request from a fork). A second job rebuilds the same bytes, checks the
+  SHA-256 and validates the manifest with the official MCPB tool at a pinned
+  version, so no package from the npm registry runs where the uploaded file is
+  made. The bundle never enters the
   plugin folder (the directory holds a plugin that ships one) and is not
   published yet; `docs/desktop-extension.md` describes it.
 - **Product rules.** `docs/product-rules.md` states the rules for this plugin: it

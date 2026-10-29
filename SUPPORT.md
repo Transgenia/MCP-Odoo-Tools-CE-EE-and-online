@@ -28,8 +28,11 @@ data.
 - In Claude Code the doctor builds it with
   `python3 <plugin folder>/server/run_stdio.py --diagnose`, which only reads the
   plugin's local diagnostics and audit files and contacts nothing.
-- In Cowork and Claude chat there is no shell on your computer, so the doctor
-  writes it from the line the plugin's session-start hook leaves for Claude.
+- In Cowork, Claude's commands run in a virtual machine, not on your computer,
+  so the doctor writes the report from the line the plugin's session-start hook
+  leaves for Claude (Cowork runs the plugin's hooks on your computer itself).
+- In Claude chat the plugin's hooks do not run, so the report names the surface
+  only.
 
 The files behind it stay on your computer, in the `diagnostics` folder of the
 plugin's data folder. In Claude Code that is

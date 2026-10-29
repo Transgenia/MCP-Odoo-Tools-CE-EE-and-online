@@ -64,17 +64,22 @@ where to verify it:
 - **Tests** (`server/tests/`) set fake canary credentials to prove that no log
   line, audit line, diagnostics record, support report or hook output ever
   contains a credential. The plugin never runs them.
-- **Uses hooks.** One SessionStart hook, `hooks/session_start.py`, which reads
-  the plugin's data folder and `CLAUDE_CODE_ENTRYPOINT` only, never a plugin
-  option or a credential (`server/tests/test_product_rules.py`), and always
-  exits 0.
+- **Uses hooks.** Two SessionStart hooks: a shell check that `python3` runs,
+  and `hooks/session_start.py`, which reads the plugin's data folder and
+  `CLAUDE_CODE_ENTRYPOINT` only, never a plugin option or a credential
+  (`server/tests/test_product_rules.py`), and always exits 0.
 - **Runs a local program for an MCP server.** `python3
   ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: standard library only, nothing
   installed or downloaded (Supply chain, above).
-- **Contains a download-and-run command.** Only in documentation and in CI
-  workflows, which never run on the user's computer: the desktop extension
-  preview validates its manifest with the official MCPB command line tool at a
-  pinned version.
+- **Contains a download-and-run command.** Two commands download and run code
+  on the user's computer, and only when the user invokes them and confirms:
+  `/odoo-tools:deploy-local` pulls and runs Docker images (Transgenia's
+  unchanged copies of the official PostgreSQL and Odoo images, by series tag,
+  and the MCP server image at the plugin's version), and
+  `/odoo-tools:odoo-setup-cli` runs `npm install` for the optional CLI. The MCP
+  server and the hooks download and install nothing. The desktop extension
+  preview's CI runs the official MCPB command line tool at a pinned version,
+  never on the user's computer.
 
 ## Automated checks (CI)
 

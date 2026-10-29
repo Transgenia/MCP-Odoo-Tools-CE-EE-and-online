@@ -23,11 +23,17 @@ nothing in `plugin.json` refers to the bundle.
 
 The Desktop extension preview workflow (`.github/workflows/mcpb-preview.yml`)
 builds the file on every pull request, and on demand from the Actions tab (Run
-workflow). It validates the manifest with the official MCPB command line tool,
-starts the bundled server with no network and no Odoo settings to check that it
-answers and lists its tools, and uploads `odoo-tools-<version>.mcpb` as a
-workflow artifact. The summary page of the run links the download and shows the
-SHA-256 of the file.
+workflow). Its build job uses only Python and this repository: it starts the
+bundled server with no network and no Odoo settings to check that it answers and
+lists its tools, and uploads `odoo-tools-<version>.mcpb` as a workflow artifact.
+A second job builds the same bytes again, checks that the SHA-256 matches, and
+validates the manifest with the official MCPB command line tool, so no package
+from the npm registry runs where the uploaded file is made. The summary page of
+the run links the download and shows the SHA-256 of the file.
+
+Install only a file from a run of this repository's own branches. A pull request
+from a fork builds and checks the bundle but never uploads one, because its
+author controls what the build does.
 
 To build it from a checkout instead (Python 3.9 or newer, nothing to install):
 
