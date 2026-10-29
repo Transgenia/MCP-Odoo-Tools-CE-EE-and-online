@@ -10,10 +10,35 @@ verification, hands-on training, daily use and deployment. No Odoo to practise
 with? **`/odoo-tools:deploy-local`** starts a local sandbox. **`/odoo-doctor`**
 checks an existing connection.
 
-Using Cowork or claude.ai chat? The Odoo tools do not load there: the plugin's
-skills and commands do, but those apps do not start its MCP server and have no form
-for the connection options. See [Where it works](README.md#where-it-works) and use
-Claude Code.
+Using Cowork or claude.ai chat? The Odoo tools do not run there: the plugin's
+skills and commands load, but those apps do not start its MCP server and have no
+form for the connection options. Nothing is wrong with your account, your Odoo or
+your Python. Open the **Code** tab of Claude Desktop (or Claude Code in a terminal,
+VS Code or JetBrains): the plugin you installed on your Claude account appears there
+as a synced plugin when you sign in with the same account. Or ask Transgenia for
+assisted setup (below). See [Where it works](README.md#where-it-works).
+
+## If something fails: the support report
+
+Run **`/odoo-tools:odoo-doctor`**. It checks first whether the Odoo tools run where
+you are, then the connection, and it ends with a **support report** you can send
+to Transgenia. The report holds no API keys, passwords, URLs, logins or record
+data.
+
+- In Claude Code the doctor builds it with
+  `python3 <plugin folder>/server/run_stdio.py --diagnose`, which only reads the
+  plugin's local diagnostics and audit files and contacts nothing.
+- In Cowork and Claude chat there is no shell on your computer, so the doctor
+  writes it from the line the plugin's session-start hook leaves for Claude.
+
+The files behind it stay on your computer, in the `diagnostics` folder of the
+plugin's data folder. In Claude Code that is
+`~/.claude/plugins/data/<plugin id>/diagnostics/` (on Windows,
+`%USERPROFILE%\.claude\plugins\data\<plugin id>\diagnostics\`); in Cowork the
+doctor tells you the folder, as the session-start hook reported it. The files hold
+metadata only (what started, which surface, which kind of error), never values,
+and the plugin never sends them anywhere. Attach them to your e-mail if support
+asks.
 
 ## Contact Transgenia (official channels only)
 
@@ -30,4 +55,5 @@ email. Security vulnerabilities: follow [`SECURITY.md`](SECURITY.md).
 ## Bugs and feature requests
 
 Open an issue in this repository with the plugin version, the Odoo version and
-edition, and the output of `/odoo-doctor` (it contains no credentials).
+edition, and the support report of `/odoo-tools:odoo-doctor` (it contains no
+credentials).
