@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """CLI entry point: ``odoo-mcp`` / ``python -m odoo_mcp``.
 
-Without options it serves MCP over stdio. Two offline checks exit instead, and
-neither contacts Odoo:
+Without options it serves MCP over stdio. Three offline commands exit instead,
+and none contacts Odoo:
 
   * ``--check-policy FILE [--profile P] [--explain MODEL:OP[:METHOD] ...]
     [--json]`` checks a permission policy file as the server would load it and
@@ -11,7 +11,12 @@ neither contacts Odoo:
     error (the server would start locked), 2 on bad usage;
   * ``--verify-audit FILE`` checks the hash chain of one audit file: 0 when it
     holds, 1 at the first broken line (which it names), 2 when the file cannot
-    be read.
+    be read;
+  * ``--diagnose [--diag-dir DIR] [--audit-dir DIR] [--json]`` prints the support
+    report (``diagnostics.py``): the plugin, Python and OS versions, the last
+    diagnostics events, a 7-day audit summary and the policy, with no keys, URLs,
+    logins or record data. The folders default to ODOO_DIAG_DIR and
+    ODOO_AUDIT_DIR. It exits 0, files present or not (2 on bad usage).
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import sys
 
 from .audit import verify_main
 from .config import Settings
+from .diagnostics import diagnose_main
 from .policy.cli import check_policy_main
 from .policy.model import PROFILES, parse_explain
 from .registry import registry
@@ -63,16 +69,36 @@ def main(argv: list[str] | None = None) -> int:
         help="with --check-policy: print the decision for one operation, e.g. "
         "res.users:write or sale.order:call:action_confirm (repeatable)",
     )
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="print a support report from the local diagnostics and audit files (no keys, "
+        "URLs, logins or record data) and exit 0; it never contacts Odoo",
+    )
+    parser.add_argument("--diag-dir", metavar="DIR",
+                        help="with --diagnose: the diagnostics folder (default ODOO_DIAG_DIR)")
+    parser.add_argument("--audit-dir", metavar="DIR",
+                        help="with --diagnose: the audit folder (default ODOO_AUDIT_DIR)")
     parser.add_argument("--json", action="store_true",
-                        help="with --check-policy: print the report as JSON")
+                        help="with --check-policy or --diagnose: print the report as JSON")
     args = parser.parse_args(argv)
     checking = args.check_policy is not None
-    if args.verify_audit is not None and checking:
-        parser.error("use --verify-audit or --check-policy, not both")
-    if not checking and (args.profile is not None or args.explain or args.json):
-        parser.error("--profile, --explain and --json need --check-policy FILE")
+    commands = [flag for flag, used in (("--verify-audit", args.verify_audit is not None),
+                                        ("--check-policy", checking),
+                                        ("--diagnose", args.diagnose)) if used]
+    if len(commands) > 1:
+        parser.error(f"use one of {', '.join(commands)}, not several")
+    if not checking and (args.profile is not None or args.explain):
+        parser.error("--profile and --explain need --check-policy FILE")
+    if args.json and not (checking or args.diagnose):
+        parser.error("--json needs --check-policy FILE or --diagnose")
+    if not args.diagnose and (args.diag_dir is not None or args.audit_dir is not None):
+        parser.error("--diag-dir and --audit-dir need --diagnose")
     if args.verify_audit is not None:
         return verify_main(args.verify_audit, sys.stdout)
+    if args.diagnose:
+        return diagnose_main(diag_dir=args.diag_dir, audit_dir=args.audit_dir,
+                             as_json=args.json, tools=registry.all(), out=sys.stdout)
     if checking:
         for spec in args.explain:
             try:

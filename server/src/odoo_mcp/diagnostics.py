@@ -36,6 +36,9 @@ is written to, as the audit does; once a file reaches 256 KiB it is renamed
 or ``off`` writes nothing, and so does a value that is not an absolute path (an
 unresolved ``${...}``). Diagnostics never raise into the server: a failure is
 logged at debug level and the line is dropped.
+
+``run_stdio.py --diagnose`` (``diagnose_main``) prints the support report a user can
+paste to support. It reads these files and the audit, and never contacts Odoo.
 """
 
 from __future__ import annotations
@@ -61,6 +64,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Callable
 
 from . import __version__ as PLUGIN_VERSION
+from .config import Settings
 from .errors import (
     AuthError,
     ConfigError,
@@ -87,6 +91,10 @@ ROTATE_AT = 256 * 1024  # bytes: a file this large is renamed <name>.1 before th
 TAIL_BYTES = 64 * 1024  # how much of the end of a file a reader looks at
 CRASH_LIMIT = 10  # crash records per process
 FRAME_LIMIT = 8  # frames per crash record, the innermost ones
+REPORT_SERVER_EVENTS, REPORT_HOOK_EVENTS, AUDIT_DAYS = 5, 3, 7
+AUDIT_READ_LIMIT = 64 * 1024 * 1024  # bytes of audit files one report reads at most
+_AUDIT_LINE_LIMIT = 1024 * 1024
+HEADER = "odoo-tools support report (no keys, URLs, logins or record data)"
 
 CATEGORIES = ("config", "auth", "access", "network", "timeout", "tls", "http", "protocol",
               "policy", "other")
@@ -106,7 +114,9 @@ _MODULE = re.compile(r"odoo_mcp(?:\.[a-z_][a-z0-9_]{0,47}){0,4}")
 _FUNCTION = re.compile(r"[A-Za-z_<][A-Za-z0-9_<>]{0,63}")
 _SESSION_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 _SERVER_LAST = re.compile(r"none|ok|locked(?::E[0-9]{1,2})?|" + "|".join(CATEGORIES))
+_RULE = re.compile(r"[A-Za-z0-9_.:*\-]{1,100}")
 _HTTP_STATUS = re.compile(r"\bHTTP ([1-5][0-9]{2})\b")
+_AUDIT_STATUSES = ("ok", "error", "refused", "invalid")
 
 
 def _utc_now() -> datetime.datetime:
@@ -604,6 +614,55 @@ def append_line(directory: str, name: str, data: bytes, *, rotate_at: int = ROTA
     raise OSError(f"{name} kept changing while it was appended to")
 
 
+def tail_lines(path: str, max_bytes: int = TAIL_BYTES) -> list[bytes]:
+    """The lines in the last ``max_bytes`` of ``path``, oldest first, without a line the
+    window cut; ``[]`` when it is missing, unreadable or not a regular file."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    except OSError:
+        return []
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return []
+        start = max(info.st_size - max_bytes, 0)
+        os.lseek(fd, start, os.SEEK_SET)
+        chunks, remaining = [], info.st_size - start
+        while remaining > 0:
+            part = os.read(fd, min(remaining, 65536))
+            if not part:
+                break
+            chunks.append(part)
+            remaining -= len(part)
+    except OSError:
+        return []
+    finally:
+        os.close(fd)
+    lines = b"".join(chunks).split(b"\n")
+    if start > 0:
+        lines = lines[1:]  # the window starts inside a line
+    return [line for line in lines if line.strip()]
+
+
+def read_records(path: str, records: Mapping[str, Mapping[str, Check]], count: int,
+                 max_bytes: int = TAIL_BYTES) -> list[dict[str, Any]]:
+    """The last ``count`` valid records of ``path``, oldest first, each re-checked
+    against the allowlist: a line someone else wrote shows only allowlisted values."""
+    out: list[dict[str, Any]] = []
+    for line in reversed(tail_lines(path, max_bytes)):
+        if len(out) >= count:
+            break
+        try:
+            obj = json.loads(line.decode("utf-8"))
+        except (ValueError, RecursionError):
+            continue
+        record = clean_record(records, obj)
+        if record is not None:
+            out.append(record)
+    out.reverse()
+    return out
+
+
 # --- the server's diagnostics --------------------------------------------------------------
 
 class Diagnostics:
@@ -739,3 +798,234 @@ class Diagnostics:
             log.debug("diagnostics: a %s line was not written (%s)", fields.get("event"),
                       type(exc).__name__)
 
+
+# --- run_stdio.py --diagnose -----------------------------------------------------------------
+
+def _shown(text: str) -> str:
+    """A path for the report: printable, ASCII (other characters escaped)."""
+    printable = "".join(ch if ch.isprintable() else "?" for ch in text)
+    return printable.encode("ascii", "backslashreplace").decode("ascii")
+
+
+def _events(directory: str, name: str, records: Mapping[str, Mapping[str, Check]],
+            count: int) -> list[dict[str, Any]]:
+    path = os.path.join(directory, name)
+    events = read_records(path, records, count)
+    if len(events) < count:  # just rotated: the older file has the rest
+        events = read_records(path + ".1", records, count - len(events)) + events
+    return events
+
+
+def diagnostics_summary(raw: str | None) -> dict[str, Any]:
+    state, path = folder_state(raw)
+    if state == "stderr":  # a keyword of the audit, not of the diagnostics
+        state = "not an absolute path"
+    if path is None:
+        shown = _shown((raw or "").strip()) if state == "not an absolute path" else None
+        return {"folder": shown, "state": state, "server_events": [], "hook_events": []}
+    return {
+        "folder": _shown(path),
+        "state": "exists" if os.path.isdir(path) else "missing",
+        "server_events": _events(path, SERVER_FILE, SERVER_RECORDS, REPORT_SERVER_EVENTS),
+        "hook_events": _events(path, HOOK_FILE, HOOK_RECORDS, REPORT_HOOK_EVENTS),
+    }
+
+
+def _audit_call(line: bytes) -> tuple[str, str | None] | None:
+    """(status, refusal rule or None) of an audit ``call`` line; ``None`` for any other."""
+    try:
+        obj = json.loads(line.decode("utf-8"))
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(obj, dict) or obj.get("event") != "call":
+        return None
+    status = obj.get("status")
+    status = status if isinstance(status, str) and status in _AUDIT_STATUSES else "other"
+    rule = None
+    if status == "refused" or obj.get("decision") == "deny":
+        value = obj.get("rule")
+        if value is None:
+            rule = "none"
+        else:
+            rule = value if isinstance(value, str) and _RULE.fullmatch(value) else "?"
+    return status, rule
+
+
+def _audit_lines(path: str, budget: list[int]) -> Iterable[bytes]:
+    """The lines of one audit file, within the report's read budget."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    except OSError:
+        return
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return
+        with os.fdopen(fd, "rb") as handle:
+            fd = -1
+            while True:
+                line = handle.readline(_AUDIT_LINE_LIMIT)
+                if not line:
+                    return
+                budget[0] -= len(line)
+                if budget[0] < 0:
+                    return
+                yield line
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def audit_summary(raw: str | None, today: datetime.date | None = None) -> dict[str, Any]:
+    """Counts of the last ``AUDIT_DAYS`` days of audit files, by call status and by
+    refusal rule: nothing else of a line is read into the report."""
+    from .audit import file_name
+
+    state, path = folder_state(raw)
+    if path is None:
+        return {"state": state}
+    if not os.path.isdir(path):
+        return {"state": "missing"}
+    day = today or _utc_now().date()
+    by_status: dict[str, int] = {}
+    by_rule: dict[str, int] = {}
+    files = calls = 0
+    budget = [AUDIT_READ_LIMIT]
+    for offset in range(AUDIT_DAYS):
+        name = os.path.join(path, file_name(day - datetime.timedelta(days=offset)))
+        if not os.path.isfile(name):
+            continue
+        files += 1
+        for line in _audit_lines(name, budget):
+            found = _audit_call(line)
+            if found is None:
+                continue
+            status, rule = found
+            calls += 1
+            by_status[status] = by_status.get(status, 0) + 1
+            if rule is not None:
+                by_rule[rule] = by_rule.get(rule, 0) + 1
+    summary: dict[str, Any] = {"state": "ok", "days": AUDIT_DAYS, "files": files, "calls": calls,
+                               "by_status": by_status, "refusals_by_rule": by_rule}
+    if budget[0] < 0:
+        summary["partial"] = True
+    return summary
+
+
+def policy_summary(settings: Any, tools: Iterable[Any]) -> dict[str, Any]:
+    """The policy as the server would load it from this environment (ODOO_POLICY, else
+    standard; ODOO_POLICY_FILE; ODOO_READONLY), offline: never the file path."""
+    from .policy.loader import load_policy
+
+    policy = load_policy(settings, [tool.name for tool in tools])
+    info = policy_info(policy)
+    summary: dict[str, Any] = {"profile": info["profile"], "file": policy.source is not None,
+                               "readonly": bool(policy.readonly), "locked": policy.locked}
+    if policy.locked:
+        code = info.get("code")
+        summary["code"] = code if isinstance(code, str) and _E_CODE.fullmatch(code) else "other"
+    else:
+        digest = info.get("digest")
+        valid = isinstance(digest, str) and _DIGEST.fullmatch(digest)
+        summary["digest"] = digest if valid else None
+    return summary
+
+
+def _section(build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    try:
+        return build()
+    except Exception as exc:  # one broken section never hides the others
+        return {"state": "unavailable", "error": type(exc).__name__}
+
+
+def build_report(settings: Any, diag_dir: str | None, audit_dir: str | None,
+                 tools: Iterable[Any], today: datetime.date | None = None) -> dict[str, Any]:
+    tools = list(tools)
+    return {
+        "report": HEADER,
+        "plugin": PLUGIN_VERSION,
+        "python": platform.python_version(),
+        "os": os_info(),
+        "diagnostics": _section(lambda: diagnostics_summary(diag_dir)),
+        "audit": _section(lambda: audit_summary(audit_dir, today)),
+        "policy": _section(lambda: policy_summary(settings, tools)),
+    }
+
+
+def _yes(value: Any) -> str:
+    return "yes" if value else "no"
+
+
+def _many(count: int, noun: str) -> str:
+    return f"{count} {noun}" + ("" if count == 1 else "s")
+
+
+def _counted(counts: Mapping[str, int]) -> str:
+    return ", ".join(f"{key} {value}" for key, value in
+                     sorted(counts.items(), key=lambda item: (-item[1], item[0]))) or "none"
+
+
+def render_report(report: Mapping[str, Any]) -> str:
+    """The report as text, one fact per line."""
+    system = report["os"]
+    lines = [
+        report["report"],
+        f"plugin: {report['plugin']}",
+        f"python: {report['python']}",
+        f"os: {system['system']} {system['release']} {system['machine']}",
+    ]
+    diag = report["diagnostics"]
+    where, state = diag.get("folder"), diag.get("state")
+    if where:
+        lines.append(f"diagnostics folder: {where} ({state})")
+    elif state == "not set":
+        lines.append("diagnostics folder: not set (ODOO_DIAG_DIR is unset; pass --diag-dir)")
+    else:
+        lines.append(f"diagnostics folder: {state}")
+    for title, key in ((f"last {REPORT_SERVER_EVENTS} server events ({SERVER_FILE}):",
+                        "server_events"),
+                       (f"last {REPORT_HOOK_EVENTS} hook events ({HOOK_FILE}):", "hook_events")):
+        lines.append(title)
+        events = diag.get(key) or []
+        lines.extend(f"  {_dumps(event).decode('ascii')}" for event in events)
+        if not events:
+            lines.append("  none")
+    audit = report["audit"]
+    if audit.get("state") == "ok":
+        text = (f"audit, last {audit['days']} days: {_many(audit['files'], 'file')}, "
+                f"{_many(audit['calls'], 'call')}; by status: {_counted(audit['by_status'])}; "
+                f"refusals by rule: {_counted(audit['refusals_by_rule'])}")
+        if audit.get("partial"):
+            text += " (partial: read limit reached)"
+        lines.append(text)
+    elif audit.get("state") == "not set":
+        lines.append("audit: not set (ODOO_AUDIT_DIR is unset; pass --audit-dir)")
+    elif audit.get("state") == "stderr":
+        lines.append("audit: stderr (the audit lines go to the server's log, not to files)")
+    else:
+        lines.append(f"audit: {audit.get('state')}")
+    policy = report["policy"]
+    head = "policy (computed offline from this environment, never contacts Odoo):"
+    if policy.get("state") == "unavailable":
+        lines.append(f"{head} unavailable ({policy.get('error')})")
+    else:
+        state = (f"locked yes ({policy.get('code')})" if policy.get("locked")
+                 else f"digest {policy.get('digest')}, locked no")
+        lines.append(f"{head} profile {policy.get('profile')}, {state}, policy file "
+                     f"{_yes(policy.get('file'))}, read-only {_yes(policy.get('readonly'))}")
+    return "\n".join(lines) + "\n"
+
+
+def diagnose_main(*, diag_dir: str | None, audit_dir: str | None, as_json: bool,
+                  tools: Iterable[Any], out: Any, today: datetime.date | None = None) -> int:
+    """``--diagnose``: print the support report; exits 0, files present or not.
+    ``diag_dir`` and ``audit_dir`` default to ODOO_DIAG_DIR and ODOO_AUDIT_DIR."""
+    # The policy loader logs an unexpected failure; the report keeps stderr quiet.
+    logging.getLogger("odoo_mcp").addHandler(logging.NullHandler())
+    settings = Settings.from_env()
+    report = build_report(settings, settings.diag_dir if diag_dir is None else diag_dir,
+                          settings.audit_dir if audit_dir is None else audit_dir, tools, today)
+    if as_json:
+        out.write(json.dumps(report, indent=2, ensure_ascii=True) + "\n")
+    else:
+        out.write(render_report(report))
+    return 0
