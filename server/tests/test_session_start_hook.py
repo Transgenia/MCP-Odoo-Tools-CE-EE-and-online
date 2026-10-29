@@ -58,9 +58,11 @@ FIRST_MESSAGE = (
     "or contact Transgenia (dev@transgenia.org, WhatsApp +52 55 8034 0405)."
 )
 # The surface notice, in its order.
+# The order of docs/product-rules.md, rule 3: the Code tab, then Transgenia's assisted
+# setup; then the Claude Code options and the doctor.
 SURFACE = ("In Cowork and Claude chat", "Code tab of Claude Desktop",
-           "/plugin > odoo-tools > Configure options", "/odoo-tools:odoo-doctor diagnoses",
-           "Transgenia support: dev@transgenia.org, WhatsApp +52 55 8034 0405")
+           "assisted setup by Transgenia: dev@transgenia.org, WhatsApp +52 55 8034 0405",
+           "/plugin > odoo-tools > Configure options", "/odoo-tools:odoo-doctor diagnoses")
 LINE = re.compile(r"^odoo-tools session diagnostics: entrypoint=(\S+) server_last=(\S+) "
                   r"age_h=(\S+) diag_dir=(.+)$")
 
