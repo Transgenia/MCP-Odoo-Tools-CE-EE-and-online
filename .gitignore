@@ -11,6 +11,10 @@ dist/
 .ruff_cache/
 .mypy_cache/
 
+# Desktop extension bundles (scripts/build_mcpb.py): built in CI, never in the plugin folder
+*.mcpb
+*.dxt
+
 # Node
 node_modules/
 cli/dist/
