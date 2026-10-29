@@ -645,7 +645,7 @@ as JSON. A team's policy repository can run it in CI.
 ## What `odoo_version` reports
 
 ```json
-"policy": {"profile": "standard", "file": null, "digest": "5b13e821b143", "readonly": false,
+"policy": {"profile": "standard", "file": null, "digest": "9f3166860347", "readonly": false,
            "hidden_tools": ["odoo_unlink", "odoo_add_field", "odoo_add_automation"],
            "opened_sensitive": [], "released_fields": [], "warnings": [],
            "error": null, "error_code": null}
