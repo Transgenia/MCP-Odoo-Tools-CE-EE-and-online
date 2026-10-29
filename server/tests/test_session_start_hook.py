@@ -89,8 +89,21 @@ def _event(source: Any = "startup", cwd: str = "/tmp/project",
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
-def _run_full(tmp_path: Path, source: Any = "startup", stdin: bytes | None = None,
-              **extra: str) -> tuple[int, str, str]:
+def _seen_before(tmp_path: Path) -> None:
+    """An earlier session's record, as after the first session of 1.5.1 on this computer."""
+    folder = _data(tmp_path) / "diagnostics"
+    if _data(tmp_path).is_dir() or not _data(tmp_path).exists():
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "hook.jsonl"
+        if not path.exists():
+            path.write_text(json.dumps({"v": 1, "ts": _ts(48), "event": "session_start",
+                                        "plugin": "1.5.1", "server_last": "none"}) + "\n")
+
+
+def _run_full(tmp_path: Path, source: Any = "startup", stdin: bytes | None = None, *,
+              first: bool = False, **extra: str) -> tuple[int, str, str]:
+    if not first:
+        _seen_before(tmp_path)
     started = time.monotonic()
     result = subprocess.run(
         [sys.executable, str(HOOK)], input=_event(source) if stdin is None else stdin,
@@ -99,15 +112,16 @@ def _run_full(tmp_path: Path, source: Any = "startup", stdin: bytes | None = Non
     return result.returncode, result.stdout.decode("utf-8"), result.stderr.decode("utf-8")
 
 
-def _run(tmp_path: Path, source: Any = "startup", stdin: bytes | None = None,
-         **extra: str) -> tuple[int, str]:
-    code, out, err = _run_full(tmp_path, source, stdin, **extra)
+def _run(tmp_path: Path, source: Any = "startup", stdin: bytes | None = None, *,
+         first: bool = False, **extra: str) -> tuple[int, str]:
+    code, out, err = _run_full(tmp_path, source, stdin, first=first, **extra)
     assert err == ""
     return code, out
 
 
-def _payload(tmp_path: Path, source: Any = "startup", **extra: str) -> dict[str, Any]:
-    code, out = _run(tmp_path, source, **extra)
+def _payload(tmp_path: Path, source: Any = "startup", *, first: bool = False,
+             **extra: str) -> dict[str, Any]:
+    code, out = _run(tmp_path, source, first=first, **extra)
     assert code == 0 and out
     return json.loads(out)
 
@@ -235,6 +249,51 @@ def test_a_locked_configured_start_says_only_the_lock(tmp_path: Path) -> None:
         assert "(E8)" in text and "Cowork" not in text
 
 
+def test_the_first_session_tells_claude_but_not_the_user(tmp_path: Path) -> None:
+    # Right after an install or an upgrade this session's server may not have written
+    # its start yet, so a set-up Claude Code user would get Cowork's note: Claude only.
+    payload = _payload(tmp_path, first=True)
+    assert "systemMessage" not in payload
+    assert payload["hookSpecificOutput"]["additionalContext"].startswith(
+        "odoo-tools plugin status: In Cowork and Claude chat")
+    assert not (_data(tmp_path) / "options-notice").exists()  # the daily slot is kept
+    assert "systemMessage" in _payload(tmp_path)  # the next session tells the user
+
+
+def test_the_rotated_server_log_counts(tmp_path: Path) -> None:
+    # The server has just rotated server.jsonl: the fresh records are in server.jsonl.1.
+    _server_log(tmp_path, [start(2, configured=True), connect(2)])
+    folder = _data(tmp_path) / "diagnostics"
+    (folder / "server.jsonl").rename(folder / "server.jsonl.1")
+    (folder / "server.jsonl").write_text(json.dumps(
+        {"v": 1, "ts": _ts(1), "event": "stop", "pid": 7, "uptime_s": 5}) + "\n")
+    assert _run(tmp_path) == (0, "")
+
+
+@POSIX_ONLY
+def test_a_symlinked_diagnostics_folder_is_not_written_through(tmp_path: Path) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _data(tmp_path).mkdir()
+    (_data(tmp_path) / "diagnostics").symlink_to(elsewhere, target_is_directory=True)
+    code, _ = _run(tmp_path, first=True)
+    assert code == 0 and list(elsewhere.iterdir()) == []
+
+
+@pytest.mark.parametrize("folder, shown", [
+    ("/Users/someone/.claude/plugins/data/x/diagnostics", "~/.claude/plugins/data/x/diagnostics"),
+    ("/home/someone/.claude/plugins/data/x/diagnostics", "~/.claude/plugins/data/x/diagnostics"),
+    ("C:\\Users\\Someone\\.claude\\plugins\\data\\x\\diagnostics",
+     "~\\.claude\\plugins\\data\\x\\diagnostics"),
+    ("/srv/claude/data/diagnostics", "/srv/claude/data/diagnostics"),
+])
+def test_the_diagnostics_line_writes_the_home_folder_as_a_tilde(
+        monkeypatch: pytest.MonkeyPatch, folder: str, shown: str) -> None:
+    hook = _load_hook(monkeypatch)
+    line = hook.diagnostics_line("cli", "none", None, folder)
+    assert line.endswith(f"diag_dir={shown}") and "omeone" not in line
+
+
 def test_the_last_failure_is_reported_by_category(tmp_path: Path) -> None:
     _server_log(tmp_path, [start(3), connect(2, "auth")])
     context = _payload(tmp_path)["hookSpecificOutput"]["additionalContext"]
@@ -340,7 +399,7 @@ def test_a_non_ascii_cwd_survives_a_windows_code_page(tmp_path: Path) -> None:
     stdin = _event("resume", cwd="C:\\Users\\Ángel\\LOGÍSTICA\\odoo")
     code, out = _run(tmp_path, stdin=stdin, PYTHONIOENCODING="cp1252")
     assert code == 0 and "systemMessage" not in json.loads(out)
-    assert _hook_lines(tmp_path)[0]["source"] == "resume"
+    assert _hook_lines(tmp_path)[-1]["source"] == "resume"
 
 
 def test_an_unreadable_event_counts_as_a_new_session(tmp_path: Path) -> None:
@@ -353,7 +412,9 @@ def test_an_unreadable_event_counts_as_a_new_session(tmp_path: Path) -> None:
 def test_an_unwritable_data_folder_does_not_break_the_hook(tmp_path: Path) -> None:
     _data(tmp_path).write_text("a file where the folder should be")
     code, out = _run(tmp_path)
-    assert code == 0 and "systemMessage" in json.loads(out)
+    payload = json.loads(out)
+    assert code == 0 and "systemMessage" not in payload
+    assert payload["hookSpecificOutput"]["additionalContext"].startswith("odoo-tools plugin")
 
 
 @pytest.mark.parametrize("value", ["", "relative/data", "${CLAUDE_PLUGIN_DATA}"])
@@ -364,7 +425,8 @@ def test_without_a_data_folder_nothing_is_written(tmp_path: Path, value: str) ->
     result = subprocess.run([sys.executable, str(HOOK)], input=_event(), env=env, cwd=work,
                             capture_output=True, timeout=30, check=True)
     payload = json.loads(result.stdout)
-    assert "systemMessage" in payload  # always due without a folder
+    # Without a folder a notice cannot be kept to once a day: Claude only, every time.
+    assert "systemMessage" not in payload
     assert _line(payload["hookSpecificOutput"]["additionalContext"]).group(4) == "none"
     assert list(work.iterdir()) == [] and not _data(tmp_path).exists()
 
@@ -373,7 +435,7 @@ def test_without_a_data_folder_nothing_is_written(tmp_path: Path, value: str) ->
 
 def test_one_metadata_record_per_session_start(tmp_path: Path) -> None:
     _server_log(tmp_path, [start(3), connect(3)])
-    _run(tmp_path, CLAUDE_CODE_ENTRYPOINT="cli")
+    _run(tmp_path, first=True, CLAUDE_CODE_ENTRYPOINT="cli")
     _run(tmp_path, source="compact", stdin=_event("compact", session_id="not a uuid!"),
          CLAUDE_CODE_ENTRYPOINT="has spaces")
     _run(tmp_path, source="weird")
@@ -399,7 +461,7 @@ def test_one_metadata_record_per_session_start(tmp_path: Path) -> None:
 
 @POSIX_MODES
 def test_the_record_files_are_owner_only(tmp_path: Path) -> None:
-    _run(tmp_path)
+    _run(tmp_path, first=True)  # the hook creates the folder
     folder = _data(tmp_path) / "diagnostics"
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
     assert stat.S_IMODE((folder / "hook.jsonl").stat().st_mode) == 0o600
@@ -631,6 +693,7 @@ def test_a_supported_python3_runs_the_hook(tmp_path: Path) -> None:
     first, second = _hooks()
     real = _bin(tmp_path, "py-bin", "real")
     assert _shell(first["command"], tmp_path, real) == (0, "", "")
+    _seen_before(tmp_path)
     code, out, err = _shell(second["command"], tmp_path, real)
     assert code == 0 and err == ""
     assert "In Cowork" in json.loads(out)["systemMessage"]

@@ -584,6 +584,8 @@ def append_line(directory: str, name: str, data: bytes, *, rotate_at: int = ROTA
     ``flock`` where the platform has it, so two processes keep whole lines and rotate
     once. Raises ``OSError``."""
     os.makedirs(directory, mode=0o700, exist_ok=True)
+    if os.path.islink(directory):  # O_NOFOLLOW guards the file name only
+        raise OSError("the diagnostics folder is a symbolic link")
     path = os.path.join(directory, name)
     rotate = True
     for _attempt in range(4):
@@ -838,7 +840,8 @@ def diagnostics_summary(raw: str | None) -> dict[str, Any]:
     if state == "stderr":  # a keyword of the audit, not of the diagnostics
         state = "not an absolute path"
     if path is None:
-        shown = _shown((raw or "").strip()) if state == "not an absolute path" else None
+        shown = (_shown(_home_relative((raw or "").strip()))
+                 if state == "not an absolute path" else None)
         return {"folder": shown, "state": state, "server_events": [], "hook_events": []}
     return {
         "folder": _shown(_home_relative(path)),

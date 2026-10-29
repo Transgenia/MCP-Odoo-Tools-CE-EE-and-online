@@ -653,3 +653,15 @@ def test_the_utc_clock_is_used(tmp_path: Path) -> None:
         datetime.timedelta(hours=-6)))
     Diagnostics(str(tmp_path), clock=lambda: clock).stop()
     assert lines_of(tmp_path)[0]["ts"] == "2026-10-29T07:02:03Z"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
+def test_a_symlinked_folder_is_not_written_through(tmp_path: Path) -> None:
+    # O_NOFOLLOW guards the file name only; the folder itself is checked too.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    link = tmp_path / "diagnostics"
+    link.symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(OSError):
+        append_line(str(link), "server.jsonl", b'{"v":1}\n')
+    assert list(elsewhere.iterdir()) == []

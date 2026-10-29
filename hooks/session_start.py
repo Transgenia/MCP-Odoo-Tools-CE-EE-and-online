@@ -78,6 +78,10 @@ _TS = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]
 _VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+~-]{0,31}")
 _OS_PART = re.compile(r"[0-9A-Za-z][0-9A-Za-z_.+~-]{0,63}")
 _SESSION_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
+# A home folder at the start of a path (macOS, Linux, Windows), written as ~ in the
+# diagnostics line: no environment variable or file is read to find it.
+_HOME = re.compile(r"^(?:/Users/[^/]+|/home/[^/]+|/root|[A-Za-z]:\\Users\\[^\\]+)(?=[/\\]|$)",
+                   re.IGNORECASE)
 _E_CODE = re.compile(r"E[0-9]{1,2}")
 
 TRANSGENIA = "Transgenia: dev@transgenia.org, WhatsApp +52 55 8034 0405"
@@ -343,9 +347,12 @@ def _shown(text: str) -> str:
 
 def diagnostics_line(entrypoint: str | None, last: str, age: int | None,
                      diag: str | None) -> str:
+    # The home folder is written as ~: the line reaches Claude and support reports, which
+    # need the folder but not the name of the account on the computer.
+    shown = _shown(_HOME.sub("~", diag, count=1)) if diag else "none"
     return (f"odoo-tools session diagnostics: entrypoint={entrypoint or 'none'} "
             f"server_last={last} age_h={'none' if age is None else age} "
-            f"diag_dir={_shown(diag) if diag else 'none'}")
+            f"diag_dir={shown}")
 
 
 def build_output(*, surface: bool, locked: str | None, line: str, surface_message: bool,
@@ -397,6 +404,8 @@ def append_line(directory: str, name: str, data: bytes) -> None:
     the server does (under an exclusive flock where the platform has it). Raises OSError."""
     _folder(os.path.dirname(directory))  # the data folder, normally there already
     _folder(directory, 0o700)
+    if os.path.islink(directory):  # O_NOFOLLOW guards the file name only
+        raise OSError("the diagnostics folder is a symbolic link")
     path = os.path.join(directory, name)
     rotate = True
     for _attempt in range(4):
@@ -474,7 +483,14 @@ def main() -> int:
         data = _data_folder()
         diag = os.path.join(data, DIAG_FOLDER) if data else None
         now = time.time()
-        records = _tail(os.path.join(diag, SERVER_FILE)) if diag else []
+        # The rotated file first: the server may have just started a new server.jsonl.
+        records = ([*_tail(os.path.join(diag, SERVER_FILE + ".1")),
+                    *_tail(os.path.join(diag, SERVER_FILE))] if diag else [])
+        # No hook record yet: the first session after an install or an upgrade, when this
+        # session's server may not have written its start yet. Claude is told, the user is
+        # not, so a set-up Claude Code user is not sent to Cowork's note on day one.
+        first_session = bool(diag) and not any(
+            os.path.lexists(os.path.join(diag, HOOK_FILE + suffix)) for suffix in ("", ".1"))
         last, age, fresh, locked = server_state(records, now)
         container = bool(diag) and os.path.lexists(os.path.join(diag, CONTAINER_MARKER))
         entrypoint = _entrypoint()
@@ -485,7 +501,8 @@ def main() -> int:
         surface = not fresh
         if not surface and locked is None:
             return 0
-        startup = source in (None, "startup")
+        # Without the data folder a notice cannot be limited to once a day: Claude only.
+        startup = source in (None, "startup") and bool(data) and not first_session
         output = build_output(
             surface=surface, locked=locked, line=diagnostics_line(entrypoint, last, age, diag),
             surface_message=startup and surface and _notice_due(data, now, SURFACE_NOTICE),

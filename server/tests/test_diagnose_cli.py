@@ -281,3 +281,15 @@ def test_the_report_writes_the_home_folder_as_a_tilde(tmp_path: Path,
     assert "someone" not in summary["folder"] and summary["state"] == "exists"
     outside = tmp_path / "elsewhere"
     assert diagnostics.diagnostics_summary(str(outside))["folder"] == str(outside)
+
+
+def test_an_unusable_folder_value_is_shown_without_the_account_name(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home" / "someone"
+    home.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    raw = str(home) + "/${CLAUDE_PLUGIN_DATA}/diagnostics"  # an unresolved variable
+    summary = diagnostics.diagnostics_summary(raw)
+    assert summary["state"] == "not an absolute path"
+    assert summary["folder"] == "~/${CLAUDE_PLUGIN_DATA}/diagnostics"
