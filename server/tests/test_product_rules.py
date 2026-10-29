@@ -88,9 +88,12 @@ def test_the_rules_document_states_the_manual_rule() -> None:
     rules = (ROOT / "docs/product-rules.md").read_text(encoding="utf-8")
     assert "## 8. Every change is checked against the manual" in rules
     assert "Spanish, English and Chinese" in rules and "software_version" in rules
+    # The manual's host as a whole name, not as a substring (CodeQL reads a substring
+    # check on a host name as an incomplete URL check).
+    manual = re.compile(r"(?<![\w.-])docs\.transgenia\.org(?![\w-])")
     for name in ("CONTRIBUTING.md", "CLAUDE.md", "docs/packaging.md",
                  ".github/pull_request_template.md"):
-        assert "docs.transgenia.org" in (ROOT / name).read_text(encoding="utf-8"), name
+        assert manual.search((ROOT / name).read_text(encoding="utf-8")), name
 
 
 @pytest.mark.parametrize("name", ["CLAUDE.md", "docs/product-rules.md", "docs/packaging.md",
