@@ -21,7 +21,7 @@ that may be one are found by :func:`positional_contexts` (design E1).
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sized
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -115,8 +115,9 @@ def method_ops(method: str) -> tuple[str, ...]:
 
 
 # --- argument shapes -----------------------------------------------------------
-# What an argument holds. None: a number, text, a boolean or a list the policy does not
-# check (limit, offset, a name); never an object, which is OBJECT below.
+# What an argument holds. None: a number, text, a boolean, or a list of names or numbers,
+# which the policy does not check (limit, offset, a name, langs); never an object or a list
+# of pairs, which are OBJECT and ROWS below.
 DOMAIN = "domain"  # a search domain: the field paths of its leaves
 HAVING = "having"  # a domain over aggregates ('amount:sum', '__count')
 FIELDS = "fields"  # a list of field names
@@ -134,9 +135,12 @@ VALUES = "values"  # a dict of field values, or a list of them (create)
 FIELD = "field"  # one field name (the translation methods)
 # An object the policy does not read (copy_data's default, onchange's values, the
 # translations of update_field_translations). Every other parameter without a role takes
-# a number, text, a boolean or a list, never an object: an object there can only be a
-# context that Odoo 10 to 12 read by position (``positional_contexts``).
+# a number, text, a boolean or a list of names or numbers, never an object: an object there
+# can only be a context that Odoo 10 to 12 read by position (``positional_contexts``).
 OBJECT = "object"
+# load()'s data: rows of text, which the policy does not read. A two-column row is a
+# [text, text] pair, so this is the one parameter where a list of pairs is not a context.
+ROWS = "rows"
 
 
 @dataclass(frozen=True)
@@ -294,7 +298,7 @@ ARG_SHAPES: dict[str, ArgShape] = {
     "action_archive": ArgShape(True),
     "action_unarchive": ArgShape(True),
     "toggle_active": ArgShape(True),
-    "load": ArgShape(False, (("fields", COLUMNS), ("data", None))),
+    "load": ArgShape(False, (("fields", COLUMNS), ("data", ROWS))),
     "web_save": ArgShape(True, (("vals", VALUES), ("specification", SPEC), ("next_id", None))),
     "unlink": ArgShape(True),
 }
@@ -417,17 +421,46 @@ POSITIONAL_CONTEXT_UNTIL = 12  # the last major series that reads a positional c
 
 @dataclass
 class PositionalContexts:
-    """The positional arguments of a call that Odoo 10 to 12 may take as its context.
+    """The positional arguments of a call that Odoo 10 to 12 may take as its context, each
+    as the context Odoo would build from it (``as_context``).
 
     ``certain``: a method ``ARG_SHAPES`` names, where an object after its parameters, or at
     a parameter that never holds an object, can only be the context (an override or a series
     with fewer parameters puts the context there: ``search_count`` has no ``limit`` on Odoo
     10 to 12). ``possible``: a method outside the table, whose parameters are unknown, so
     every object passed positionally may be the context, or one of the method's values.
+    "Object" here is anything Odoo makes a context of: a Mapping, or a list of pairs.
     """
 
-    certain: list[Mapping[str, Any]] = field(default_factory=list)
-    possible: list[Mapping[str, Any]] = field(default_factory=list)
+    certain: list[Mapping[Any, Any]] = field(default_factory=list)
+    possible: list[Mapping[Any, Any]] = field(default_factory=list)
+
+
+def as_context(value: Any) -> Mapping[Any, Any] | None:
+    """The context Odoo 10 to 12 would build from ``value`` read by position, or None.
+
+    Those series build it with ``dict(value)``, which takes a Mapping, and also a list (or a
+    tuple) whose every item has exactly two elements: ``[["lang", "es_MX"], ["default_x",
+    1]]`` is the same context as ``{"lang": "es_MX", "default_x": 1}``. This calls
+    ``dict()`` itself, so whatever it takes counts, with its own reading: a later pair wins,
+    a two-letter text is a pair of letters and a two-key object a pair of its keys, and a
+    list mixing a ``[key, value]`` pair with an x2many command such as ``[4, 5]`` is still a
+    context. What ``dict()`` refuses (a domain, whose leaves have three items; ids; a key
+    that cannot be one) makes Odoo fail as well, so it builds none. A list made only of text
+    builds none either: ``dict()`` would split two-letter names into one-letter keys, which
+    are no context key, and a list of field names or langs is an ordinary argument."""
+    if isinstance(value, Mapping):
+        return value
+    if not isinstance(value, (list, tuple)) or all(isinstance(item, str) for item in value):
+        return None
+    # Only items of two elements make a pair (dict() raises on any other length): checked
+    # first, so a long item is never copied element by element just to be refused.
+    if not all(isinstance(item, Sized) and len(item) == 2 for item in value):
+        return None
+    try:
+        return dict(value)
+    except (TypeError, ValueError):  # Odoo's dict() raises too: no context
+        return None
 
 
 def positional_contexts(method: str, args: Any, *, ids_given: bool) -> PositionalContexts:
@@ -443,21 +476,25 @@ def positional_contexts(method: str, args: Any, *, ids_given: bool) -> Positiona
     positional = list(args)
     shape = ARG_SHAPES.get(method)
     if shape is None:
-        out.possible.extend(value for value in positional if isinstance(value, Mapping))
+        for value in positional:
+            context = as_context(value)
+            if context is not None:
+                out.possible.append(context)
         return out
     if shape.record and not ids_given and positional:
         positional.pop(0)
     for index, value in enumerate(positional):
-        if not isinstance(value, Mapping):
-            continue
-        if index >= len(shape.params) or shape.params[index][1] is None:
-            out.certain.append(value)
+        if index < len(shape.params) and shape.params[index][1] is not None:
+            continue  # a parameter that takes this kind of value, read by its role
+        context = as_context(value)
+        if context is not None:
+            out.certain.append(context)
     return out
 
 
 def _collect(out: CallArgs, role: str | None, value: Any) -> None:
     method = out.method
-    if role is None or role == OBJECT:
+    if role is None or role in (OBJECT, ROWS):
         return
     if role == DOMAIN:
         out.paths.extend(domain_paths(value, method=method))

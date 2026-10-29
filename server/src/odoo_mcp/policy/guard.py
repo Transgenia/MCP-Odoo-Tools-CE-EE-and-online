@@ -696,7 +696,8 @@ class GuardedSession:
                                    cls: str) -> None:
         """Odoo 10 to 12 also take a call's context from a positional argument, the one after
         the method's own parameters (design E1). On those series the objects of the actual
-        call that may be its context meet the same rules as at Layer A
+        call that may be its context (a Mapping, or a list of pairs, as the dict Odoo builds
+        from it) meet the same rules as at Layer A
         (``check_positional_contexts``), as a backstop, and the metadata-free structural rules
         over their ``default_<field>`` keys that a named context meets here. From 13 Odoo
         reads only ``kwargs["context"]``, so the positional objects are values, checked as

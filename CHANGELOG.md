@@ -48,9 +48,10 @@ the sealed profiles refuse a little more; the tool count stays 28.
   call's context from the positional argument that follows the method's own
   parameters, and the policy read a context only by name, so a `default_<field>`
   key with a list or object value could reach Odoo 10 to 12 that way through
-  `odoo_execute`. The context rules now apply to such an argument: at Layer A on
-  every series, before the series is known, and in the guarded session on 10 to
-  12. For a method the policy knows, an object after its parameters is the
+  `odoo_execute`. The context rules now apply to such an argument, an object or a
+  list of `[key, value]` pairs (those series build the context with `dict()`): at
+  Layer A on every series, before the series is known, and in the guarded session
+  on 10 to 12. For a method the policy knows, an object after its parameters is the
   context and meets every context rule; for any other method, the
   `default_<field>` keys of every positional object meet them, while a values
   object such as `{"default_code": "A-1"}` still runs. Profile `full` is

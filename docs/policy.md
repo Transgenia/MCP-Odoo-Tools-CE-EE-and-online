@@ -872,6 +872,9 @@ To add a tool:
     parameters; from 13 only `kwargs["context"]` is read. The policy reads such an
     argument as a context: Layer A on every series, before anything is sent, through
     `odoo_execute` with or without `ids`, and the guarded session again on 10 to 12.
+    Those series build the context with `dict()`, so a list of `[key, value]` pairs
+    counts as an object below, read as the context it builds; a list of field names,
+    ids or domain terms builds none.
     - For a method whose parameters the policy knows (`search_read`, `create`,
       `write` and the other methods it reads), an object after the parameters, or
       at a parameter that never holds an object (`search_count`'s `limit`, which

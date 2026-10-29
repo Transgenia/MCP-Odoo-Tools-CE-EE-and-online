@@ -443,7 +443,9 @@ def check_positional_contexts(policy: Policy, model: str, found: PositionalConte
                               op: str = "call", layer: str = "A",
                               creating: bool | None = None) -> None:
     """The context rules over the objects of ``args`` that Odoo 10 to 12 may take as the
-    call's context (design E1); ``classify.positional_contexts`` finds them.
+    call's context (design E1); ``classify.positional_contexts`` finds them, each as the dict
+    Odoo would build from it: a Mapping, or a list of ``[key, value]`` pairs, which those
+    series turn into a context with ``dict()`` as well (``classify.as_context``).
 
     An object that can only be the context (``found.certain``: after the parameters of a
     method the policy knows, or at a parameter that never holds an object) meets every rule
