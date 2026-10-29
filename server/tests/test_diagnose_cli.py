@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from odoo_mcp import diagnostics
 from odoo_mcp.__main__ import main
 from odoo_mcp.audit import AuditLog
 from odoo_mcp.config import Settings
@@ -265,3 +267,17 @@ def test_bad_usage_exits_2(argv: list[str], capsys: pytest.CaptureFixture[str]) 
         main(argv)
     assert raised.value.code == 2
     assert "usage:" in capsys.readouterr().err
+
+
+def test_the_report_writes_the_home_folder_as_a_tilde(tmp_path: Path,
+                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    # A report pasted to support should not carry the computer's account name.
+    home = tmp_path / "home" / "someone"
+    (home / "data" / "diagnostics").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    summary = diagnostics.diagnostics_summary(str(home / "data" / "diagnostics"))
+    assert summary["folder"] == "~" + os.sep + os.path.join("data", "diagnostics")
+    assert "someone" not in summary["folder"] and summary["state"] == "exists"
+    outside = tmp_path / "elsewhere"
+    assert diagnostics.diagnostics_summary(str(outside))["folder"] == str(outside)

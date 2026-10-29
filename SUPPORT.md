@@ -46,7 +46,7 @@ Maintenance, support, training for your team, customizations, Odoo migrations
 and assisted deployment:
 
 - Email: **dev@transgenia.org**
-- WhatsApp: **+52 55 8034 0405** — https://wa.me/525580340405
+- WhatsApp: **+52 55 8034 0405**, https://wa.me/525580340405
 - Web: https://transgenia.org
 
 Transgenia will never ask you for your Odoo API key or password in a chat or by

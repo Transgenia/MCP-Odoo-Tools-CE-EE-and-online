@@ -807,6 +807,23 @@ def _shown(text: str) -> str:
     return printable.encode("ascii", "backslashreplace").decode("ascii")
 
 
+def _home_relative(path: str) -> str:
+    """``path`` with the user's home folder written as ``~``, so a report pasted to
+    support does not carry the name of the account on the computer."""
+    try:
+        home = os.path.expanduser("~")
+    except (KeyError, RuntimeError):  # no resolvable home folder
+        return path
+    if home and home != "~" and os.path.isabs(home):
+        home = home.rstrip("/\\") or home
+        if path == home:
+            return "~"
+        for sep in {os.sep, "/"}:
+            if path.startswith(home + sep):
+                return "~" + path[len(home):]
+    return path
+
+
 def _events(directory: str, name: str, records: Mapping[str, Mapping[str, Check]],
             count: int) -> list[dict[str, Any]]:
     path = os.path.join(directory, name)
@@ -824,7 +841,7 @@ def diagnostics_summary(raw: str | None) -> dict[str, Any]:
         shown = _shown((raw or "").strip()) if state == "not an absolute path" else None
         return {"folder": shown, "state": state, "server_events": [], "hook_events": []}
     return {
-        "folder": _shown(path),
+        "folder": _shown(_home_relative(path)),
         "state": "exists" if os.path.isdir(path) else "missing",
         "server_events": _events(path, SERVER_FILE, SERVER_RECORDS, REPORT_SERVER_EVENTS),
         "hook_events": _events(path, HOOK_FILE, HOOK_RECORDS, REPORT_HOOK_EVENTS),
