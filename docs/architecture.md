@@ -117,7 +117,9 @@ audit.py: one line per tool call (refusals included), local files or stderr
   its own design. The header-based `tenancy.from_headers` (client-chosen
   `X-Odoo-Url/Db/Login` and a `Bearer` passed through to Odoo, with a fallback
   to the server's own secret) had no caller and was removed in 1.5.0;
-  `ODOO_MULTITENANT` and `ODOO_HTTP_BEARER` stay parsed, with no behaviour.
+  `ODOO_MULTITENANT` stays parsed, with no behaviour. `ODOO_HTTP_BEARER`, parsed
+  but never used, was removed in 1.5.1: the server reads no credential that
+  `.claude-plugin/plugin.json` does not pass from a `sensitive` option.
 
 ## Design tenets
 

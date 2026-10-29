@@ -79,8 +79,6 @@ class Settings:
     # server hides every non-read-only tool from tools/list and refuses it when
     # called by name, before touching Odoo, whatever the permission profile.
     readonly: bool = False
-    # Optional bearer expected on the HTTP transport (multi-tenant deployments).
-    http_bearer: str = ""
     # Permission policy (odoo_mcp.policy). The profile is kept as given, only
     # stripped and lowercased: an unknown name locks the server (E1) instead of
     # falling back to something looser, as ODOO_TRANSPORT_PREF falls back to auto.
@@ -122,7 +120,6 @@ class Settings:
             metrics_port=_get_int("ODOO_METRICS_PORT", 8085),
             otel_endpoint=_env("ODOO_OTEL_ENDPOINT"),
             readonly=_get_bool("ODOO_READONLY", False),
-            http_bearer=_env("ODOO_HTTP_BEARER"),
             policy_profile=_env("ODOO_POLICY").strip().lower() or "standard",
             policy_file=os.path.expanduser(_env("ODOO_POLICY_FILE").strip()),
             audit_dir=_env("ODOO_AUDIT_DIR").strip(),

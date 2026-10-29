@@ -12,7 +12,9 @@ Cowork, where most installs come from.
 
 from __future__ import annotations
 
+import ast
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -97,3 +99,45 @@ def test_public_rule_texts_have_no_dashes(name: str) -> None:
     # Public text uses plain ASCII punctuation: no em dash (U+2014), no en dash (U+2013).
     text = (ROOT / name).read_text(encoding="utf-8")
     assert "\u2014" not in text and "\u2013" not in text, name
+
+
+_CREDENTIAL_NAME = re.compile(r"KEY|PASSWORD|PASSWD|TOKEN|BEARER|SECRET|CREDENTIAL")
+_ENV_READERS = {"_env", "_get_bool", "_get_int", "getenv"}
+
+
+def _env_names_the_server_reads() -> set[str]:
+    """Every environment variable name the server's source reads by literal name."""
+    names: set[str] = set()
+    for path in sorted((ROOT / "server/src/odoo_mcp").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            target = None
+            if isinstance(node, ast.Call) and node.args:
+                func = node.func
+                called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                environ_get = (isinstance(func, ast.Attribute) and func.attr == "get"
+                               and getattr(func.value, "attr", getattr(func.value, "id", ""))
+                               == "environ")
+                if called in _ENV_READERS or environ_get:
+                    target = node.args[0]
+            elif (isinstance(node, ast.Subscript)
+                  and getattr(node.value, "attr", getattr(node.value, "id", "")) == "environ"):
+                target = node.slice
+            if isinstance(target, ast.Constant) and isinstance(target.value, str):
+                names.add(target.value)
+    return names
+
+
+def test_the_server_reads_only_credentials_that_plugin_json_passes_from_sensitive_options(
+) -> None:
+    # The directory holds a plugin that reads a credential already set in the user's
+    # environment and sends it to a server ("Uses a credential from the user's machine",
+    # MCP_FORWARDS_CREDENTIAL_ENV): a credential must come from a sensitive userConfig
+    # option. 1.5.1 removed ODOO_HTTP_BEARER, which the server read but never used.
+    plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    env, options = plugin["mcpServers"]["odoo"]["env"], plugin["userConfig"]
+    names = _env_names_the_server_reads()
+    assert {"ODOO_URL", "ODOO_API_KEY", "ODOO_PASSWORD"} <= names  # the scan finds reads
+    for name in sorted(n for n in names if _CREDENTIAL_NAME.search(n)):
+        passed = re.fullmatch(r"\$\{user_config\.([a-z0-9_]+)\}", env.get(name, ""))
+        assert passed, f"the server reads {name}, which plugin.json does not pass"
+        assert options[passed.group(1)].get("sensitive") is True, name

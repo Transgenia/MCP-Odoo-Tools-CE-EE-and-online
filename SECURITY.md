@@ -6,18 +6,20 @@
   `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY`/`ODOO_PASSWORD`), which Claude Code
   fills from the plugin options. The server never takes an Odoo URL or secret
   from a client request: the header-based multi-tenant path was removed in
-  1.5.0, and `ODOO_MULTITENANT` / `ODOO_HTTP_BEARER` are parsed but reserved.
+  1.5.0, and `ODOO_MULTITENANT` is parsed but reserved. The server reads no
+  other credential: `ODOO_HTTP_BEARER`, which it read from its environment but
+  never used, was removed in 1.5.1.
 - The **MCP server** does not persist secrets to disk and never writes them to
   logs. Sessions are keyed by `url|db|login` plus a per-process HMAC of the
   secret; the secret itself is never part of a key or a log line.
-- **Exception — CLI fallback:** `/odoo-tools:odoo-setup-cli` writes a local `.env`
+- **Exception, the CLI fallback:** `/odoo-tools:odoo-setup-cli` writes a local `.env`
   containing your credentials under `~/.claude/tools/odoo-cli`. If you use that
   surface, restrict its permissions (e.g. `chmod 600`), keep it out of version
   control, and delete it when you stop using the CLI.
 - **Data path when used via an AI agent:** tool results (the Odoo records you
   query) are returned to your MCP client and sent to your model provider (e.g.
   Anthropic, for Claude) for processing, as with any MCP tool. Transgenia does not
-  proxy or store your data, but it is not withheld from the model — query with a
+  proxy or store your data, but it is not withheld from the model: query with a
   least-privilege user and avoid pulling fields the agent does not need.
 - The `Settings` object **redacts credentials in `repr()`/`str()`** so accidental
   logging cannot leak them (enforced by `tests/test_security_redaction.py`).
@@ -40,13 +42,47 @@
 - The optional CLI fallback is the one exception: `/odoo-tools:odoo-setup-cli`
   runs `npm install` against the npm registry, only when you invoke it.
 
+## What the plugin directory's checks report
+
+The Claude plugin directory lists these findings for this plugin. Each one, and
+where to verify it:
+
+- **Uses a credential from the user's machine** (`.claude-plugin/plugin.json`,
+  `server/src/odoo_mcp/config.py`). The MCP server reads two credentials, the
+  Odoo API key and the Odoo password, from the environment that
+  `.claude-plugin/plugin.json` fills from the `sensitive` options `odoo_api_key`
+  and `odoo_password` (`${user_config.KEY}`). It sends them only to the Odoo URL
+  the user configured, the service they belong to: the three transports in
+  `server/src/odoo_mcp/transport/` connect to that URL only and refuse
+  redirects. `server/tests/test_product_rules.py` fails if the server reads any
+  other credential from its environment.
+- **`scripts/deploy_local.py`** generates random passwords
+  (`secrets.token_urlsafe`) for the local Docker sandbox of
+  `/odoo-tools:deploy-local`, keeps them in an owner-only `.env` in the sandbox
+  folder, and uses them only with that sandbox's containers on 127.0.0.1. They are
+  not the user's credentials.
+- **Tests** (`server/tests/`) set fake canary credentials to prove that no log
+  line, audit line, diagnostics record, support report or hook output ever
+  contains a credential. The plugin never runs them.
+- **Uses hooks.** One SessionStart hook, `hooks/session_start.py`, which reads
+  the plugin's data folder and `CLAUDE_CODE_ENTRYPOINT` only, never a plugin
+  option or a credential (`server/tests/test_product_rules.py`), and always
+  exits 0.
+- **Runs a local program for an MCP server.** `python3
+  ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: standard library only, nothing
+  installed or downloaded (Supply chain, above).
+- **Contains a download-and-run command.** Only in documentation and in CI
+  workflows, which never run on the user's computer: the desktop extension
+  preview validates its manifest with the official MCPB command line tool at a
+  pinned version.
+
 ## Automated checks (CI)
 
 - **`.github/workflows/security.yml`** runs on every push/PR:
-  - **gitleaks** — scans history and diffs for committed secrets. The CLI is
+  - **gitleaks** scans history and diffs for committed secrets. The CLI is
     built with `go install` at a fixed tag (v8.18.4), with modules verified
     against the Go checksum database; no binary is downloaded and executed.
-  - **leak-guard** — greps the tree for forbidden internal/tenant markers
+  - **leak-guard** greps the tree for forbidden internal/tenant markers
     (client data, infra hosts, fiscal IDs, hardcoded credentials) and fails the
     build if any appear. This repo is vendor-neutral: it must contain only the
     generic tooling plus the public author/brand and services offer. The
@@ -75,7 +111,7 @@
 - **Purpose:** continuous improvement of the plugin only (which versions and
   transports are actually used, which generic tools get exercised) so compat
   fixes and docs target real usage instead of guesses.
-- **Frequency:** only on explicit manual run — there is no periodic send. Each
+- **Frequency:** only on explicit manual run; there is no periodic send. Each
   share is a deliberate, visible operator action.
 - **NEVER sent, even under opt-in:** URL, DB name, login/email, secrets, phone,
   company/customer names, record contents, domains/ids/values, module lists,
@@ -191,7 +227,10 @@ server keeps the Odoo credential, the same policy becomes real enforcement.
   business reads; related fields with harmless names can carry withheld data;
   many2one links are not checked as touches; published content is an outbound
   channel by effect; counts and aggregates allow inference; `builder` equals
-  `full` for confidentiality, because automations run code on the server.
+  `full` for confidentiality, because automations run code on the server; on
+  Odoo 10 to 12, the keys other than `default_<field>` of an object passed
+  positionally to a business method outside the policy's table are not held to
+  the context allowlist (planned for 1.5.2).
 
 ## Read-only mode
 
