@@ -192,7 +192,9 @@ def make_manifest(plugin: dict[str, Any], python: str | None = None) -> dict[str
         "platform_overrides": {"win32": {"command": WINDOWS_COMMAND}},
     }
     _check_variables(mcp_config, user_config)
-    return {
+    # The listing URLs come from plugin.json when it has them (directory listing fields).
+    documentation = plugin.get("documentationUrl") or DOCS_URL
+    manifest = {
         "manifest_version": MANIFEST_VERSION,
         "name": name,
         "display_name": _field(plugin, "displayName"),
@@ -200,14 +202,20 @@ def make_manifest(plugin: dict[str, Any], python: str | None = None) -> dict[str
         "description": DESCRIPTION.format(python=_python_text(python)),
         "author": {key: author[key] for key in ("name", "email", "url") if key in author},
         "repository": {"type": "git", "url": repository},
-        "homepage": DOCS_URL,
-        "documentation": DOCS_URL,
-        "support": f"{repository}/blob/{BRANCH}/SUPPORT.md",
+        "homepage": documentation,
+        "documentation": documentation,
+        "support": plugin.get("supportUrl") or f"{repository}/blob/{BRANCH}/SUPPORT.md",
         "license": _field(plugin, "license"),
+    }
+    if plugin.get("privacyPolicyUrl"):
+        # The MCPB spec asks for one when the extension connects to an outside service.
+        manifest["privacy_policies"] = [plugin["privacyPolicyUrl"]]
+    manifest.update({
         "server": {"type": "python", "entry_point": entry_point, "mcp_config": mcp_config},
         "compatibility": {"platforms": list(PLATFORMS), "runtimes": {"python": python}},
         "user_config": user_config,
-    }
+    })
+    return manifest
 
 
 README = """\

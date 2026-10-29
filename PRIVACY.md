@@ -1,7 +1,8 @@
 # Privacy policy: Odoo Tools plugin
 
 _Last updated: 2026-10-29. Applies to the `odoo-tools` Claude plugin in this
-repository (MCP server, CLI fallback, skills, commands, agents and hooks)._
+repository (MCP server, CLI fallback, skills, commands, agents and hooks), and to
+the Claude Desktop extension preview built from it._
 
 Publisher: Transgenia (Centrum Transgenia SAS), dev@transgenia.org.
 Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
@@ -78,6 +79,12 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
   plugin's data folder; in containers and standalone runs, `ODOO_DIAG_DIR=off`
   writes none. The plugin never sends them anywhere: `/odoo-tools:odoo-doctor`
   prints a support report from them, and you decide whether to send it.
+- **Claude Desktop extension preview (not published yet):** the same MCP server,
+  packaged for Claude Desktop ([`docs/desktop-extension.md`](docs/desktop-extension.md)).
+  Claude Desktop stores its settings, with the API key and the password as sensitive
+  settings. The server writes its audit log and diagnostics to
+  `~/.odoo-tools/desktop/audit` and `~/.odoo-tools/desktop/diagnostics`, with the
+  same content and limits as above.
 - The SessionStart hook keeps empty timestamp files in the plugin's data folder
   so that its notices are shown at most once a day. Since 1.5.1 it reads only the
   plugin's data folder and the name of the Claude app that started the session:

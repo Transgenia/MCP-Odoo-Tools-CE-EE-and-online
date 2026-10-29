@@ -108,8 +108,11 @@ def test_the_manifest_follows_plugin_json(mcpb: Any, built: Path) -> None:
         "name": "Transgenia", "email": "dev@transgenia.org", "url": "https://transgenia.org"}
     assert manifest["license"] == plugin["license"] == "MIT"
     assert manifest["repository"] == {"type": "git", "url": plugin["repository"]}
-    assert manifest["homepage"] == manifest["documentation"] == DOCS_URL
+    assert manifest["homepage"] == manifest["documentation"] == plugin["documentationUrl"]
+    assert manifest["documentation"] == DOCS_URL
+    assert manifest["support"] == plugin["supportUrl"]
     assert manifest["support"] == f"{plugin['repository']}/blob/main/SUPPORT.md"
+    assert manifest["privacy_policies"] == [plugin["privacyPolicyUrl"]]
     assert (ROOT / "SUPPORT.md").is_file()
     for words in ("Preview", "same MCP server and permission policy", "locally"):
         assert words in manifest["description"]
