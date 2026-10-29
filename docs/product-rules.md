@@ -66,3 +66,18 @@ Each month, read the installs by surface in the developer portal
 (claude.ai/directory/manage) and the version that is live in the directory. A new
 version is only useful to directory users once a reviewer releases it, so a held
 version is worked on before the next feature.
+
+## 8. Every change is checked against the manual
+
+docs.transgenia.org is the plugin's manual, in Spanish, English and Chinese. Every
+change to the plugin is checked against it:
+
+- a change a user can notice (a command, a skill, an option, a message, a
+  requirement, what the plugin stores or reads, where it runs) updates the manual in
+  the three languages, in the same release;
+- every release sets the manual's plugin version (`software_version`) to the new
+  version;
+- every pull request says what changes in the manual, or why nothing does.
+
+The README, CHANGELOG, SUPPORT, PRIVACY and SECURITY files of this repository follow
+the same rule. Transgenia maintains the manual's source.

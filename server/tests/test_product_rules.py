@@ -37,11 +37,10 @@ def test_no_mod_in_the_hooks() -> None:
 
 
 def test_hooks_never_read_plugin_options_or_credentials() -> None:
-    # Versions 1.4.1 and 1.5.0 were held by the directory policy ("Update adds credential
-    # forward") while a session-start hook read CLAUDE_PLUGIN_OPTION_* variables. Claude
-    # Code exports every saved option, the API key included, to hook processes, so a
-    # hook must not read any of them: what a hook needs comes from the plugin's own
-    # diagnostics folder.
+    # Claude Code exports every saved option, the API key included, to hook processes,
+    # and the directory holds a plugin that reads a credential from the user's machine
+    # ("Uses a credential from the user's machine"). So a hook must not read any of
+    # them: what a hook needs comes from the plugin's own diagnostics folder.
     for path in sorted((ROOT / "hooks").iterdir()):
         if path.is_file():
             text = path.read_text(encoding="utf-8")
@@ -79,3 +78,22 @@ def test_the_rules_document_states_the_installation_rule() -> None:
     assert "dev@transgenia.org" in rules and "+52 55 8034 0405" in rules
     contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
     assert "docs/product-rules.md" in contributing
+
+
+def test_the_rules_document_states_the_manual_rule() -> None:
+    # Rule 8 (product owner, 2026-10-29): every change to the plugin is checked against
+    # the manual at docs.transgenia.org, which is kept in Spanish, English and Chinese.
+    rules = (ROOT / "docs/product-rules.md").read_text(encoding="utf-8")
+    assert "## 8. Every change is checked against the manual" in rules
+    assert "Spanish, English and Chinese" in rules and "software_version" in rules
+    for name in ("CONTRIBUTING.md", "CLAUDE.md", "docs/packaging.md",
+                 ".github/pull_request_template.md"):
+        assert "docs.transgenia.org" in (ROOT / name).read_text(encoding="utf-8"), name
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.md", "docs/product-rules.md", "docs/packaging.md",
+                                  "PRIVACY.md", ".github/pull_request_template.md"])
+def test_public_rule_texts_have_no_dashes(name: str) -> None:
+    # Public text uses plain ASCII punctuation: no em dash (U+2014), no en dash (U+2013).
+    text = (ROOT / name).read_text(encoding="utf-8")
+    assert "\u2014" not in text and "\u2013" not in text, name

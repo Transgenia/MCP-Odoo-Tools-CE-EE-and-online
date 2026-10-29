@@ -62,5 +62,9 @@ cd cli && npm install && npm run build
 ## Pull requests
 
 - Keep changes focused; include tests for logic.
+- Say in the pull request what changes in the manual at docs.transgenia.org, or why
+  nothing does ([product rule 8](docs/product-rules.md#8-every-change-is-checked-against-the-manual)).
+  Transgenia's maintainers update the manual in Spanish, English and Chinese in the
+  same release.
 - Update `docs/compat-matrix.md` when the delta map changes.
 - Note any new Odoo version/edition you verified against.
