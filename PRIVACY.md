@@ -76,8 +76,8 @@ Corporate privacy notice: <https://transgenia.org/en/legal-privacy.html>.
   They hold no URL, host, database, login, API key, password, policy file path,
   record data, filters, ids, tool arguments or error message text. Each file is
   rotated at 256 KiB, keeping one previous file, and they are deleted with the
-  plugin's data folder; in containers and standalone runs, `ODOO_DIAG_DIR=off`
-  writes none. The plugin never sends them anywhere: `/odoo-tools:odoo-doctor`
+  plugin's data folder. In containers and standalone runs the server writes none
+  unless `ODOO_DIAG_DIR` names a folder. The plugin never sends them anywhere: `/odoo-tools:odoo-doctor`
   prints a support report from them, and you decide whether to send it.
 - **Claude Desktop extension preview (not published yet):** the same MCP server,
   packaged for Claude Desktop ([`docs/desktop-extension.md`](docs/desktop-extension.md)).

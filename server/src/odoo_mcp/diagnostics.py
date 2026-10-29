@@ -960,15 +960,28 @@ def _section(build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
 def build_report(settings: Any, diag_dir: str | None, audit_dir: str | None,
                  tools: Iterable[Any], today: datetime.date | None = None) -> dict[str, Any]:
     tools = list(tools)
+    diagnostics = _section(lambda: diagnostics_summary(diag_dir))
     return {
         "report": HEADER,
         "plugin": PLUGIN_VERSION,
         "python": platform.python_version(),
         "os": os_info(),
-        "diagnostics": _section(lambda: diagnostics_summary(diag_dir)),
+        "diagnostics": diagnostics,
         "audit": _section(lambda: audit_summary(audit_dir, today)),
+        # What the server loaded, from its last start record (already allowlisted):
+        # the command's own environment may lack the plugin's options.
+        "last_start_policy": _last_start_policy(diagnostics),
         "policy": _section(lambda: policy_summary(settings, tools)),
     }
+
+
+def _last_start_policy(diagnostics: Mapping[str, Any]) -> dict[str, Any] | None:
+    events = diagnostics.get("server_events") if isinstance(diagnostics, Mapping) else None
+    for event in reversed(events or []):
+        if isinstance(event, Mapping) and event.get("event") == "start":
+            policy = event.get("policy")
+            return dict(policy) if isinstance(policy, Mapping) else None
+    return None
 
 
 def _yes(value: Any) -> str:
@@ -1023,8 +1036,14 @@ def render_report(report: Mapping[str, Any]) -> str:
         lines.append("audit: stderr (the audit lines go to the server's log, not to files)")
     else:
         lines.append(f"audit: {audit.get('state')}")
+    last = report.get("last_start_policy")
+    if last:
+        state = (f"locked yes ({last.get('code') or 'E-code unknown'})" if last.get("locked")
+                 else f"digest {last.get('digest')}, locked no")
+        lines.append(f"policy at the server's last start: profile {last.get('profile')}, {state}")
     policy = report["policy"]
-    head = "policy (computed offline from this environment, never contacts Odoo):"
+    head = ("policy computed offline from this command's environment (the plugin's options "
+            "may differ; never contacts Odoo):")
     if policy.get("state") == "unavailable":
         lines.append(f"{head} unavailable ({policy.get('error')})")
     else:

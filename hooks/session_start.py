@@ -9,10 +9,12 @@ data folder and the plugin's own folder. Exactly:
   * from the environment: CLAUDE_PLUGIN_DATA and CLAUDE_CODE_ENTRYPOINT, each looked
     up by its name (the environment is never listed or copied);
   * from the event JSON on stdin: "source" and "session_id";
-  * under ${CLAUDE_PLUGIN_DATA}: the last records of diagnostics/server.jsonl (the MCP
-    server's own log, server/src/odoo_mcp/diagnostics.py), with a bounded read of its
-    end; whether diagnostics/container-mode exists (/odoo-tools:deploy-local creates it
-    in its container mode); and the timestamps of the daily notices;
+  * under ${CLAUDE_PLUGIN_DATA}: the last records of diagnostics/server.jsonl and of its
+    rotated diagnostics/server.jsonl.1 (the MCP server's own log,
+    server/src/odoo_mcp/diagnostics.py), with a bounded read of each end; whether
+    diagnostics/hook.jsonl exists (none yet: the first session, when only Claude is
+    told); whether diagnostics/container-mode exists (/odoo-tools:deploy-local creates
+    it in its container mode); and the timestamps of the daily notices;
   * in the plugin's folder: the version in .claude-plugin/plugin.json.
 
 It writes one session_start line to diagnostics/hook.jsonl (the server writes

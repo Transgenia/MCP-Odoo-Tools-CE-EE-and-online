@@ -90,8 +90,10 @@ the sealed profiles refuse a little more; the tool count stays 28.
   header "odoo-tools support report (no keys, URLs, logins or record data)": the
   versions, the diagnostics folder (the home folder written as `~`), the last
   server and hook events re-checked against the allowlist, the last 7 days of
-  audit counts by status and refusal rule, and the policy computed offline. It
-  never contacts Odoo. `/odoo-tools:odoo-doctor` runs it on the plugin's own
+  audit counts by status and refusal rule, the policy the server loaded at its
+  last start, and the policy computed offline from the command's own environment
+  (labelled as such: a shell lacks the plugin's options). It never contacts
+  Odoo. `/odoo-tools:odoo-doctor` runs it on the plugin's own
   folders.
 - **A new session-start hook, `hooks/session_start.py`, replaces
   `hooks/check_options.py`.** It reads no plugin option and no credential: only

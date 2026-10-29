@@ -80,7 +80,8 @@ def test_missing_folders_still_exit_0(tmp_path: Path, capsys: pytest.CaptureFixt
     assert f"diagnostics folder: {tmp_path / 'nope'} (missing)" in lines
     assert lines.count("  none") == 2  # no server events, no hook events
     assert "audit: missing" in lines
-    assert any(line.startswith("policy (computed offline") for line in lines)
+    assert any(line.startswith("policy computed offline from this command's environment")
+               for line in lines)
 
 
 def test_unset_folders_say_how_to_pass_them(capsys: pytest.CaptureFixture[str]) -> None:
@@ -293,3 +294,23 @@ def test_an_unusable_folder_value_is_shown_without_the_account_name(
     summary = diagnostics.diagnostics_summary(raw)
     assert summary["state"] == "not an absolute path"
     assert summary["folder"] == "~/${CLAUDE_PLUGIN_DATA}/diagnostics"
+
+
+def test_the_report_shows_the_policy_the_server_loaded(tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    # The doctor runs --diagnose from a shell, whose environment lacks the plugin's options:
+    # the server's own start record says which profile it really loaded.
+    monkeypatch.delenv("ODOO_POLICY", raising=False)
+    monkeypatch.delenv("ODOO_POLICY_FILE", raising=False)
+    folder = tmp_path / "diag"
+    folder.mkdir()
+    record = {"v": 1, "ts": "2026-10-29T05:00:00Z", "event": "start", "pid": 7,
+              "plugin": "1.5.1", "policy": {"profile": "builder", "digest": "0123456789ab",
+                                            "locked": False}}
+    (folder / SERVER_FILE).write_text(json.dumps(record) + "\n")
+    report = diagnostics.build_report(Settings.from_env(), str(folder), None, [])
+    assert report["last_start_policy"] == {"profile": "builder", "digest": "0123456789ab",
+                                           "locked": False}
+    text = diagnostics.render_report(report)
+    assert "policy at the server's last start: profile builder, digest 0123456789ab" in text
+    assert "profile standard" in text  # the command's own environment, labelled as such

@@ -79,8 +79,9 @@ its **Connectors** tab lists **odoo — Runs in each session**, and opening that
 shows an empty panel with no fields to fill in. Anthropic's docs say that on the
 web the Connectors tab marks a local MCP server that way while chat does not start
 it, and there is no form because those apps do not prompt for plugin options.
-In Claude Code the plugin also says at session start which required options are
-missing (whether Cowork shows that notice has not been verified yet).
+When the plugin's local diagnostics record no recent connection or setup, its
+session-start hook says where the Odoo tools run and how to reach them (see
+[What runs on your machine](#what-runs-on-your-machine)).
 
 1. **Use Claude Code** (terminal, VS Code or JetBrains, or the **Code** tab of
    Claude Desktop). A plugin installed on your Claude account appears there as a
