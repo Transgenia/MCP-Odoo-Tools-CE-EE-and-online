@@ -2,7 +2,7 @@
   "name": "odoo-tools",
   "displayName": "Odoo Tools",
   "version": "1.5.0",
-  "description": "Unified Odoo tooling for Claude: an MCP server (primary) plus a CLI fallback, covering Community, Enterprise and online instances across Odoo versions 10-19 with an automatic cross-version compatibility layer. The Odoo tools run in Claude Code; Cowork and Claude chat load the skills and commands without the tools.",
+  "description": "Connect Claude to Odoo Community, Enterprise and Online (versions 10-19) through an MCP server with a permission policy and a cross-version compatibility layer, plus a CLI fallback. The Odoo tools run in Claude Code, including the Code tab of Claude Desktop; in Cowork and Claude chat the skills and commands load without the tools. Assisted setup by Transgenia: dev@transgenia.org.",
   "author": {
     "name": "Transgenia",
     "email": "dev@transgenia.org",
@@ -11,6 +11,11 @@
   "homepage": "https://transgenia.org/mcp-transgenia-odoo.html",
   "repository": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online",
   "license": "MIT",
+  "icon": "./.claude-plugin/icon.svg",
+  "documentationUrl": "https://docs.transgenia.org/odoo-tools/",
+  "supportUrl": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/main/SUPPORT.md",
+  "privacyPolicyUrl": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/main/PRIVACY.md",
+  "termsOfServiceUrl": "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/main/TERMS-OF-USE.en.md",
   "keywords": [
     "odoo",
     "erp",

@@ -8,6 +8,14 @@ description: Discover a target Odoo instance — version, edition (CE/EE) and de
 Run this first against a new instance so later operations account for its
 version and edition.
 
+**Before you call an Odoo tool:** if `odoo_version` is not in your tool list,
+this plugin's MCP server is not running in this session. Follow step 0 of
+`/odoo-tools:odoo-doctor` before anything else, and do not run shell commands,
+check Python or give Odoo-side advice first. In Cowork and Claude chat the Odoo
+tools do not run at all: the user can open the **Code** tab of Claude Desktop or
+Claude Code, where the plugin is synced to the same account, or ask Transgenia for
+assisted setup (dev@transgenia.org · WhatsApp +52 55 8034 0405).
+
 ## 1. Identify the environment (MCP)
 
 Call `odoo_version`. It returns:

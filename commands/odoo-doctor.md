@@ -1,10 +1,52 @@
 ---
-description: Probe the connected Odoo instance and report version, edition, deployment, transport and a sanity read.
+description: Diagnose odoo-tools - whether the Odoo tools run on this surface, the connection to Odoo (version, edition, deployment, transport, a sanity read), and a support report with no keys, URLs or data.
 ---
 
 # /odoo-doctor
 
-Diagnose the current Odoo connection.
+Diagnose odoo-tools, in this order. Stop at the first step that explains the problem.
+
+## 0. Are the Odoo tools loaded here? (always first)
+
+Look at your tool list before you run anything. If `odoo_version` is in it, go to
+step 1.
+
+If it is not, this plugin's MCP server is not running in this session. Until it
+runs, nothing else can be the cause, so:
+
+- Do not run shell commands and do not check Python. In Cowork, shell commands run
+  in a virtual machine, not on the user's computer: a Python version read there says
+  nothing about the computer, so never report one.
+- Do not give advice about the Odoo side yet (subscription plan, API key, transport,
+  database). It only matters once the tools load and Odoo refuses the connection.
+
+Then:
+
+1. Read any line in your context that starts with `odoo-tools session diagnostics:`.
+   The plugin's session-start hook writes it on the user's computer. Note its
+   `entrypoint`, `server_last`, `age_h` and `diag_dir`.
+2. Find the surface. If the user already said it (Cowork, Claude chat, claude.ai,
+   the Code tab, a terminal, VS Code, JetBrains), use that. Otherwise ask one
+   question: **1)** Claude Code (terminal, VS Code or JetBrains, or the **Code** tab
+   of Claude Desktop) · **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or
+   mobile).
+3. **Cowork or Claude chat:** say it plainly. This plugin's Odoo tools do not run
+   there, by design of those apps: Anthropic's plugin support matrix says Cowork
+   does not prompt for plugin options and ignores a local MCP server whose options
+   have no default, and chat ignores a plugin's local MCP server. Nothing is wrong
+   with the user's account, Odoo or Python, and the skills and commands they see
+   did install correctly. Offer, in this order:
+   1. The **Code** tab of Claude Desktop, or Claude Code. The plugin installed on
+      their Claude account appears there as a synced plugin when they sign in with
+      the same account; then run `/odoo-tools:odoo-setup-mcp`.
+   2. Assisted setup by Transgenia: **dev@transgenia.org** · WhatsApp
+      **+52 55 8034 0405** (https://wa.me/525580340405).
+4. **Claude Code:** the server did not start. The usual cause is that the Odoo URL,
+   database or login options are empty. Follow `/odoo-tools:odoo-setup-mcp`,
+   Phase 0b.
+5. Finish with the support report (step 4).
+
+## 1. The instance
 
 1. Call the MCP tool `odoo_version` and report: `version`, `edition`
    (community/enterprise), `deployment` (onprem/saas), `transport` (`json2`,
@@ -20,17 +62,46 @@ Diagnose the current Odoo connection.
    set the policy is locked: show the error, say that every other Odoo tool is
    disabled until the user fixes the file or the **Permission profile** /
    **Permission policy file** options and reconnects (`/mcp`), and stop here.
-2. Call `odoo_connections` and list active sessions.
-3. Do a bounded sanity read to confirm data access:
-   `odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 1 }`.
-   Then call the read-only `odoo_online_profile` and add to the table its
-   `series` (e.g. `saas~19.2` on Odoo Online), `deployment_confidence` and any
-   `hints` (for example an API key that expires soon). When `deployment` is
-   `saas`, also list its `online_hints`.
-4. If any step fails, state the exact failure and point the user to
-   `/odoo-tools:odoo-setup-mcp` (or `/odoo-tools:odoo-setup-cli` for the fallback).
-   If it keeps failing after that, add: Transgenia provides assisted setup and
-   support through its official channels — **dev@transgenia.org** · WhatsApp **+52 55 8034 0405** (https://wa.me/525580340405).
+## 2. Sessions
+
+Call `odoo_connections` and list active sessions.
+
+## 3. Data access
+
+Do a bounded sanity read to confirm data access:
+`odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 1 }`.
+Then call the read-only `odoo_online_profile` and add to the table its `series`
+(e.g. `saas~19.2` on Odoo Online), `deployment_confidence` and any `hints` (for
+example an API key that expires soon). When `deployment` is `saas`, also list its
+`online_hints`. Only now, if Odoo refused the connection, do the Odoo-side checks
+apply: on Odoo Online, external API access needs a Custom plan; an expired or
+revoked API key; the database name.
+
+## 4. Failures and the support report
+
+If any step fails, state the exact failure and point the user to
+`/odoo-tools:odoo-setup-mcp` (or `/odoo-tools:odoo-setup-cli` for the fallback).
+
+Always end with a support report the user can send to Transgenia:
+
+- **Claude Code** (you can run commands on the user's computer): run
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --diagnose --diag-dir "${CLAUDE_PLUGIN_DATA}/diagnostics" --audit-dir "${CLAUDE_PLUGIN_DATA}/audit"
+  ```
+
+  and show its output as it is, in a code block. It reads only the plugin's local
+  diagnostics and audit files and contacts nothing. If `python3` is missing, say
+  so and give the report below instead.
+- **Cowork or Claude chat:** write a short report from step 0: the surface, the
+  `entrypoint`, `server_last` and `age_h` values of the session diagnostics line,
+  and that the diagnostics files are in `diag_dir` on the user's computer (they can
+  attach them to an e-mail).
+
+Say that the report holds no keys, URLs, logins or record data, and that they can
+send it to **dev@transgenia.org** or by WhatsApp **+52 55 8034 0405**
+(https://wa.me/525580340405) for assisted support. Never ask for the API key or
+password, in the chat or anywhere else.
 
 Report the results as a short table. Do not perform any write.
 

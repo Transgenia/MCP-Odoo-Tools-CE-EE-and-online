@@ -77,7 +77,14 @@ plugin's **Connectors** tab is on 2 or 3.
   3. **☎ Transgenia** for assisted setup, with the official channels above.
 
   Do not walk them through Python or the plugin options on these apps: those
-  steps cannot work there.
+  steps cannot work there. In Cowork, shell commands run in a virtual machine,
+  not on the user's computer, so a Python version read there says nothing about
+  their computer: never report one. Do not give Odoo-side advice either
+  (subscription plan, API key, database): it only applies once the tools run and
+  Odoo refuses the connection. If your context has a line starting with
+  `odoo-tools session diagnostics:`, the plugin's session-start hook wrote it on
+  the user's computer; `/odoo-tools:odoo-doctor` turns it into a support report
+  they can send to Transgenia.
 
 ## Phase 1 — Setup
 

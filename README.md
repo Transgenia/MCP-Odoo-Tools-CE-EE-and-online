@@ -1,11 +1,17 @@
 # MCP-Odoo-Tools — CE, EE & online (Odoo 10-19)
 
+> **Where it runs:** the Odoo tools run in Claude Code (terminal, VS Code, JetBrains
+> and the **Code** tab of Claude Desktop). In Cowork and Claude chat the plugin
+> installs and its skills and commands load, but the Odoo tools do not run: open the
+> Code tab, where the plugin is synced to the same Claude account, or ask Transgenia
+> for assisted setup (dev@transgenia.org, WhatsApp +52 55 8034 0405). See
+> [Where it works](#where-it-works).
+
 [![CI](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml/badge.svg)](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](server/pyproject.toml)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-orange)](https://modelcontextprotocol.io)
 [![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
-[![Claude AI](https://img.shields.io/badge/Claude-AI-D97757?logo=claude&logoColor=white)](https://claude.ai)
 [![Odoo ERP 10-19](https://img.shields.io/badge/Odoo_ERP-10--19-714B67?logo=odoo&logoColor=white)](https://www.odoo.com)
 [![Odoo CE | EE | Online](https://img.shields.io/badge/Odoo-CE_%7C_EE_%7C_Online-714B67?logo=odoo&logoColor=white)](docs/compat-matrix.md)
 [![M8ven Score](https://m8ven.ai/badge/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)](https://m8ven.ai/mcp/transgenia-mcp-odoo-tools-ce-ee-and-online-zllwvd)
