@@ -114,6 +114,15 @@ Ask (single choice):
 
    On Windows use `%USERPROFILE%\.odoo-tools\mcp\odoo.env` and create it from
    the user's editor. Ask the user to fill it in their own editor.
+
+   Then mark this plugin's data folder as container mode. The marker tells the
+   plugin's session-start check that the container server is the one in use, so
+   it stops reporting the plugin's own (unused) server as never connected:
+
+   ```bash
+   ( umask 077; mkdir -p "${CLAUDE_PLUGIN_DATA}/diagnostics" && touch "${CLAUDE_PLUGIN_DATA}/diagnostics/container-mode" )
+   ```
+
 3. Register it in Claude Code (show the command; run it only with a yes). Use
    the absolute path of the file:
 
@@ -123,7 +132,8 @@ Ask (single choice):
 
 4. Restart Claude and call `odoo_version` from the `odoo-tools-docker` server.
    If the plugin's own server is also configured, the tools appear twice; keep
-   one (`claude mcp remove odoo-tools-docker` undoes this mode).
+   one (`claude mcp remove odoo-tools-docker` undoes this mode, together with
+   `rm "${CLAUDE_PLUGIN_DATA}/diagnostics/container-mode"`).
 
 ## Lifecycle (sandbox)
 
