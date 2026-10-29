@@ -34,6 +34,8 @@ from odoo_mcp.policy.classify import (
     ARG_SHAPES,
     OBJECT,
     POSITIONAL_CONTEXT_UNTIL,
+    ROWS,
+    as_context,
     extract,
     positional_contexts,
 )
@@ -441,6 +443,212 @@ def test_the_object_parameters_are_named_and_read_nothing() -> None:
 
 def test_the_last_series_that_reads_a_positional_context_is_12() -> None:
     assert POSITIONAL_CONTEXT_UNTIL == 12
+
+
+# --- a context given as [key, value] pairs ----------------------------------------------------
+# Odoo 10 to 12 build a positional context with dict(arg), which also takes a list of pairs:
+# [["default_child_ids", ...]] is the context {"default_child_ids": ...}. Such a list is read
+# as the context it builds, with the same rules as an object.
+
+PAIRS = [["default_child_ids", [[0, 0, {"name": MARKER}]]]]
+EVERY_SERIES = [10, 11, 12, 13, 17, 19]
+
+
+@pytest.mark.parametrize("version", EVERY_SERIES)
+@pytest.mark.parametrize(("method", "arguments"), [
+    ("action_confirm", {"ids": [3], "args": [PAIRS]}),                  # any other method, ids=
+    ("action_confirm", {"args": [[3], PAIRS]}),                         # legacy form
+    ("x_model_method", {"args": [PAIRS]}),                              # model method
+    ("create", {"args": [{"name": "x"}, PAIRS]}),                       # after the parameters
+    ("search_count", {"args": [[], PAIRS]}),                            # search_count's limit
+    ("action_confirm", {"ids": [3], "args": [tuple(tuple(p) for p in PAIRS)]}),  # tuples
+    # whatever dict() takes as a pair rides along: an x2many command, a two-letter text
+    ("action_confirm", {"ids": [3], "args": [[*PAIRS, [4, 5]]]}),
+    ("action_confirm", {"ids": [3], "args": [[*PAIRS, "ab"]]}),
+])
+def test_a_list_default_given_as_pairs_stops_at_layer_a_on_every_series(
+        version: int, method: str, arguments: dict[str, Any]) -> None:
+    raw = ScriptedSession(version=version)
+    err, text = _execute(raw, "res.partner", method, **arguments)
+    _stopped_at_layer_a(raw, err, text, "default_child_ids")
+
+
+@pytest.mark.parametrize("version", EVERY_SERIES)
+@pytest.mark.parametrize("pairs", [
+    [["default_public", True]],
+    [{"default_public": 1, "x": 0}],  # dict() takes a two-key object as the pair of its keys
+])
+def test_a_structural_default_given_as_pairs_stops_at_layer_a_on_every_series(
+        version: int, pairs: list[Any]) -> None:
+    raw = ScriptedSession(version=version)
+    err, text = _execute(raw, "res.partner", "action_confirm", ids=[3], args=[pairs])
+    _stopped_at_layer_a(raw, err, text, "default_public", hint=STRUCTURAL)
+
+
+@pytest.mark.parametrize("version", EVERY_SERIES)
+def test_a_key_outside_the_allowlist_given_as_pairs_at_search_counts_limit_is_refused(
+        version: int) -> None:
+    raw = ScriptedSession(version=version)
+    err, text = _execute(raw, "res.partner", "search_count",
+                         args=[[], [["tracking_disable", True]]])
+    assert err is True and raw.calls == [] and raw.metadata == [], text
+    assert f"context key 'tracking_disable', {PLACE}, is not allowed" in text, text
+    assert REMEDY in text and "rule context)" in text
+
+
+@pytest.mark.parametrize(("version", "refused_here"), [(12, True), (13, False)])
+@pytest.mark.parametrize(("method", "args", "ids", "key"), [
+    ("action_confirm", [PAIRS], [3], "default_child_ids"),
+    ("action_confirm", [[["default_public", True]]], [3], "default_public"),
+    ("search_count", [[], [["tracking_disable", True]]], None, "tracking_disable"),
+])
+def test_the_guard_on_12_and_13_for_a_context_given_as_pairs(
+        version: int, refused_here: bool, method: str, args: list[Any], ids: Any,
+        key: str) -> None:
+    g, raw = _guard("res.partner", method, version=version, ids=ids)
+    if not refused_here:  # from 13 the list is a value (Layer A refused it on every series)
+        g.execute("res.partner", method, args, {}, ids=ids)
+        assert raw.sent() == [("res.partner", method)]
+        return
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", method, args, {}, ids=ids)
+    assert (info.value.rule, info.value.layer) == ("context", "B")
+    assert f"context key '{key}', {PLACE}" in str(info.value)
+    assert MARKER not in str(info.value) and raw.calls == [] and raw.metadata == []
+
+
+ORDINARY_LISTS = [
+    [["name", "=", "x"]],                                 # a domain: its leaves have 3 items
+    ["|", ["name", "=", "x"], ["name", "=", "y"]],        # a domain with an operator
+    ["name", "email"],                                    # a field list
+    ["id", "vat"],                                        # two-letter names: still names
+    [],                                                   # an empty list
+    [1, 2, 3],                                            # ids
+]
+
+
+@pytest.mark.parametrize("version", [12, 13])
+@pytest.mark.parametrize("value", ORDINARY_LISTS)
+@pytest.mark.parametrize("slot", ["business method", "search_count's limit"])
+def test_a_list_that_builds_no_context_still_runs_in_those_slots(version: int, value: Any,
+                                                                  slot: str) -> None:
+    # Layer A, then the guard on 12 (which reads positional contexts) and 13 (which does not).
+    raw = ScriptedSession(version=version)
+    if slot == "business method":
+        method, arguments = "action_confirm", {"ids": [3], "args": [value]}
+    else:
+        method, arguments = "search_count", {"args": [[], value]}
+    err, text = _execute(raw, "res.partner", method, **arguments)
+    assert err is False, text
+    assert raw.call("res.partner", method)[0] == arguments["args"]  # sent as given
+
+
+@pytest.mark.parametrize("version", [12, 13])
+@pytest.mark.parametrize("value", [
+    [[4, 5], [4, 6]],                          # x2many links: pairs without a text key
+    [["draft", "Draft"], ["done", "Done"]],    # selection pairs, no default_ key
+    [["Acme", "a@example.com"]],               # a row of two columns
+    ["fr", "es"],                              # langs
+])
+def test_a_business_methods_list_of_pairs_without_a_context_default_runs(version: int,
+                                                                         value: Any) -> None:
+    raw = ScriptedSession(version=version)
+    err, text = _execute(raw, "res.partner", "action_confirm", ids=[3], args=[value])
+    assert err is False, text
+    assert ("res.partner", "action_confirm") in raw.sent()
+
+
+@pytest.mark.parametrize("version", [12, 13])
+def test_an_import_with_two_columns_still_runs(version: int) -> None:
+    # load()'s rows are values (ROWS): a two-column row is a pair of texts, never a context.
+    raw = ScriptedSession(version=version)
+    rows = [["Acme", "acme@example.com"], ["Beta", "beta@example.com"]]
+    err, text = _execute(raw, "res.partner", "load", args=[["name", "email"], rows])
+    assert err is False, text
+    assert raw.call("res.partner", "load")[0] == [["name", "email"], rows]
+    err, text = call(server(ScriptedSession(version=version), p=policy("standard")),
+                     "odoo_import", model="res.partner", fields=["name", "email"], rows=rows)
+    assert err is False, text
+
+
+@pytest.mark.parametrize("version", [12, 13])
+def test_langs_still_run_in_get_field_translations(version: int) -> None:
+    raw = ScriptedSession(version=version)
+    err, text = _execute(raw, "res.partner", "get_field_translations", ids=[3],
+                         args=["name", ["fr", "es_MX"]])
+    assert err is False, text
+
+
+def test_a_safe_context_given_as_pairs_runs_on_12() -> None:
+    raw = ScriptedSession(version=12)
+    pairs = [["lang", "es_MX"], ["default_name", "x"]]
+    err, text = _execute(raw, "res.partner", "action_confirm", ids=[3], args=[pairs])
+    assert err is False, text
+    assert raw.call("res.partner", "action_confirm")[0] == [pairs]  # sent as given
+
+
+def test_full_forwards_a_context_given_as_pairs_unchanged() -> None:
+    raw = ScriptedSession(version=12)
+    err, text = _execute(raw, "res.partner", "action_confirm", p=Policy(profile_name="full"),
+                         ids=[3], args=[PAIRS])
+    assert err is False, text
+    assert raw.call("res.partner", "action_confirm")[0] == [PAIRS]
+
+
+def test_a_named_context_given_as_pairs_is_still_a_shape_refusal() -> None:
+    # By name a context must be an object, as before (stricter than Odoo, never weaker).
+    raw = ScriptedSession(version=12)
+    err, text = _execute(raw, "res.partner", "action_confirm", ids=[3],
+                         kwargs={"context": [["lang", "es_MX"]]})
+    assert err is True and "rule shape)" in text and raw.calls == [], text
+
+
+@pytest.mark.parametrize(("value", "built"), [
+    ({"lang": "es_MX"}, {"lang": "es_MX"}),
+    ([["lang", "es_MX"], ["default_x", 1]], {"lang": "es_MX", "default_x": 1}),
+    ((("lang", "es_MX"),), {"lang": "es_MX"}),
+    ([["a", 1], ["a", 2]], {"a": 2}),                       # a later pair wins, as in dict()
+    ([["default_x", [1]], [4, 5]], {"default_x": [1], 4: 5}),
+    ([["default_x", [1]], "ab"], {"default_x": [1], "a": "b"}),
+    ([{"default_public": 1, "x": 0}], {"default_public": "x"}),
+    ([[4, 5]], {4: 5}),
+    ([["name", "=", "x"]], None),                           # a domain leaf has three items
+    (["|", ["a", "=", 1], ["b", "=", 2]], None),
+    (["name", "email"], None),                              # text only: names
+    (["id", "vat"], None),
+    (["fr", "es"], None),
+    ([], None),
+    ([1, 2], None),                                         # ids
+    ([[["unhashable"], 1]], None),                          # dict() fails in Odoo as well
+    ([["a", 1], "abc"], None),                              # an item of three letters
+    ([["a", 1], "x" * 100_000], None),                      # refused by length, not copied
+    ("lang", None),
+    (5, None),
+    (None, None),
+])
+def test_as_context_builds_what_dict_builds(value: Any, built: Any) -> None:
+    assert as_context(value) == built
+
+
+def test_positional_contexts_reads_pairs_as_the_context_they_build() -> None:
+    found = positional_contexts("action_confirm", [[3], [["lang", "es_MX"]], ["a", "b"]],
+                                ids_given=False)
+    assert (found.certain, found.possible) == ([], [{"lang": "es_MX"}])
+    found = positional_contexts("search_count", [[], [["tracking_disable", True]]],
+                                ids_given=False)
+    assert (found.certain, found.possible) == ([{"tracking_disable": True}], [])
+    found = positional_contexts("load", [["name", "email"], [["Acme", "a@example.com"]]],
+                                ids_given=False)
+    assert (found.certain, found.possible) == ([], [])
+
+
+def test_load_rows_are_the_one_parameter_of_pairs_and_read_nothing() -> None:
+    marked = {(method, name) for method, shape in ARG_SHAPES.items()
+              for name, role in shape.params if role == ROWS}
+    assert marked == {("load", "data")}
+    parts = extract("load", [["name", "email"], [["Acme", "a@example.com"]]])
+    assert (parts.values, parts.paths, parts.contexts) == ([], [], [])
+    assert parts.columns == [(("name",), False), (("email",), False)]
 
 
 if __name__ == "__main__":  # pragma: no cover
