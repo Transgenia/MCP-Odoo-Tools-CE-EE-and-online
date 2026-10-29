@@ -25,10 +25,14 @@ or pattern before it is written: metadata only, like the server's own log.
 What it prints, as Claude Code hook JSON:
   * nothing when the container-mode marker exists: the container server is the one in
     use, so the plugin's own server is expected to stay unused;
-  * when no successful connection is recorded in the last 14 days: "additionalContext"
-    for Claude on every SessionStart, which puts the surface first and ends with one
-    "odoo-tools session diagnostics:" line, and a shorter "systemMessage" for the user
-    on a new session (source "startup"), at most once a day;
+  * when the last 14 days record neither a successful connection nor a server start
+    with its connection settings (URL, database, login and an API key or password):
+    "additionalContext" for Claude on every SessionStart, which puts the surface first
+    and ends with one "odoo-tools session diagnostics:" line, and a shorter
+    "systemMessage" for the user on a new session (source "startup"), at most once a
+    day. A configured start is enough: the server runs on this surface with its
+    options, so the surface note would only be noise for someone who has not used the
+    Odoo tools for a while;
   * when the last server start was locked by the permission policy: the same, with its
     E-code, pointing to odoo_version and docs/policy.md;
   * otherwise nothing.
@@ -85,9 +89,9 @@ SURFACE_CONTEXT = (
     "when they sign in with the same account), or Claude Code. In Claude Code, the "
     "connection options are set in /plugin > odoo-tools > Configure options, where the user "
     "types them, never in the chat. /odoo-tools:odoo-doctor diagnoses. " + SUPPORT + " This "
-    "note comes from the plugin's local diagnostics, which record no successful connection "
-    "to Odoo in the last 14 days; if the user reaches Odoo through a separate Odoo "
-    "connector, it does not apply."
+    "note comes from the plugin's local diagnostics, which record neither a successful "
+    "connection to Odoo nor a server start with its connection settings in the last 14 "
+    "days; if the user reaches Odoo through a separate Odoo connector, it does not apply."
 )
 SURFACE_MESSAGE = (
     "odoo-tools: In Cowork and Claude chat this plugin's Odoo tools do not run, whatever "
@@ -257,9 +261,20 @@ def _status(record: dict) -> str | None:
     return None
 
 
+def _configured(record: dict) -> bool:
+    """Whether this start record had every connection setting: URL, database, login, and
+    an API key or a password (presence only: the server never records a value)."""
+    settings, kind = record.get("settings"), record.get("credential")
+    return (isinstance(settings, dict)
+            and all(settings.get(name) is True for name in ("url", "db", "login"))
+            and isinstance(kind, str) and kind not in ("", "none"))
+
+
 def server_state(records: list[dict], now: float) -> tuple[str, int | None, bool, str | None]:
-    """(last status, its age in hours, whether a successful connection is fresh, the
-    E-code when the last start was locked) from the server's records, oldest first."""
+    """(last status, its age in hours, whether the tools ran or were set up here lately,
+    the E-code when the last start was locked) from the server's records, oldest first.
+    Lately: a successful connection, or a newest start with every connection setting,
+    in the last 14 days."""
     last, age = "none", None
     fresh = False
     locked: str | None = None
@@ -274,6 +289,8 @@ def server_state(records: list[dict], now: float) -> tuple[str, int | None, bool
         if record.get("event") == "start" and newest_start:
             newest_start = False
             locked = _locked_code(record)
+            if _configured(record) and -SKEW <= now - when < FRESH:
+                fresh = True
         if last == "none":
             status = _status(record)
             if status is not None:

@@ -114,10 +114,15 @@ def _ts(hours_ago: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours_ago * 3600))
 
 
-def start(hours_ago: float, code: str | None = None) -> dict[str, Any]:
+def start(hours_ago: float, code: str | None = None, *, configured: bool = False,
+          credential: str = "api_key", **settings: bool) -> dict[str, Any]:
     policy = ({"profile": "standard", "locked": True, "code": code} if code else
               {"profile": "standard", "digest": "0123456789ab", "locked": False})
-    return {"v": 1, "ts": _ts(hours_ago), "event": "start", "pid": 7, "policy": policy}
+    record = {"v": 1, "ts": _ts(hours_ago), "event": "start", "pid": 7, "policy": policy}
+    if configured:
+        record["settings"] = {"url": True, "db": True, "login": True, **settings}
+        record["credential"] = credential
+    return record
 
 
 def connect(hours_ago: float, category: str | None = None) -> dict[str, Any]:
@@ -196,6 +201,36 @@ def test_a_stale_connection_speaks_again(tmp_path: Path) -> None:
     assert "systemMessage" in payload
     assert _line(payload["hookSpecificOutput"]["additionalContext"]).group(2, 3) == (
         "ok", "360")
+
+
+def test_a_recent_configured_start_is_silent(tmp_path: Path) -> None:
+    # The server started here with every connection setting: the tools run on this
+    # surface, even if nobody used them in the last 14 days.
+    _server_log(tmp_path, [start(20 * 24), connect(20 * 24), start(48, configured=True)])
+    assert _run(tmp_path) == (0, "")
+    _server_log(tmp_path, [start(2, configured=True, credential="password")])
+    assert _run(tmp_path) == (0, "")
+
+
+@pytest.mark.parametrize("records", [
+    [start(15 * 24, configured=True)],  # set up, but longer ago than 14 days
+    # only the newest start counts: here it lacks a setting
+    [start(5 * 24, configured=True), start(2, configured=True, url=False)],
+    [start(2, configured=True, credential="none")],  # no API key or password
+    [start(2, configured=True, login="yes")],  # not a boolean: not trusted
+])
+def test_an_incomplete_or_old_start_still_speaks(tmp_path: Path, records: list[Any]) -> None:
+    _server_log(tmp_path, records)
+    payload = _payload(tmp_path)
+    assert payload["hookSpecificOutput"]["additionalContext"].startswith(
+        "odoo-tools plugin status: In Cowork and Claude chat")
+
+
+def test_a_locked_configured_start_says_only_the_lock(tmp_path: Path) -> None:
+    _server_log(tmp_path, [start(1, code="E8", configured=True)])
+    payload = _payload(tmp_path)
+    for text in (payload["systemMessage"], payload["hookSpecificOutput"]["additionalContext"]):
+        assert "(E8)" in text and "Cowork" not in text
 
 
 def test_the_last_failure_is_reported_by_category(tmp_path: Path) -> None:
