@@ -20,7 +20,9 @@ The permission policy is checked against the same instance (design 9.7):
   ``res.company`` write linking ``user_ids``, a ``res.partner`` write with a
   ``user_ids`` command, a user's contact e-mail, credential-like fields in field
   lists, filters and full reads, ``ir.attachment`` searches pinned to
-  ``certificate.key``); each ``DELEGATES`` row whose child model is installed
+  ``certificate.key``, an ``odoo_execute`` read whose trailing positional
+  argument is a context holding a list default, which Odoo 10 to 12 would take as
+  the call's context); each ``DELEGATES`` row whose child model is installed
   (its link field is a many2one to the parent); and a table of the tier model
   names that exist on this series (``ir.model``), printed, not asserted;
 * under ``builder``: ``odoo_add_field`` adds a throwaway ``x_`` field on
@@ -438,6 +440,16 @@ def check_standard(run: Run, login: str) -> Checks:
         expect_allowed(run, checks, f"{label} search pinned to res.partner", "odoo_search_read",
                        {"model": "ir.attachment", "domain": [["res_model", "=", "res.partner"]],
                         "fields": ["name"], "limit": 1})
+
+    # Odoo 10 to 12 also take a call's context from the positional argument after the
+    # method's parameters. The policy reads it as one on every series, so a list default
+    # there is refused before anything reaches Odoo (design E1). A search_read on a domain
+    # that matches nothing: a read, so nothing would be created even if the control failed.
+    expect_refused(run, checks, "odoo_execute with a trailing positional context holding a "
+                   "list default", "odoo_execute",
+                   {"model": "res.partner", "method": "search_read",
+                    "args": [[["id", "=", 0]], ["name"], 0, 1, "id",
+                             {"default_category_id": [[6, 0, []]]}]}, {"context"})
     return checks
 
 
