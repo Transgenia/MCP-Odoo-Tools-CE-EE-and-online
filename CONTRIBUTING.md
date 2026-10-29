@@ -12,6 +12,10 @@ Thanks for helping improve MCP-Odoo-Tools.
   code, tests, prompts or tool descriptions. Interoperate with them only over the
   network. Rely on Odoo's public XML-RPC/JSON-RPC/JSON-2 interfaces and public
   model/field names only.
+- **Product rules:** read [`docs/product-rules.md`](docs/product-rules.md) before a
+  change that affects where the plugin installs, what it says on a surface where
+  its tools cannot run, credentials or diagnostics. The plugin installs on every
+  surface Anthropic allows and is never blocked on one.
 - **Scope:** this repo is the generic public core. A generic, declarative
   permission policy is part of the public core; approval workflows, localization
   engines (CFDI and the like), backups and other tenant-specific engines are not,
