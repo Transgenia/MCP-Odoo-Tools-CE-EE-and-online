@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [1.5.0] - 2026-10-21
+## [1.5.0] - 2026-10-23
 
 Secure defaults: a permission policy on top of the Odoo user's own access rights,
 checked before and while each tool calls Odoo, and a local audit trail. The

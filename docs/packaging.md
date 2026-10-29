@@ -33,8 +33,22 @@ tag's `container` job finishes:
      To discard it, delete the draft and the tag before running again.
    - Without **draft**, or when you push the tag `v<ver>` yourself, everything is
      published in one run.
+   - Before anything is published, the `preflight` job reads the tag's release
+     state: it stops a full run while that release is still a draft, and a draft
+     run when the tag already has a release. GitHub lists draft releases only to a
+     token with push access, so that job alone gets `contents: write` and runs no
+     code but the query.
+   - Publishing a draft runs the `pypi` job on the tag's ref, so the `pypi`
+     environment must allow deployments from tags `v*` (it did for v1.5.0 on
+     2026-10-23).
 3. When `docker manifest inspect ghcr.io/transgenia/odoo-mcp-tools:<ver>` succeeds,
    select **Publish update** in the portal and turn the toggle back on.
+4. Check that the version goes live. The directory can hold a version for an
+   Anthropic reviewer (**Versions** tab, **Policy hold**); the **Overview** tab
+   says why the newest version is not live, and directory users keep the live
+   version until a reviewer releases the new one. v1.4.0 stayed live from
+   2026-10-05 while 1.4.1 and 1.5.0 were held with "Update adds credential
+   forward".
 
 Install: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
 (Claude Code 2.1.275 or later; older versions add the marketplace first, see `docs/install.md`).
