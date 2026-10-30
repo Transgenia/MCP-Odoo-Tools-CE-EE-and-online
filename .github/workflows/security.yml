@@ -13,7 +13,7 @@ jobs:
     name: secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       # gitleaks/gitleaks-action@v2 requires a paid GITLEAKS_LICENSE for
@@ -33,7 +33,7 @@ jobs:
     name: no-internal-data guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Grep for internal/tenant markers (must be absent)
         env:
           # Organisation-specific markers (hosts, IPs, fiscal IDs) come from the
