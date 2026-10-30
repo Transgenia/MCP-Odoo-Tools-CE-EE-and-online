@@ -2,10 +2,10 @@
 
 > **Where it runs:** the Odoo tools run in Claude Code (terminal, VS Code, JetBrains
 > and the **Code** tab of Claude Desktop). In Cowork and Claude chat the plugin
-> installs and its skills and commands load, but the Odoo tools do not run: open the
-> Code tab, where the plugin is synced to the same Claude account, or ask Transgenia
-> for assisted setup (dev@transgenia.org, WhatsApp +52 55 8034 0405). See
-> [Where it works](#where-it-works).
+> installs and its skills and commands load, but the Odoo tools do not run: open a
+> local session of the Code tab, where the plugin is synced to the same Claude
+> account, or ask Transgenia for assisted setup (dev@transgenia.org, WhatsApp
+> +52 55 8034 0405). See [Where it works](#where-it-works).
 
 [![CI](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml/badge.svg)](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -49,7 +49,8 @@ you don't hand-branch per version.
 
 | Surface | MCP server (the Odoo tools) | Skills, commands | Agents, hook |
 |---|---|---|---|
-| Claude Code (CLI, VS Code, JetBrains, Desktop **Code** tab) | **Yes** | Yes | Yes |
+| Claude Code on your computer (CLI, VS Code, JetBrains, a local session of the Desktop **Code** tab) | **Yes** | Yes | Yes |
+| Claude Code in a cloud session (Desktop **Code** tab, claude.ai/code) | **No** | Yes | Yes |
 | Cowork (Claude Desktop) | **No** | Yes | Yes |
 | Claude chat (claude.ai web, desktop, mobile) | **No** | Yes | No |
 
@@ -64,6 +65,16 @@ credentials here have none), and chat ignores a plugin's local MCP server. In th
 apps the plugin still installs and its skills and commands still load, but they
 cannot reach Odoo without the tools. That is the app working as designed, not a
 broken install.
+
+Claude Desktop names this case for this plugin's server with the status
+`not_started` and the reason `user_config_unsupported`: the same on macOS and
+Windows, and no update of the plugin changes it.
+
+A cloud session of Claude Code (the **Code** tab's cloud environment, or
+claude.ai/code) is a separate case: the plugin is synced from your account but its
+options are not. Claude Code saves them on the computer where you enter them (the
+API key and password in that computer's secure credential store), so the server
+does not start in the cloud. Use a local session.
 
 Cowork and Claude chat do accept MCP connectors you add yourself: a remote MCP
 server reachable at an `https` URL (on Team and Enterprise plans an Owner adds it in
@@ -85,11 +96,18 @@ When the plugin's local diagnostics record no recent connection or setup, its
 session-start hook says where the Odoo tools run and how to reach them (see
 [What runs on your machine](#what-runs-on-your-machine)).
 
-1. **Use Claude Code** (terminal, VS Code or JetBrains, or the **Code** tab of
-   Claude Desktop). A plugin installed on your Claude account appears there as a
-   synced plugin at the next session start when you sign in to Claude Code (2.1.273
-   or later) with that claude.ai account; if it does not show, run
-   `/reload-plugins`, or install it with the commands under [Install](#install).
+1. **Use Claude Code on your computer** (terminal, VS Code or JetBrains, or a
+   local session of the **Code** tab of Claude Desktop). A plugin installed on your
+   Claude account appears there as a synced plugin at the next session start when
+   you sign in to Claude Code (2.1.273 or later) with that claude.ai account; if it
+   does not show, run `/reload-plugins`, or install it with the commands under
+   [Install](#install). No administrator rights are needed: Claude Code's native
+   installer puts it in your home folder (`~/.local/bin/claude` on macOS and
+   Linux), and on Windows Anthropic's guide says you do not need to run it as
+   Administrator. On a Team or Enterprise plan your organization decides which
+   plugins you get and whether the Code tab offers local sessions (when it does
+   not, the entry for your computer is grayed out, with the tooltip **Disabled by
+   your organization**).
 2. **Enter the options there.** `<id>` below is the plugin's full `name@marketplace`
    id as `claude plugin list` shows it (for example `odoo-tools@synced` for a
    plugin synced from your Claude account). Run `/plugin configure <id>` in a
@@ -173,8 +191,10 @@ Claude Code:
 
 The Claude plugin directory publishes a version only after Anthropic reviews it,
 so it can offer an older odoo-tools than this marketplace (for example 1.4.0,
-before the permission policy of 1.5.0). Install one copy only: the guided route
-checks it, see [Two copies of odoo-tools](#two-copies-of-odoo-tools).
+before the permission policy of 1.5.0), and checking for updates in the Claude apps
+finds no newer version until then. In Cowork and Claude chat no version runs the
+Odoo tools, so an update does not change that there. Install one copy only: the
+guided route checks it, see [Two copies of odoo-tools](#two-copies-of-odoo-tools).
 
 **`/odoo-tools:odoo-setup-mcp` is the guided route**: it detects what is already
 set up and walks you through **setup → verification → hands-on training →
@@ -195,7 +215,9 @@ verifies the connection with `odoo_version`.
   `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`. The server uses only the
   Python standard library, so nothing is installed or downloaded when it starts.
   - Linux and macOS usually already have `python3` (on macOS it comes with
-    Apple's Command Line Tools).
+    Apple's Command Line Tools, `xcode-select --install`). If your Mac asks for
+    an administrator to install them and you are not one, your IT team can
+    install them, or ask Transgenia for assisted setup.
   - **Windows:** the command must be named `python3`. The Microsoft Store Python
     provides `python3.exe`; the python.org installer provides only `python` and
     `py`. Either install Python from the Microsoft Store, or put a `python3.exe`

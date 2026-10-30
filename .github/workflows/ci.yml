@@ -11,7 +11,10 @@ permissions:
 jobs:
   server:
     name: server (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04 since 2026-10-30, and actions/setup-python has no
+    # Python 3.9 for it (actions/python-versions builds 3.9 up to 24.04). 3.9 stays
+    # tested: it is the plugin's floor, the python3 of Apple's Command Line Tools.
+    runs-on: ${{ matrix.python == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

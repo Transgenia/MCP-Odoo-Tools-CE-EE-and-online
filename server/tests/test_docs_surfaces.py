@@ -205,3 +205,46 @@ def test_the_manifests_carry_the_directory_listing_fields() -> None:
     for name in ("plugin.json", "marketplace.json"):
         text = (ROOT / ".claude-plugin" / name).read_text(encoding="utf-8")
         assert "—" not in text and "–" not in text, name
+
+
+# --- 1.6.0: the Claude app's own words for the Cowork case (a Mac user, 2026-10-30)
+#
+# Claude Desktop reported this plugin's server with the status "not_started" and the
+# reason "user_config_unsupported". On the directory's 1.4.0 Claude called that a fault
+# between the plugin and the app, to report as a bug, and the user looked for an update.
+# It is the case of Anthropic's matrix, which no version changes. A cloud session of the
+# Code tab has the plugin synced but none of its options, so the way out is a local
+# session. The hooks never name the reason: no hook file may mention "user_config"
+# (test_product_rules.test_hooks_never_read_plugin_options_or_credentials).
+
+_STATUS = "user_config_unsupported"
+_STATUS_DOCS = ("commands/odoo-doctor.md", "skills/odoo-setup-mcp/SKILL.md", "README.md",
+                "docs/install.md", "SUPPORT.md")
+
+
+def test_the_apps_status_for_the_cowork_case_is_recognised() -> None:
+    for rel in _STATUS_DOCS:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert _STATUS in text and "`not_started`" in text, rel
+        assert "local session" in text, rel
+    doctor = (ROOT / "commands/odoo-doctor.md").read_text(encoding="utf-8")
+    step0 = " ".join(doctor[doctor.index("## 0."):doctor.index("## 1.")].split())
+    for phrase in (_STATUS, "never present it as a bug to report",
+                   "Updating the plugin does not change it", "**A cloud session**",
+                   "Do not ask for the options here"):
+        assert phrase in step0, phrase
+    # the status, as the app showed it, goes in the support report
+    assert _STATUS in doctor.split("## 4.", 1)[1]
+    # findable by the status the app shows
+    assert _STATUS in (ROOT / "skills/odoo-setup-mcp/SKILL.md").read_text(
+        encoding="utf-8").split("---", 2)[1]
+    assert (ROOT / "evals/cowork-status-report/prompt.md").is_file()
+
+
+def test_a_cloud_session_is_not_promised_the_odoo_tools() -> None:
+    rows = _where_it_works()
+    cloud = [cells for surface, cells in rows.items() if "cloud session" in surface]
+    assert len(cloud) == 1 and cloud[0][0].strip("*").startswith("No")
+    local = [cells for surface, cells in rows.items() if "local session" in surface]
+    assert len(local) == 1 and local[0][0].strip("*").startswith("Yes")
+    # the hook's notes say "a local session" too: test_session_start_hook.SURFACE

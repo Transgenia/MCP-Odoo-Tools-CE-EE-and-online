@@ -20,8 +20,16 @@ What went wrong:
 - `/plugin install` was typed in PowerShell;
 - `python3` was missing.
 
+On 2026-10-30 a Mac user in Cowork, on the directory's 1.4.0, was told by Claude
+that the app's report of the plugin's server, the status `not_started` with the
+reason `user_config_unsupported`, was a fault between the plugin and the app to
+report to Transgenia. The user then looked for an update and had no administrator
+account. It is the documented Cowork case, and no version changes it.
+
 1.6.0:
 
+- recognises that status and sends the user to a local session of the Code tab or
+  Claude Code, and says what needs administrator rights;
 - names the copy that answers;
 - finds a second or old copy and stops the guided route on it;
 - keeps terminal and Claude Code commands apart;
@@ -81,6 +89,15 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
   rules they need now sit in the always-loaded descriptions of `odoo-setup-mcp`,
   `odoo-mcp-tools` and `/odoo-tools:odoo-doctor`, and the five cases pass in three
   runs.
+- **Eval `cowork-status-report`.** The Mac case of 2026-10-30, in Spanish: the
+  user reports the status, found no update, has no administrator account and can
+  open cloud or local sessions. It checks that the reply says it is not a bug and
+  that no update changes it, sends the user to a local session and to Transgenia,
+  and says Claude Code needs no administrator rights. Over five runs it scores
+  0.93 with these changes and 0.87 on 1.6.0 without them, within the judges'
+  noise: 1.6.0 already answered the case well, and the case keeps it so. Run from
+  a cloud session, evals see that session's `remote_desktop` entrypoint (see
+  `evals/README.md`).
 
 ### Changed
 
@@ -98,6 +115,29 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
 
   `/odoo-tools:odoo-doctor` reports `plugin`, stops without `policy`, and adds the
   copies check to its table. `odoo-connect` documents `policy` and `plugin`.
+- **The Claude app's status for Cowork, and a local session.**
+  - `/odoo-tools:odoo-doctor`, the guided route, the README, `docs/install.md` and
+    `SUPPORT.md` recognise Claude Desktop's report of this plugin's server as the
+    status `not_started` with the reason `user_config_unsupported`. It is the
+    Cowork case of Anthropic's support matrix: expected on macOS and Windows
+    alike, not a fault of the plugin or the app, and no update changes it. The
+    doctor's support report carries the status as it is.
+  - They send the user to a local session of the Code tab, or to Claude Code on
+    the computer. In a cloud session the plugin is synced from the Claude account
+    but its options are not: Claude Code saves them on the computer where they were
+    entered, the API key in that computer's secure credential store. A cloud
+    session of the Code tab, checked on 2026-10-30, listed the synced copy with no
+    option set and did not start its server. The README's "Where it works" table
+    gains that row. The session-start hook's notes say "a local session" and that
+    no update changes the case; they leave the cloud out, because they run in
+    every session, Cowork's included.
+  - What needs administrator rights: Claude Code itself does not (its native
+    installer writes to the home folder); Apple's Command Line Tools, which bring
+    `python3`, can ask for an administrator; on Team and Enterprise plans the
+    organization decides which plugins its members get and whether the Code tab
+    offers local sessions.
+  - When `python3` is missing, the doctor gives the fix for the user's system, no
+    longer the Windows one only.
 - **The local sandbox gives the plugin an API key on Odoo 14.0 to 19.0.**
   - **Before:** `/odoo-tools:deploy-local` told the user to put the sandbox admin
     password in the plugin's **Odoo password** option, whose title says Odoo < 14

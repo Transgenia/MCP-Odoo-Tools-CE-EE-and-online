@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if python3 --version >/dev/null 2>&1; then :; else echo 'odoo-tools: python3 is not runnable on this computer. In Claude Code the Odoo MCP server needs Python 3.9+ as python3 (README, Requirements). In Cowork and Claude chat the Odoo tools do not run with or without Python: use the Code tab of Claude Desktop, or contact Transgenia (dev@transgenia.org, WhatsApp +52 55 8034 0405).'; fi"
+            "command": "if python3 --version >/dev/null 2>&1; then :; else echo 'odoo-tools: python3 is not runnable on this computer. In Claude Code the Odoo MCP server needs Python 3.9+ as python3 (README, Requirements). In Cowork and Claude chat the Odoo tools do not run with or without Python: use a local session of the Code tab of Claude Desktop, or contact Transgenia (dev@transgenia.org, WhatsApp +52 55 8034 0405).'; fi"
           },
           {
             "type": "command",

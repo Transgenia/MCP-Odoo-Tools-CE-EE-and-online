@@ -28,27 +28,47 @@ Then:
    virtual machine. Note its
    `entrypoint`, `server_last`, `age_h` and `diag_dir`.
 2. Find the surface. If the user already said it (Cowork, Claude chat, claude.ai,
-   the Code tab, a terminal, VS Code, JetBrains), use that. Otherwise ask one
-   question: **1)** Claude Code (terminal, VS Code or JetBrains, or the **Code** tab
-   of Claude Desktop) · **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or
-   mobile).
+   the Code tab, a terminal, VS Code, JetBrains), use that. If the app reports this
+   plugin's server with the status `not_started` and the reason
+   `user_config_unsupported`, the surface is Cowork or Claude chat: go to item 3.
+   If this session runs in the cloud (a cloud session of the **Code** tab, or
+   Claude Code on the web; the diagnostics line then shows an `entrypoint` such as
+   `remote_desktop`), go to item 4. Otherwise ask one question: **1)** Claude Code
+   (terminal, VS Code or JetBrains, or the **Code** tab of Claude Desktop) ·
+   **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or mobile).
 3. **Cowork or Claude chat:** say it plainly. This plugin's Odoo tools do not run
    there, by design of those apps: Anthropic's plugin support matrix says Cowork
    does not prompt for plugin options and ignores a local MCP server whose options
    have no default, and chat ignores a plugin's local MCP server. Nothing is wrong
    with the user's account, Odoo or Python, and the skills and commands they see
-   did install correctly. Offer, in this order:
-   1. The **Code** tab of Claude Desktop, or Claude Code. The plugin installed on
+   did install correctly. The status `not_started` with the reason
+   `user_config_unsupported` is the app's own name for this case: expected, on
+   macOS and Windows alike, and not a fault of the plugin or the app, so never
+   present it as a bug to report. Updating the plugin does not change it: every
+   version needs the connection options. Offer, in this order:
+   1. A **local** session of the **Code** tab of Claude Desktop (on the user's
+      computer, not a cloud session), or Claude Code. The plugin installed on
       their Claude account appears there as a synced plugin when they sign in with
-      the same account; then run `/odoo-tools:odoo-setup-mcp`.
+      the same account; then run `/odoo-tools:odoo-setup-mcp`. Claude Code itself
+      needs no administrator rights on the computer; on a Team or Enterprise plan
+      the organization decides which plugins its members get and whether the
+      Code tab offers local sessions.
    2. Assisted setup by Transgenia: **dev@transgenia.org** · WhatsApp
       **+52 55 8034 0405** (https://wa.me/525580340405).
-4. **Claude Code:** the server did not start. The usual causes are empty Odoo URL,
-   database or login options, a second copy of the plugin, or, on Windows, no
-   `python3` command: the python.org installer provides only `python` and `py`, and
-   `claude mcp list` then reports the server as `Failed to connect` with
-   `Connection closed`, without naming Python. Run the copies check and, for the
-   copy it keeps, the options check (they read what Claude Code prints, contact
+4. **A cloud session** (Claude runs in Anthropic's cloud, not on the user's
+   computer): the plugin can be there, synced from the Claude account, but its
+   connection options are not. Claude Code saves them on the computer where the
+   user entered them, the API key in that computer's secure credential store, so
+   the server does not start in the cloud. Do not ask for the options here.
+   Offer what item 3 offers: a local session of the **Code** tab, or Claude Code,
+   then Transgenia.
+5. **Claude Code on the user's computer:** the server did not start. The usual
+   causes are empty Odoo URL, database or login options, a second copy of the
+   plugin, or no `python3` command: on Windows the python.org installer provides
+   only `python` and `py`, and `claude mcp list` then reports the server as
+   `Failed to connect` with `Connection closed`, without naming Python; on macOS
+   `python3` comes with Apple's Command Line Tools. Run the copies check and, for
+   the copy it keeps, the options check (they read what Claude Code prints, contact
    nothing and never show the key):
 
    ```bash
@@ -57,12 +77,12 @@ Then:
    ```
 
    If `claude` is not found, use `"$HOME/.local/bin/claude"`. If `python3` is not
-   found, that is the cause: give the Windows fix of `/odoo-tools:odoo-setup-mcp`,
-   Step 1A, and stop here. Otherwise show both outputs as they are and follow
-   `/odoo-tools:odoo-setup-mcp`, Phase 0b. The commands the
-   copies check prints are for a terminal (PowerShell or Terminal), not for
-   `/plugin`.
-5. Finish with the support report (step 4).
+   found or prints no version, that is the cause: give the fix for the user's
+   system from `/odoo-tools:odoo-setup-mcp`, Step 1A, and stop here. Otherwise
+   show both outputs as they are and follow `/odoo-tools:odoo-setup-mcp`,
+   Phase 0b. The commands the copies check prints are for a terminal (PowerShell
+   or Terminal), not for `/plugin`.
+6. Finish with the support report (step 4).
 
 ## 1. The instance
 
@@ -121,11 +141,14 @@ Always end with a support report the user can send to Transgenia:
   and show its output as it is, in a code block. It reads only the plugin's local
   diagnostics and audit files and contacts nothing. If `python3` is missing, say
   so and give the report below instead.
-- **Cowork or Claude chat:** write a short report from step 0: the surface, the
-  `entrypoint`, `server_last` and `age_h` values of the session diagnostics line,
-  and that the diagnostics files are in `diag_dir` on the user's computer (they can
-  attach them to an e-mail). Claude chat runs no plugin hooks, so there is no such
-  line there: report the surface only.
+- **Cowork, Claude chat or a cloud session:** write a short report from step 0:
+  the surface, the `entrypoint`, `server_last` and `age_h` values of the session
+  diagnostics line, and, in Cowork, that the diagnostics files are in `diag_dir`
+  on the user's computer (they can attach them to an e-mail). Claude chat runs no
+  plugin hooks, so there is no such line there: report the surface only. If the
+  app showed a status and a reason for this plugin's server (such as `not_started`
+  and `user_config_unsupported`), add them as they are, with the app's version:
+  they confirm the surface, they are not a fault to fix.
 
 Say that the report holds no keys, URLs, logins or record data, and that they can
 send it to **dev@transgenia.org** or by WhatsApp **+52 55 8034 0405**
