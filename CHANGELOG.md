@@ -25,6 +25,7 @@ What went wrong:
 - names the copy that answers;
 - finds a second or old copy and stops the guided route on it;
 - keeps terminal and Claude Code commands apart;
+- names the sign of a missing `python3` on Windows;
 - gives the sandbox an API key;
 - closes the remaining gap of the permission policy's known limit 10.
 
@@ -91,6 +92,23 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
 
   `/odoo-tools:odoo-doctor` reports `plugin`, stops without `policy`, and adds the
   copies check to its table. `odoo-connect` documents `policy` and `plugin`.
+- **The local sandbox gives the plugin an API key on Odoo 14.0 to 19.0.**
+  - **Before:** `/odoo-tools:deploy-local` told the user to put the sandbox admin
+    password in the plugin's **Odoo password** option, whose title says Odoo < 14
+    only, whatever the series.
+  - **Now:** on Odoo 14.0 and newer, `sandbox up` has Odoo create an API key for
+    the admin user, through `odoo shell` in a one-off container of the sandbox and
+    Odoo's own `res.users.apikeys`. It checks that the key signs in, and keeps it in
+    the owner-only `.env` as `ODOO_API_KEY`, never printed. Later runs reuse it, and
+    replace it if it was removed in Odoo, where it is listed as "odoo-tools sandbox"
+    under Preferences > Account Security. The command tells the user to put it in
+    the **Odoo API key** option and leave **Odoo password** empty.
+  - **Unchanged:** Odoo 10.0 to 13.0 have no API keys and keep the password, and so
+    does a sandbox where the key cannot be made. The script then says why, and the
+    next `sandbox up` tries again.
+  - **CI:** the sandbox matrix signs in with the key on every series from 14.0
+    (over JSON-2 on 19.0) and with the password on 10.0 to 13.0. It checks that
+    neither reaches the audit trail, and that a second `sandbox up` keeps the key.
 - **Install commands by surface.** Every guide gives
   `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
   for inside Claude Code, and `claude plugin install odoo-tools --marketplace ...

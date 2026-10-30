@@ -258,7 +258,9 @@ Provided by Transgenia, started only when you run the command (Docker required):
   `127.0.0.1`, with a database (demo data optional) ready for the plugin. Images
   come from `ghcr.io/transgenia` (mirrors of the official `odoo` and `postgres`
   images) with automatic fallback to Docker Hub. Passwords are generated locally
-  into `~/.odoo-tools/sandbox/.env` (owner-only) and never printed. Script:
+  into `~/.odoo-tools/sandbox/.env` (owner-only) and never printed. On Odoo 14.0
+  and newer, Odoo also creates an API key for the admin user, kept in the same
+  file, for the plugin's **Odoo API key** option. Script:
   [`scripts/deploy_local.py`](scripts/deploy_local.py) (standard library only).
   `status`, `down`, `logs` and `destroy --yes` manage it afterwards. Odoo
   10.0-16.0 are for testing and migrations only (Odoo S.A. maintains the three

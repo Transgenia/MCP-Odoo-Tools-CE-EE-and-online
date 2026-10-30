@@ -105,7 +105,9 @@ docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
 images mirrored at `ghcr.io/transgenia/odoo` and `ghcr.io/transgenia/postgres`
 (falls back to Docker Hub), and keeps its generated passwords in
-`~/.odoo-tools/sandbox/.env` (owner-only).
+`~/.odoo-tools/sandbox/.env` (owner-only). On Odoo 14.0 and newer the same file
+holds the API key that Odoo creates for the sandbox's admin user, for the
+plugin's **Odoo API key** option.
 
 ## Run the MCP server directly
 

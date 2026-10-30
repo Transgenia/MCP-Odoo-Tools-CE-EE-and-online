@@ -60,7 +60,11 @@ where to verify it:
   (`secrets.token_urlsafe`) for the local Docker sandbox of
   `/odoo-tools:deploy-local`, keeps them in an owner-only `.env` in the sandbox
   folder, and uses them only with that sandbox's containers on 127.0.0.1. They are
-  not the user's credentials.
+  not the user's credentials. On Odoo 14.0 and newer it also has the sandbox's
+  Odoo create an API key for its admin user (`odoo shell` in a one-off container
+  of the sandbox, with Odoo's own `res.users.apikeys`), checks that the key signs
+  in, and keeps it in the same `.env` as `ODOO_API_KEY`, never printed. The user
+  copies it into the plugin's **Odoo API key** option; Claude never reads it.
 - **Tests** (`server/tests/`) set fake canary credentials to prove that no log
   line, audit line, diagnostics record, support report or hook output ever
   contains a credential. The plugin never runs them.

@@ -306,14 +306,14 @@ def test_up_creates_the_key_once_and_reuses_it(harness: Harness, version: str,
     assert "[5/5] API key: Odoo creates one for the admin user" in out
     ready = summary(out)
     assert ready["api_key"] == f"ODOO_API_KEY in {harness.env_file} (not printed)"
-    assert ready["plugin_credential"] == "Odoo API key = ODOO_API_KEY, Password empty"
+    assert ready["plugin_credential"] == "Odoo API key = ODOO_API_KEY, Odoo password empty"
     assert ready["password"] == f"ODOO_ADMIN_PASSWORD in {harness.env_file} (not printed)"
 
     out, _err = harness.up()  # a later run, as `sandbox up` with no options
     assert len(harness.shell_calls) == 1  # no second key
     assert harness.env()["ODOO_API_KEY"] == key and harness.odoo.keys == [key]
     assert "[5/5] API key: reusing the one in .env" in out
-    assert summary(out)["plugin_credential"] == "Odoo API key = ODOO_API_KEY, Password empty"
+    assert summary(out)["plugin_credential"] == "Odoo API key = ODOO_API_KEY, Odoo password empty"
 
 
 def test_a_key_odoo_no_longer_takes_is_replaced(harness: Harness) -> None:
@@ -335,7 +335,7 @@ def test_odoo_13_and_older_keep_the_password(harness: Harness, version: str) -> 
     assert f"[5/5] API key: none, Odoo {version} has no API keys (they start with 14.0)" in out
     ready = summary(out)
     assert ready["api_key"] == f"none: Odoo {version} has no API keys (they start with 14.0)"
-    assert ready["plugin_credential"] == "Password = ODOO_ADMIN_PASSWORD, Odoo API key empty"
+    assert ready["plugin_credential"] == "Odoo password = ODOO_ADMIN_PASSWORD, Odoo API key empty"
     assert "Note: the sandbox has no API key" not in out  # nothing went wrong
 
 
@@ -369,7 +369,7 @@ def test_a_key_that_cannot_be_made_leaves_the_password(harness: Harness, shell: 
     assert "ODOO_API_KEY" not in harness.env()
     ready = summary(out)
     assert ready["api_key"].startswith(reason)
-    assert ready["plugin_credential"] == "Password = ODOO_ADMIN_PASSWORD, Odoo API key empty"
+    assert ready["plugin_credential"] == "Odoo password = ODOO_ADMIN_PASSWORD, Odoo API key empty"
     assert "Note: the sandbox has no API key (" in out
     assert "the next `sandbox up` tries again" in out
     # and it does: with a working shell the next run creates the key
@@ -384,8 +384,8 @@ def test_the_command_text_follows_the_summary(harness: Harness) -> None:
     text = " ".join((ROOT / "commands" / "deploy-local.md").read_text(encoding="utf-8").split())
     assert "the summary's `plugin_credential` says which" in text
     assert ("**Odoo 14.0 to 19.0**: **Odoo API key** = `ODOO_API_KEY` from the `.env`, and "
-            "leave **Password** empty") in text
-    assert ("**Odoo 10.0 to 13.0**, which have no API keys: **Password** = "
+            "leave **Odoo password** empty") in text
+    assert ("**Odoo 10.0 to 13.0**, which have no API keys: **Odoo password** = "
             "`ODOO_ADMIN_PASSWORD`, and leave **Odoo API key** empty") in text
     assert "(`api_key` starts with `none:`), use the password" in text
     assert "never ask for them in the chat" in text

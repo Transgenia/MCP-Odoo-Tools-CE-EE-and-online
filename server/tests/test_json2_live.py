@@ -2,10 +2,11 @@
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """Live JSON-2 checks against local sandboxes (opt-in: ``-m live`` plus paths).
 
-Start the sandboxes with ``scripts/deploy_local.py sandbox up`` (19.0 and 18.0),
-create an admin API key in each, and point the tests at them:
+Start the sandboxes with ``scripts/deploy_local.py sandbox up`` (19.0 and 18.0).
+Since 1.6.0 each keeps an admin API key in its ``.env``, which the tests use; a
+key file overrides it. Point the tests at them:
 
-    ODOO_LIVE_SBX19_DIR=<19.0 sandbox dir>  ODOO_LIVE_SBX19_KEY_FILE=<file with the key>
+    ODOO_LIVE_SBX19_DIR=<19.0 sandbox dir>  (ODOO_LIVE_SBX19_KEY_FILE optional)
     ODOO_LIVE_SBX18_DIR=<18.0 sandbox dir>  (ODOO_LIVE_SBX18_KEY_FILE optional)
     python -m pytest -m live tests/test_json2_live.py
 
@@ -42,11 +43,14 @@ def _env_file(directory: str) -> dict[str, str]:
 
 def _sandbox(prefix: str, need_key: bool = True) -> tuple[dict[str, str], str]:
     directory = os.environ.get(f"ODOO_LIVE_{prefix}_DIR")
+    if not directory:
+        pytest.skip(f"set ODOO_LIVE_{prefix}_DIR")
+    env = _env_file(directory)
     key_file = os.environ.get(f"ODOO_LIVE_{prefix}_KEY_FILE")
-    if not directory or (need_key and not key_file):
-        pytest.skip(f"set ODOO_LIVE_{prefix}_DIR and ODOO_LIVE_{prefix}_KEY_FILE")
-    key = Path(key_file).read_text().strip() if key_file else ""
-    return _env_file(directory), key
+    key = Path(key_file).read_text().strip() if key_file else env.get("ODOO_API_KEY", "")
+    if need_key and not key:
+        pytest.skip(f"the {prefix} sandbox has no ODOO_API_KEY; set ODOO_LIVE_{prefix}_KEY_FILE")
+    return env, key
 
 
 def _ctx(env: dict[str, str], *, pref: str, api_key: str = "", password: str = "") -> ToolContext:

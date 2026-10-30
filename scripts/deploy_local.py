@@ -633,8 +633,9 @@ def cmd_up(args: argparse.Namespace) -> int:
         "api_key": (f"ODOO_API_KEY in {box.env_file} (not printed)" if no_key is None
                     else f"none: {no_key}"),
         # The plugin options to fill (/plugin > odoo-tools > Configure options).
-        "plugin_credential": ("Odoo API key = ODOO_API_KEY, Password empty" if no_key is None
-                              else "Password = ODOO_ADMIN_PASSWORD, Odoo API key empty"),
+        "plugin_credential": ("Odoo API key = ODOO_API_KEY, Odoo password empty"
+                              if no_key is None
+                              else "Odoo password = ODOO_ADMIN_PASSWORD, Odoo API key empty"),
         "image": env["ODOO_IMAGE"],
         "directory": str(box.dir),
     }

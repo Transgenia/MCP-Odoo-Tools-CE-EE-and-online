@@ -79,13 +79,13 @@ Ask (single choice):
    `admin`, and the credential of the series (the summary's `plugin_credential`
    says which):
    - **Odoo 14.0 to 19.0**: **Odoo API key** = `ODOO_API_KEY` from the `.env`,
-     and leave **Password** empty. Odoo created this key for `admin`; it is listed
+     and leave **Odoo password** empty. Odoo created this key for `admin`; it is listed
      as "odoo-tools sandbox" under Preferences > Account Security.
-   - **Odoo 10.0 to 13.0**, which have no API keys: **Password** =
+   - **Odoo 10.0 to 13.0**, which have no API keys: **Odoo password** =
      `ODOO_ADMIN_PASSWORD`, and leave **Odoo API key** empty.
    - If the summary says the sandbox has no API key (`api_key` starts with
      `none:`), use the password as on 10.0 to 13.0: on the sandbox it works in
-     the Password field too, although that field is titled for Odoo < 14. Read
+     the **Odoo password** field too, although its title says Odoo < 14 only. Read
      the reason to the user; the next `sandbox up` tries to create the key again.
 
    Then restart Claude and call `odoo_version` to verify. Remind them these
