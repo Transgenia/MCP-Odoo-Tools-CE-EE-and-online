@@ -1,6 +1,6 @@
 ---
 name: odoo-setup-mcp
-description: START HERE. The guided route of the odoo-tools plugin by Transgenia — setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab).
+description: START HERE. The guided route of the odoo-tools plugin by Transgenia — setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab). Also when odoo_version answers without a `policy` block, or Configure options shows no Permission profile: an odoo-tools copy older than 1.5.0 answered (often a second copy), so stop before any write and run the copies check (run_stdio.py --check-copies).
 ---
 
 # odoo-tools — guided route (start here)

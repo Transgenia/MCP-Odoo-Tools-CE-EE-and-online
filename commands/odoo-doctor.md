@@ -1,5 +1,5 @@
 ---
-description: Diagnose odoo-tools - whether the Odoo tools run on this surface, the connection to Odoo (version, edition, deployment, transport, a sanity read), and a support report with no keys, URLs or data.
+description: Diagnose odoo-tools - whether the Odoo tools run on this surface, the connection to Odoo (version, edition, deployment, transport, a sanity read), and a support report with no keys, URLs or data. In Claude Code it also names the copy that answers and finds a second or pre-1.5.0 copy.
 ---
 
 # /odoo-doctor
