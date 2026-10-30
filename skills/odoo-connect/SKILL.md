@@ -26,6 +26,10 @@ Call `odoo_version`. It returns:
   or `jsonrpc` / `xmlrpc` after a fallback, elsewhere)
 - `transport_notice` (null, or why the deprecated `/xmlrpc`/`/jsonrpc` is in use on
   Odoo 19+ and how to switch to JSON-2; pass it on to the user)
+- `policy` (the odoo-tools permission policy in force; missing means a copy older
+  than 1.5.0 answered: stop and run `/odoo-tools:odoo-doctor`)
+- `plugin` (the odoo-tools `version` that answered and, in Claude Code, its `copy`,
+  such as `odoo-tools@transgenia-odoo-tools`)
 
 Record these. The compat layer uses them to resolve model/field names, so you
 almost never need version-specific branching in your queries.

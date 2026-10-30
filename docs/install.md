@@ -2,14 +2,30 @@
 
 ## As a Claude plugin (recommended)
 
-```
+Inside Claude Code (typed in a session):
+
+```text
 /plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /odoo-tools:odoo-setup-mcp
 ```
 
-On Claude Code older than 2.1.275, which has no `--marketplace` flag, run
-`/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then
+Or in a terminal (PowerShell, Terminal or bash), then `/odoo-tools:odoo-setup-mcp`
+inside Claude Code:
+
+```bash
+claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user
+```
+
+`/plugin` commands go inside Claude Code; `claude plugin` commands go in a
+terminal. On Claude Code older than 2.1.275, which has no `--marketplace` flag,
+run `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then
 `/plugin install odoo-tools` instead of the first line.
+
+Install one copy only. The Claude plugin directory can offer an older version (it
+publishes a version after Anthropic reviews it), and two copies with the same name
+can be active at once: see [Two copies of odoo-tools](../README.md#two-copies-of-odoo-tools).
+`run_stdio.py --check-copies` and `--check-options` check the copies and the saved
+options; `/odoo-tools:odoo-doctor` runs them.
 
 Claude Code prompts for the connection options when the plugin is enabled
 (`/plugin` → **odoo-tools** → **Configure options** to change them). The API key
@@ -122,7 +138,9 @@ pip install -e "./server[otel]"     # OpenTelemetry OTLP tracing
 
 ## CLI fallback (optional)
 
-```
+Inside Claude Code:
+
+```text
 /odoo-tools:odoo-setup-cli
 ```
 Requires Node.js 18+. Installs the CLI to `~/.claude/tools/odoo-cli`.

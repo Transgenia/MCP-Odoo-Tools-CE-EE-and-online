@@ -25,11 +25,16 @@ assisted setup (dev@transgenia.org · WhatsApp +52 55 8034 0405).
 
 ## Install
 
-```
+Inside Claude Code:
+
+```text
 /plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 ```
 
-On Claude Code older than 2.1.275, run `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then `/plugin install odoo-tools`.
+In a terminal (PowerShell, Terminal or bash) instead: `claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user`. Never give a
+`/plugin` command for a terminal or a `claude plugin` command for the chat. On
+Claude Code older than 2.1.275, run `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then `/plugin install odoo-tools`.
+Install one copy only; `/odoo-tools:odoo-doctor` finds a second one.
 
 Then run `/odoo-tools:odoo-setup-mcp` (or `odoo-setup-cli` if you can't run the MCP server) to connect it to a real instance.
 

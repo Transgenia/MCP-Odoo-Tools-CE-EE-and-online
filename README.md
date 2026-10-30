@@ -76,7 +76,9 @@ provides neither: its Odoo tools need the local server above.
 
 The usual symptom, in Cowork or on claude.ai: the plugin installs and shows as on,
 its **Connectors** tab lists **odoo — Runs in each session**, and opening that row
-shows an empty panel with no fields to fill in. Anthropic's docs say that on the
+shows an empty panel with no fields to fill in. On claude.ai on the web, the
+plugin's three-dot menu offers actions such as remove, edit with Claude or
+duplicate, and no place for the connection options. Anthropic's docs say that on the
 web the Connectors tab marks a local MCP server that way while chat does not start
 it, and there is no form because those apps do not prompt for plugin options.
 When the plugin's local diagnostics record no recent connection or setup, its
@@ -110,20 +112,69 @@ session-start hook says where the Odoo tools run and how to reach them (see
 4. Still blocked? See [`SUPPORT.md`](SUPPORT.md). Transgenia never asks for your
    API key or password in a chat or by email.
 
+### Two copies of odoo-tools
+
+Claude Code can run two copies with the same name at once, for example one from
+the Claude plugin directory in a project folder and one from Transgenia's
+marketplace for your user. Then the options you save can go to one copy while the
+tools of the other answer. The signs:
+
+- **Configure options** shows no **Permission profile** (a copy older than 1.5.0);
+- `odoo_version` answers without a `policy` block;
+- the plugin's **Errors** tab says `Plugin option "odoo_url" isn't set` for a copy you
+  never configured. That message comes from Claude Code: the copy it names (shown in
+  `claude plugin list`) has no saved options.
+
+Inside Claude Code, `/odoo-tools:odoo-doctor` checks it (1.6.0): it names the copy
+to keep and prints the exact commands that remove the others, and `odoo_version`
+names the copy that answers (`plugin.copy`). In a terminal, from the project
+folder, `claude plugin list` shows every copy with its version and scope; keep one
+`odoo-tools@...` and remove the others there:
+
+```bash
+claude plugin list
+claude plugin uninstall odoo-tools@anthropic-plugin-directory --scope project
+```
+
+Use the id and the scope that `claude plugin list` shows (`--scope user` for a
+copy installed for your user), then restart Claude Code. The directory's copy is
+`odoo-tools@anthropic-plugin-directory`; there is no
+`odoo-tools@claude-plugins-official`.
+
 ## Install
 
-```
+Install it once, from Transgenia's marketplace, in **one** of these two ways.
+
+**Inside Claude Code** (typed in a session):
+
+```text
 /plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /odoo-tools:odoo-setup-mcp
 ```
 
-The first line adds the marketplace and installs the plugin in one step (Claude
-Code 2.1.275 or later). On an older Claude Code, add the marketplace first:
+**In a terminal** (PowerShell, Terminal or bash), for every folder:
 
+```bash
+claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user
 ```
+
+then start Claude Code and type `/odoo-tools:odoo-setup-mcp`. A `/plugin` command
+goes inside Claude Code, never in the terminal; a `claude plugin` command goes in
+the terminal, never in the chat.
+
+The first form adds the marketplace and installs the plugin in one step (Claude
+Code 2.1.275 or later). On an older Claude Code, add the marketplace first, inside
+Claude Code:
+
+```text
 /plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /plugin install odoo-tools
 ```
+
+The Claude plugin directory publishes a version only after Anthropic reviews it,
+so it can offer an older odoo-tools than this marketplace (for example 1.4.0,
+before the permission policy of 1.5.0). Install one copy only: the guided route
+checks it, see [Two copies of odoo-tools](#two-copies-of-odoo-tools).
 
 **`/odoo-tools:odoo-setup-mcp` is the guided route**: it detects what is already
 set up and walks you through **setup → verification → hands-on training →
@@ -154,6 +205,10 @@ verifies the connection with `odoo_version`.
   - **Windows, session-start hooks:** they are shell commands, so they need Git for
     Windows (Git Bash). Without it Claude Code runs them in PowerShell, where they
     fail with a SessionStart hook error. The MCP server itself is not affected.
+  - **Windows, after installing Claude Code, Git or Python:** open a new PowerShell
+    window and restart Claude Code; a window opened before the install does not see
+    the new `PATH` (`claude` is not recognized, or `where.exe git` finds nothing).
+    Claude Code's native installer puts `claude.exe` in `%USERPROFILE%\.local\bin`.
 - **CLI fallback (optional):** Node.js 18+.
 
 ### What runs on your machine

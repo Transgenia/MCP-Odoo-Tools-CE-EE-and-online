@@ -59,8 +59,9 @@ tag's `container` job finishes:
    plugin's menu in the portal (**Get help**, **Contact Anthropic**) or
    directory@anthropic.com.
 
-Install: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
-(Claude Code 2.1.275 or later; older versions add the marketplace first, see `docs/install.md`).
+Install, inside Claude Code: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`; in a terminal:
+`claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user` (Claude Code 2.1.275 or later; older versions add the marketplace
+first, see `docs/install.md`).
 
 ## Enterprise / Teams (later, separate)
 
