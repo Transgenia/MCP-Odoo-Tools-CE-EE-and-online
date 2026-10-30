@@ -16,6 +16,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,11 @@ from odoo_mcp.server import McpServer, serve
 
 HOME = os.path.expanduser("~")
 TEST_FOLDER = os.path.join(HOME, "Downloads", "Test-Oct2026")
+RUN_STDIO = Path(__file__).resolve().parents[1] / "run_stdio.py"
+UPDATE = ["claude plugin marketplace update transgenia-odoo-tools",
+          "claude plugin update odoo-tools@transgenia-odoo-tools --scope user"]
+INSTALL = ("claude plugin install odoo-tools --marketplace "
+           "Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user")
 
 # `claude plugin list --json` as Claude Code 2.1.314 prints it, inside the project
 # folder of the Windows case (fields the check does not read are left out).
@@ -216,6 +223,67 @@ def test_no_copy_at_all() -> None:
     assert report.terminal[0].startswith("claude plugin install odoo-tools --marketplace")
 
 
+@pytest.mark.parametrize("here", [True, False])
+def test_one_plugin_id_installed_in_two_scopes_is_one_copy(here: bool) -> None:
+    # Claude Code 2.1.314, one id at user scope and at project scope in folder "two",
+    # listed in that folder (here) and in an unrelated one: `enabled` and
+    # `projectEnabled` are per id and folder, not per installation.
+    entries = [
+        {"id": "odoo-tools@transgenia-odoo-tools", "version": "1.6.0", "scope": "user",
+         "enabled": True, "projectPath": None, "projectEnabled": here},
+        {"id": "odoo-tools@transgenia-odoo-tools", "version": "1.6.0", "scope": "project",
+         "enabled": True, "projectPath": os.path.join(HOME, "projects", "two"),
+         "projectEnabled": here},
+    ]
+    report = check_copies(entries)
+    assert report.ok and report.terminal == [], report.render()
+    assert [c["state"] for c in report.data["copies"]] == (
+        ["active", "active"] if here else ["active", "other folder"])
+
+
+def test_an_old_copy_from_transgenias_marketplace_is_updated_not_reinstalled() -> None:
+    # Uninstall then install --marketplace reused the outdated local copy of the
+    # marketplace and put 1.4.0 back, a loop; marketplace update then plugin update
+    # moved it (Claude Code 2.1.314).
+    old = {"id": "odoo-tools@transgenia-odoo-tools", "version": "1.4.0", "scope": "user",
+           "enabled": True}
+    report = check_copies([old])
+    assert [p["code"] for p in report.problems] == ["no-policy"]
+    assert report.terminal == UPDATE
+
+
+def test_an_old_project_copy_is_updated_from_its_folder() -> None:
+    old = {"id": "odoo-tools@transgenia-odoo-tools", "version": "1.4.0", "scope": "project",
+           "enabled": True, "projectPath": TEST_FOLDER, "projectEnabled": True}
+    assert check_copies([old]).terminal == [
+        "cd ~/Downloads/Test-Oct2026", UPDATE[0],
+        "claude plugin update odoo-tools@transgenia-odoo-tools --scope project"]
+
+
+def test_a_known_marketplace_is_updated_before_an_install() -> None:
+    disabled = {"id": "odoo-tools@transgenia-odoo-tools", "version": "1.5.1", "scope": "user",
+                "enabled": False}
+    report = check_copies([disabled])
+    assert [p["code"] for p in report.problems] == ["none"]
+    assert report.terminal == [UPDATE[0], INSTALL]
+
+
+@pytest.mark.parametrize(("folder", "line"), [
+    (os.path.join(HOME, "R&D"), 'cd ~/"R&D"'),
+    (os.path.join(HOME, "proj(1)"), 'cd ~/"proj(1)"'),
+    (os.path.join(HOME, "O'Brien"), "cd ~/\"O'Brien\""),
+    (os.path.join(HOME, "Documents", "José"), 'cd ~/"Documents/José"'),
+    ("D:\\Proyectos\\Odoo App", 'cd "D:/Proyectos/Odoo App"'),
+    ("D:\\Proyectos\\odoo", "cd D:/Proyectos/odoo"),
+    (os.path.join(HOME, "Cost$Center"), "# first change to this folder by hand: ~/Cost$Center"),
+    (os.path.join(HOME, "hey!"), "# first change to this folder by hand: ~/hey!"),
+])
+def test_the_cd_line_is_quoted_whenever_a_shell_would_read_the_path(folder: str,
+                                                                    line: str) -> None:
+    entry = dict(WINDOWS_LIST[0], projectPath=folder)
+    assert check_copies([entry, WINDOWS_LIST[1]]).terminal[0] == line
+
+
 def test_a_folder_with_a_space_gets_a_cd_that_bash_and_powershell_both_read() -> None:
     spaced = dict(WINDOWS_LIST[0], projectPath=os.path.join(HOME, "My Projects", "odoo"))
     report = check_copies([spaced, WINDOWS_LIST[1]])
@@ -254,8 +322,9 @@ def test_a_complete_copy_passes_and_shows_its_permission_options() -> None:
 
 
 @pytest.mark.parametrize(("url", "fragment"), [
-    ("https://my-company.odoo.com/web", "without /web"),
-    ("https://my-company.odoo.com/odoo?debug=1", "without /odoo?debug=1"),
+    ("https://my-company.odoo.com/web",
+     "use https://my-company.odoo.com, without its path, query or fragment"),
+    ("https://my-company.odoo.com/odoo?debug=1", "without its path, query or fragment"),
     ("my-company.odoo.com", "needs a scheme and a host"),
 ])
 def test_the_url_must_be_scheme_and_host(url: str, fragment: str) -> None:
@@ -269,6 +338,33 @@ def test_a_url_with_a_user_name_and_password_is_refused_and_never_echoed() -> No
     report = check_options(_options(odoo_url=f"https://bot:{SECRET}@my-company.odoo.com"))
     assert "url" in [p["code"] for p in report.problems]
     assert SECRET not in report.render() and SECRET not in json.dumps(report.as_dict())
+
+
+@pytest.mark.parametrize("url", [
+    f"admin:{SECRET}@erp.example.com",           # no scheme: urlsplit finds no host
+    f"https//admin:{SECRET}@erp.example.com",    # a missing colon
+    f"https:admin:{SECRET}@erp.example.com",     # missing slashes
+    f"http:/admin:{SECRET}@erp.example.com",
+    f"https://admin:{SECRET}@erp.example.com",
+    f"https://erp.example.com/my/orders/7?access_token={SECRET}",  # a copied portal link
+    f"https://erp.example.com/web#{SECRET}",
+    f"https://erp.example.com/{SECRET}/web",
+])
+def test_nothing_of_the_url_but_its_scheme_and_host_is_ever_shown(url: str) -> None:
+    # Review of 1.6.0: without "//" no host was parsed, the user info was not stripped
+    # and the URL was printed as typed; a path, query or fragment was echoed in the
+    # problem text. The guided route runs this check through Claude's Bash tool.
+    for as_json in (False, True):
+        code, text = _run("options", _options(odoo_url=url), as_json=as_json)
+        assert code == 1 and SECRET not in text
+    if "@" in url:
+        texts = [p["text"] for p in check_options(_options(odoo_url=url)).problems]
+        assert any("user name or password" in t for t in texts)
+
+
+def test_a_url_without_a_host_is_not_shown_at_all() -> None:
+    report = check_options(_options(odoo_url=f"admin:{SECRET}@erp.example.com"))
+    assert "Odoo URL: set, not shown (no scheme and host could be read)" in report.lines
 
 
 def test_plain_http_is_fine_on_this_computer_only() -> None:
@@ -301,6 +397,32 @@ def test_input_that_is_not_the_expected_json_exits_2(kind: str, payload: Any,
                                                      fragment: str) -> None:
     code, text = _run(kind, payload)
     assert code == 2 and fragment in text
+
+
+@pytest.mark.parametrize("configured", [[["odoo_url"]], True, 5, {"odoo_url": 1}])
+def test_odd_values_inside_valid_json_exit_2(configured: Any) -> None:
+    code, text = _run("options", dict(_options(), configured=configured))
+    assert code == 2 and "Traceback" not in text
+
+
+def test_odd_note_details_do_not_stop_the_copies_check() -> None:
+    code, _text = _run("copies", [dict(WINDOWS_LIST[1], noteDetails=5)])
+    assert code == 0
+
+
+def test_the_checks_read_utf8_whatever_the_code_page() -> None:
+    # Claude Code prints UTF-8; Python on Windows reads a pipe as cp1252, where the
+    # second byte of an accented capital (0x81) does not decode. PYTHONIOENCODING
+    # plays that here, with and without a BOM.
+    entries = [dict(WINDOWS_LIST[0], projectPath="/srv/Ángel/odoo"), WINDOWS_LIST[1]]
+    payload = json.dumps(entries, ensure_ascii=False).encode("utf-8")
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    for prefix in (b"", b"\xef\xbb\xbf"):
+        done = subprocess.run([sys.executable, str(RUN_STDIO), "--check-copies"],
+                              input=prefix + payload, capture_output=True, env=env,
+                              timeout=60, check=False)
+        assert done.returncode == 1, done.stderr.decode("utf-8", "replace")
+        assert 'cd "/srv/Ángel/odoo"' in done.stdout.decode("utf-8")
 
 
 def test_the_json_report_is_machine_readable() -> None:

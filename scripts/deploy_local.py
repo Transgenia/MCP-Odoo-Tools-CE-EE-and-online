@@ -395,9 +395,13 @@ class Sandbox:
         means "keep the current value, or the default".
         """
         existing = read_env(self.env_file)
-        if existing.get("PG_PASSWORD", "").startswith("-"):
-            # Made before 1.6.0 (see new_secret): Odoo never started with it, so nothing
-            # is lost by starting over. The message holds no part of the password.
+        if (existing.get("PG_PASSWORD", "").startswith("-")
+                and existing.get("ODOO_READY") != "1"
+                and existing.get("ODOO_VERSION") != "10.0"):
+            # Made before 1.6.0 (see new_secret). From 11.0 the image's entrypoint runs
+            # wait-for-psql.py, so Odoo never started and nothing is lost by starting
+            # over; 10.0 passes the password to Odoo itself, which takes it. The message
+            # holds no part of the password.
             raise SandboxError(
                 "This sandbox was created with a database password that the Odoo image "
                 "cannot use (fixed in odoo-tools 1.6.0), so Odoo never started. Run "

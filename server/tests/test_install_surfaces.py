@@ -93,7 +93,8 @@ def test_no_guide_sends_the_user_to_a_menu_that_does_not_exist() -> None:
 def test_the_windows_guides_name_the_sign_of_a_missing_python3() -> None:
     # windows-launch.yml, case python-only: without python3.exe, Claude Code 2.1.314 reports
     # the server as "Failed to connect" with "Connection closed", and nothing names Python.
-    # The guides quote that message, and the workflow fails if Claude Code changes it.
+    # The guides quote that message, and the workflow fails if a new pinned Claude Code
+    # version changes it.
     sign = "`Failed to connect` with `Connection closed`"
     for name in ("README.md", "docs/install.md", "skills/odoo-setup-mcp/SKILL.md",
                  "commands/odoo-doctor.md"):

@@ -41,6 +41,7 @@ PLUGIN_NAME = "odoo-tools"
 POLICY_SINCE = (1, 5, 0)
 MARKETPLACE = "transgenia-odoo-tools"
 MARKETPLACE_SOURCE = "Transgenia/MCP-Odoo-Tools-CE-EE-and-online"
+OUR_ID = f"{PLUGIN_NAME}@{MARKETPLACE}"
 REQUIRED_OPTIONS = ("odoo_url", "odoo_db", "odoo_login")
 CREDENTIAL_OPTIONS = ("odoo_api_key", "odoo_password")
 # Under this many seconds, a report or an export of a few thousand records times out.
@@ -48,6 +49,14 @@ SHORT_TIMEOUT = 30
 _SHADOWED = "synced-plugin-shadowed"
 _VERSION = re.compile(r"^\s*(\d+)\.(\d+)(?:\.(\d+))?")
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+# Of one plugin id's installations, the one for this folder applies before the user's.
+_SCOPE_RANK = {"local": 3, "project": 2, "user": 1}
+# A cd line: a path of these characters needs no quotes in bash or PowerShell.
+_SAFE_CD = re.compile(r"[A-Za-z0-9._/:~-]+")
+# Read by a shell even inside double quotes (bash: $ ` " and ! history expansion;
+# PowerShell: $ ` "): no one quoting serves both shells.
+_CD_BY_HAND = frozenset('"$`!')
+_DRIVE = re.compile(r"^[A-Za-z]:\\")
 
 
 class InputError(Exception):
@@ -160,24 +169,37 @@ def _home_relative(path: str) -> str:
 
 def _cd(path: str) -> str:
     """A ``cd`` line that works in bash and PowerShell, for a home-relative path too
-    (bash does not expand a quoted ``~``)."""
+    (bash does not expand a quoted ``~``). A Windows path is written with ``/``, which
+    both shells take. A path that no quoting serves in both shells becomes a comment
+    line, and the user changes to that folder by hand."""
     shown = _home_relative(path)
-    if " " not in shown:
+    if _DRIVE.match(shown):
+        shown = shown.replace("\\", "/")
+    if _SAFE_CD.fullmatch(shown):
         return f"cd {shown}"
+    if not shown.isprintable() or any(char in _CD_BY_HAND for char in shown):
+        printable = "".join(char if char.isprintable() else "?" for char in shown)
+        return f"# first change to this folder by hand: {printable}"
     if shown.startswith("~/"):
         return f'cd ~/"{shown[2:]}"'
     return f'cd "{shown}"'
 
 
 def _copy_state(entry: dict[str, Any]) -> str:
-    details = entry.get("noteDetails") or []
-    if any(isinstance(d, dict) and d.get("type") == _SHADOWED for d in details):
+    details = entry.get("noteDetails")
+    if isinstance(details, list) and any(isinstance(d, dict) and d.get("type") == _SHADOWED
+                                         for d in details):
         return "shadowed"
-    if entry.get("enabled") is True:
-        return "active"
-    if entry.get("scope") in ("project", "local") and entry.get("projectEnabled") is False:
-        return "other folder"
-    return "disabled"
+    if entry.get("scope") in ("project", "local"):
+        # Claude Code reports `enabled` and `projectEnabled` per plugin id and folder,
+        # not per installation: a project installation made in another folder shows
+        # `enabled` true when the same id is active here through another scope, with
+        # `projectEnabled` false. It is active here only when this folder enables it.
+        if "projectEnabled" not in entry:  # an older Claude Code: `enabled` alone
+            return "active" if entry.get("enabled") is True else "other folder"
+        if entry.get("projectEnabled") is not True:
+            return "other folder"
+    return "active" if entry.get("enabled") is True else "disabled"
 
 
 def _describe(entry: dict[str, Any]) -> str:
@@ -209,6 +231,33 @@ def _uninstall(entry: dict[str, Any]) -> list[str]:
     return []
 
 
+def _install_commands(known: bool) -> list[str]:
+    """Commands that install a current copy from Transgenia's marketplace. When that
+    marketplace is already known here, its local copy may be outdated, and
+    ``install --marketplace`` reuses it as it is: update it first."""
+    commands = [f"claude plugin marketplace update {MARKETPLACE}"] if known else []
+    commands.append(f"claude plugin install {PLUGIN_NAME} --marketplace "
+                    f"{MARKETPLACE_SOURCE} --scope user")
+    return commands
+
+
+def _update_commands(keep: dict[str, Any], known: bool) -> list[str]:
+    """Commands that leave a current copy in place of ``keep``, older than 1.5.0."""
+    if keep["id"] != OUR_ID:
+        # Another marketplace's copy, such as the Claude plugin directory's: a current
+        # copy from Transgenia's marketplace replaces a local one and takes precedence
+        # over a synced one.
+        return _uninstall(keep) + _install_commands(known)
+    scope = keep.get("scope") if keep.get("scope") in ("user", "project", "local") else "user"
+    commands = []
+    if scope in ("project", "local") and isinstance(keep.get("projectPath"), str):
+        commands.append(_cd(keep["projectPath"]))
+    # Uninstalling and installing again would reuse the outdated local copy of the
+    # marketplace and put the same version back: update the marketplace, then the plugin.
+    return commands + [f"claude plugin marketplace update {MARKETPLACE}",
+                       f"claude plugin update {OUR_ID} --scope {scope}"]
+
+
 def check_copies(entries: Any) -> Report:
     """Check ``claude plugin list --json``: exactly one active odoo-tools copy, 1.5.0+."""
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
@@ -216,27 +265,33 @@ def check_copies(entries: Any) -> Report:
     copies = [e for e in entries
               if isinstance(e.get("id"), str) and e["id"].partition("@")[0] == PLUGIN_NAME]
     report = Report("odoo-tools copies Claude Code knows in this folder:")
-    states = {e["id"]: _copy_state(e) for e in copies}
-    for entry in copies:
-        state = states[entry["id"]]
+    states = [_copy_state(e) for e in copies]  # per installation, not per id
+    for entry, state in zip(copies, states):
         label = {"shadowed": "not loaded", "other folder": "other folder"}.get(state, state)
         line = f"{label:<12} {_describe(entry)}"
         if state == "shadowed":
             line += ": a copy on this computer has the same name and takes precedence"
         elif state == "other folder":
-            line += ": enabled only in that folder"
+            line += ": installed for that folder only"
         report.lines.append(line)
-    active = [e for e in copies if states[e["id"]] == "active"]
+    # One plugin id is one copy: one code, one set of options, one data folder. Of its
+    # installations, the one for this folder applies, then the user's.
+    installs: dict[str, list[dict[str, Any]]] = {}
+    for entry, state in zip(copies, states):
+        if state == "active":
+            installs.setdefault(entry["id"], []).append(entry)
+    active = [max(group, key=lambda e: _SCOPE_RANK.get(e.get("scope"), 0))
+              for group in installs.values()]
     report.data = {"copies": [{"id": e["id"], "version": e.get("version"),
-                               "scope": e.get("scope"), "state": states[e["id"]]}
-                              for e in copies]}
+                               "scope": e.get("scope"), "state": state}
+                              for e, state in zip(copies, states)]}
+    known = any(e["id"] == OUR_ID for e in copies)
     if not copies:
         report.lines.append("(none)")
     if not active:
         report.problem("none", "odoo-tools is not active in this folder. Install it from "
                        "Transgenia's marketplace (user scope, every folder).")
-        report.terminal.append(f"claude plugin install {PLUGIN_NAME} --marketplace "
-                               f"{MARKETPLACE_SOURCE} --scope user")
+        report.terminal.extend(_install_commands(known))
         return report
     keep = max(active, key=_keep_rank)
     report.data["keep"] = keep["id"]
@@ -250,51 +305,56 @@ def check_copies(entries: Any) -> Report:
             report.problem("no-policy", f"{_describe(entry)} is older than 1.5.0: it has no "
                            "permission policy, profile or audit log.")
     for entry in active:
-        if entry is keep:
+        if entry["id"] == keep["id"]:
             continue
-        commands = _uninstall(entry)
-        if commands:
-            report.terminal.extend(commands)
-        else:
-            report.warnings.append(f"{entry['id']} is managed on claude.ai: remove it there "
-                                   "(Customize, Plugins).")
+        for install in installs[entry["id"]]:  # every installation active here
+            commands = _uninstall(install)
+            if commands:
+                report.terminal.extend(commands)
+            else:
+                report.warnings.append(f"{install['id']} is managed on claude.ai: remove it "
+                                       "there (Customize, Plugins).")
     keep_version = parse_version(keep.get("version"))
     if keep_version is None:
         report.warnings.append(f"the version of {keep['id']} is unknown; odoo_version names "
                                "the copy that answers.")
     elif keep_version < POLICY_SINCE:
-        # Every active copy is old: a current copy from Transgenia's marketplace
-        # replaces a local one and takes precedence over a synced one.
-        report.terminal.extend(_uninstall(keep))
-        report.terminal.append(f"claude plugin install {PLUGIN_NAME} --marketplace "
-                               f"{MARKETPLACE_SOURCE} --scope user")
+        # Every active copy is old.
+        report.terminal.extend(_update_commands(keep, known))
     return report
 
 
-def _url_problems(url: str) -> tuple[list[str], list[str], str]:
-    """(problems, warnings, the URL as shown) for the Odoo URL option."""
+def _url_problems(url: str) -> tuple[list[str], list[str], str | None]:
+    """(problems, warnings, the URL as shown) for the Odoo URL option.
+
+    Only ``scheme://host[:port]`` is ever shown, or nothing when no host can be read:
+    user info can hold a password and a path, query or fragment a token (a copied
+    portal link), so none of them is repeated, in a problem either."""
     problems: list[str] = []
     warnings: list[str] = []
     try:
         parts = urllib.parse.urlsplit(url.strip())
+        port = parts.port
     except ValueError:
-        return ["the Odoo URL cannot be read; use https://your-host"], [], "<unreadable>"
-    netloc = parts.netloc.rpartition("@")[2]
-    shown = urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, "", ""))
-    if parts.username is not None or parts.password is not None:
-        problems.append("the Odoo URL holds a user name or password; remove it from the URL "
-                        "(the login and the key have their own options)")
-    if parts.scheme not in ("http", "https") or not netloc:
+        return ["the Odoo URL cannot be read; use https://your-host"], [], None
+    host = parts.hostname or ""
+    shown = None
+    if parts.scheme in ("http", "https") and host:
+        shown = f"{parts.scheme}://{f'[{host}]' if ':' in host else host}"
+        shown += f":{port}" if port is not None else ""
+    if "@" in url:
+        # User info, with or without "//" (admin:pw@host, https//admin:pw@host): an Odoo
+        # address never holds an "@".
+        problems.append("the Odoo URL holds a user name or password (an @); remove it from "
+                        "the URL (the login and the key have their own options)")
+    if shown is None:
         problems.append("the Odoo URL needs a scheme and a host, e.g. https://my-company.odoo.com")
     elif parts.path not in ("", "/") or parts.query or parts.fragment:
-        problems.append(f"the Odoo URL must be the scheme and host only: use "
-                        f"{parts.scheme}://{netloc}, without {parts.path or ''}"
-                        f"{'?' + parts.query if parts.query else ''}"
-                        f"{'#' + parts.fragment if parts.fragment else ''}")
+        problems.append(f"the Odoo URL must be the scheme and host only: use {shown}, "
+                        "without its path, query or fragment")
     elif parts.path == "/":
         warnings.append("the trailing / of the Odoo URL is ignored")
-    host = (parts.hostname or "").lower()
-    if parts.scheme == "http" and host and host not in _LOCAL_HOSTS:
+    if parts.scheme == "http" and host and host.lower() not in _LOCAL_HOSTS:
         warnings.append("plain http sends the API key unencrypted; use https for any "
                         "Odoo that is not on this computer")
     return problems, warnings, shown
@@ -310,7 +370,11 @@ def check_options(doc: Any) -> Report:
         raise InputError(f"expected the options of an {PLUGIN_NAME} copy, got {plugin_id!r}")
     schema: dict[str, Any] = doc["schema"]
     inputs = doc.get("inputs") if isinstance(doc.get("inputs"), dict) else {}
-    configured = set(doc.get("configured") or [])
+    configured_list = doc.get("configured") or []
+    if not isinstance(configured_list, list) or not all(isinstance(key, str)
+                                                        for key in configured_list):
+        raise InputError("expected `configured` to be a list of option names")
+    configured = set(configured_list)
     sensitive = {key for key, spec in schema.items()
                  if isinstance(spec, dict) and spec.get("sensitive")}
 
@@ -341,7 +405,8 @@ def check_options(doc: Any) -> Report:
         for text in problems:
             report.problem("url", text)
         report.warnings.extend(warnings)
-        report.lines.append(f"Odoo URL: {shown}")
+        report.lines.append(f"Odoo URL: {shown}" if shown else
+                            "Odoo URL: set, not shown (no scheme and host could be read)")
     if value("odoo_db"):
         report.lines.append(f"Database: {value('odoo_db')}")
     if value("odoo_login"):
@@ -392,6 +457,10 @@ def check_main(kind: str, stdin: TextIO, out: TextIO, as_json: bool = False) -> 
         report = check_copies(doc) if kind == "copies" else check_options(doc)
     except InputError as exc:
         out.write(f"{usage}: {exc}.\n")
+        return 2
+    except (TypeError, ValueError, AttributeError, KeyError):
+        # Odd values inside valid JSON; nothing of them is repeated.
+        out.write(f"{usage}; the input holds values of an unexpected type.\n")
         return 2
     if as_json:
         out.write(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) + "\n")

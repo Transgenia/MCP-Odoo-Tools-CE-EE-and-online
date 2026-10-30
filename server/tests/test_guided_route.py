@@ -225,6 +225,19 @@ def test_a_sandbox_made_with_a_dash_password_says_to_start_over(tmp_path: Path) 
     assert env["PG_PASSWORD"][1:] not in str(caught.value)
 
 
+def test_a_10_sandbox_or_one_that_worked_keeps_its_dash_password(tmp_path: Path) -> None:
+    # Review of 1.6.0: 10.0's entrypoint passes the password to Odoo itself, whose optparse
+    # takes "-..."; a sandbox that reached ODOO_READY=1 started with it. Neither is refused.
+    for version, ready in (("10.0", "0"), ("10.0", "1"), ("17.0", "1")):
+        box = dl.Sandbox(tmp_path / f"sbx-{version}-{ready}")
+        box.prepare(version, 8069, "sandbox", "en_US", False, "transgenia")
+        env = dl.read_env(box.env_file)
+        env.update(PG_PASSWORD="-" + env["PG_PASSWORD"], ODOO_READY=ready)
+        box.write_env(env)
+        kept = box.prepare(None, None, None, None, None, "transgenia")
+        assert kept["PG_PASSWORD"] == env["PG_PASSWORD"]
+
+
 def test_passwords_are_never_printed(tmp_path: Path, capsys: pytest.CaptureFixture[str],
                                      monkeypatch: pytest.MonkeyPatch) -> None:
     box = dl.Sandbox(tmp_path / "sbx")

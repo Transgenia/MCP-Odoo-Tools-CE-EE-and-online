@@ -1,6 +1,6 @@
 ---
 name: odoo-setup-mcp
-description: START HERE. The guided route of the odoo-tools plugin by Transgenia — setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab). Also when odoo_version answers without a `policy` block, or Configure options shows no Permission profile: an odoo-tools copy older than 1.5.0 answered (often a second copy), so stop before any write and run the copies check (run_stdio.py --check-copies).
+description: START HERE. The guided route of the odoo-tools plugin by Transgenia: setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab). Also when odoo_version answers without a `policy` block, or Configure options shows no Permission profile: an odoo-tools copy older than 1.5.0 answered (often a second copy), so stop before any write and run the copies check (run_stdio.py --check-copies).
 ---
 
 # odoo-tools — guided route (start here)
@@ -74,7 +74,7 @@ Desktop) · **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or mobil
 A user who describes an empty **odoo — Runs in each session** panel under the
 plugin's **Connectors** tab is on 2 or 3.
 
-- **1 — Claude Code.** The server did not start. The usual causes are empty
+- **1: Claude Code.** The server did not start. The usual causes are empty
   required options (Odoo URL, database, login) or a second copy of the plugin.
   If you can run shell commands, run the copies check of Phase 0. When it names
   one copy to keep, check that copy's options (Claude Code 2.1.285 or later; the
@@ -88,9 +88,10 @@ plugin's **Connectors** tab is on 2 or 3.
   what the check lists. Missing options go in the options dialog, which the user
   opens inside Claude Code with `/plugin configure <id>`. If `python3` is missing,
   neither check runs. Read `claude plugin list --json` yourself instead: more than
-  one enabled `odoo-tools@...` entry, or a version older than 1.5.0, is the
-  problem. Then go to Step 1A. Fix the options in Step 1C, then restart Claude.
-- **2 or 3 — Cowork or Claude chat.** These apps do not run this plugin's local
+  one `odoo-tools@...` id enabled here, or a version older than 1.5.0, is the
+  problem. One id listed for two scopes is one copy, and a project or local entry
+  counts only when its `projectEnabled` is true. Then go to Step 1A. Fix the options in Step 1C, then restart Claude.
+- **2 or 3: Cowork or Claude chat.** These apps do not run this plugin's local
   MCP server and have no form for plugin options. Anthropic's plugin support
   matrix says Cowork "doesn't prompt for values" and ignores an MCP server whose
   options have no default, and chat ignores a plugin's local MCP server. The install is

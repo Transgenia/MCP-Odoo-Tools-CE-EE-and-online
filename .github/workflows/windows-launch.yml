@@ -13,7 +13,8 @@ name: Windows launch
 #     server as "Failed to connect" with "Connection closed", without naming
 #     Python. README.md, docs/install.md, /odoo-tools:odoo-setup-mcp and
 #     /odoo-tools:odoo-doctor quote that message as the sign of a missing
-#     python3, so the job fails if a new Claude Code version reports it otherwise.
+#     python3, so when CLAUDE_CODE moves to a new version the job fails if that
+#     version reports it otherwise.
 #
 # The connection options are non-secret placeholders (127.0.0.1:9, nothing
 # listens there): the server starts without contacting Odoo.

@@ -124,6 +124,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_audit is not None:
         return verify_main(args.verify_audit, sys.stdout)
     if args.check_copies or args.check_options:
+        # Claude Code prints UTF-8, while Python on Windows reads a pipe in the ANSI
+        # code page (cp1252): an accented folder name would not decode. A BOM is dropped.
+        for stream, encoding in ((sys.stdin, "utf-8-sig"), (sys.stdout, "utf-8")):
+            try:
+                stream.reconfigure(encoding=encoding, errors="replace")  # type: ignore[union-attr]
+            except (AttributeError, ValueError, OSError):
+                pass  # a replaced stream (tests) or one already in use
         return check_main("copies" if args.check_copies else "options", sys.stdin,
                           sys.stdout, as_json=args.json)
     if args.diagnose:

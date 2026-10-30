@@ -40,18 +40,23 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
   answer without a `policy` block comes from a copy older than 1.5.0.
 - **The copies check and the options check.** Both run no program, contact
   nothing, never print a sensitive value whatever the input holds, and print
-  terminal commands and Claude Code commands apart. Exit 0 ok, 1 to fix, 2 when the
-  input is not that JSON.
-  - `run_stdio.py --check-copies` reads `claude plugin list --json` on stdin. It
-    finds two active copies and copies older than 1.5.0, skips a claude.ai copy that
-    a local one shadows, names the copy to keep, and prints the exact terminal
-    commands: a `cd` to the project folder, then
-    `claude plugin uninstall <id> --scope <scope>`.
+  terminal commands and Claude Code commands apart. They read UTF-8, also from a
+  Windows pipe. Exit 0 ok, 1 to fix, 2 when the input is not that JSON.
+  - `run_stdio.py --check-copies` reads `claude plugin list --json` on stdin.
+    - It finds two active copies and copies older than 1.5.0. One plugin id
+      installed in two scopes is one copy.
+    - It skips a claude.ai copy that a local one shadows, and names the copy to
+      keep.
+    - It prints the exact terminal commands: a `cd` to the project folder, quoted
+      for bash and PowerShell, then `claude plugin uninstall <id> --scope <scope>`.
+    - For an old copy from Transgenia's marketplace it prints
+      `claude plugin marketplace update` and `claude plugin update` instead.
+      Installing again would reuse the outdated local copy of the marketplace.
   - `run_stdio.py --check-options` reads `claude plugin configure <id> --json`. It
     checks:
     - the required options and a credential;
-    - the URL: scheme and host only, and a user name or password in it is refused
-      and never echoed;
+    - the URL: scheme and host only. A user name or password in it is refused, and
+      nothing of the URL but its scheme, host and port is ever repeated;
     - the permission options that a copy older than 1.5.0 lacks;
     - a short timeout;
     - plain http to another computer.
@@ -65,8 +70,9 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
     naming Python.
 
   The README, `docs/install.md`, the guided route and `/odoo-tools:odoo-doctor` now
-  name that message as the sign of a missing `python3` on Windows. The job fails if
-  a new Claude Code version reports it otherwise.
+  name that message as the sign of a missing `python3` on Windows. When the job's
+  pinned Claude Code version moves, it fails if the new version reports it
+  otherwise.
 - **Evals.** Two cases from that onboarding:
   - an `odoo_version` answer without `policy`;
   - `/plugin install` typed in PowerShell.
