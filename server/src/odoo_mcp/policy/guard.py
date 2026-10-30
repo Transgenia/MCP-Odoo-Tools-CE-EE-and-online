@@ -28,7 +28,10 @@ transport is touched:
      withheld; an ir.attachment search must name its parent, and the guard
      adds ``["res_field", "=", False]`` to it;
   7. the context keys, and on Odoo 10 to 12, which also take the context from a
-     positional argument, the objects the call passes positionally (design E1).
+     positional argument, the objects the call passes positionally (design E1): a
+     key of such an object passed to a method outside the argument table is a value
+     when it is a field of the model, and otherwise a context key the allowlist must
+     allow.
 
 Then the call is sent. What it created, found and read is recorded in the
 scope for the internal predicates, and withheld fields are removed from what a
@@ -62,6 +65,7 @@ from .check import (
     check_attachment_pin,
     check_context,
     check_positional_contexts,
+    field_or_context_keys,
 )
 from .classify import (
     ARG_SHAPES,
@@ -699,15 +703,46 @@ class GuardedSession:
         call that may be its context (a Mapping, or a list of pairs, as the dict Odoo builds
         from it) meet the same rules as at Layer A
         (``check_positional_contexts``), as a backstop, and the metadata-free structural rules
-        over their ``default_<field>`` keys that a named context meets here. From 13 Odoo
-        reads only ``kwargs["context"]``, so the positional objects are values, checked as
-        before. The caller has checked ``rules_on``."""
+        over their ``default_<field>`` keys that a named context meets here. The other keys of
+        an object passed to a method outside the argument table are then decided with the
+        model's fields (``_check_positional_keys``), last, so a call those rules refuse costs
+        no field lookup. From 13 Odoo reads only ``kwargs["context"]``, so the positional
+        objects are values, checked as before. The caller has checked ``rules_on``."""
         found = positional_contexts(method, view.args, ids_given=view.ids is not None)
         if not (found.certain or found.possible) or not self._reads_positional_context():
             return
-        check_positional_contexts(self._policy, model, found, op=CLASS_OPS[cls][0], layer="B")
+        op = CLASS_OPS[cls][0]
+        check_positional_contexts(self._policy, model, found, op=op, layer="B")
         for context in (*found.certain, *found.possible):
             self._check_context_defaults(model, context, cls)
+        self._check_positional_keys(model, found.possible, op)
+
+    def _check_positional_keys(self, model: str, possible: Iterable[Mapping[Any, Any]],
+                               op: str) -> None:
+        """On Odoo 10 to 12, an object passed positionally to a method outside the argument
+        table may be the call's context or the method's values (design E1). Its
+        ``default_<field>`` keys met the context rules already, and an allowed context key
+        passes either way; every other text key (``field_or_context_keys``) is decided by the
+        model's fields. A field of the model is one of the method's values, left to the checks
+        the method's arguments get, as before (for a business method, the call-class backstop:
+        a withheld field, the models its x2many commands reach). Any other key can only be a
+        context key, and one outside the allowlist (``tracking_disable``, say) is refused with
+        rule ``context``, naming the key, never its value.
+
+        The fields are the metadata the other checks read (``_fields``: cached by the session
+        and for this call, and read again by the backstop at no cost), and only when such a
+        key is present. When they cannot be read the call is refused with rule ``unverified``,
+        as every check that needs field metadata is: an unknown key is never let through."""
+        keys = [key for value in possible for key in field_or_context_keys(value)]
+        if not keys:
+            return
+        try:
+            fields = self._fields(model)
+        except _Unverified:
+            raise texts.unverified(self._policy, op, model, positional=True) from None
+        for key in keys:
+            if key not in fields:
+                raise texts.context_not_field(self._policy, op, model, key)
 
     def _reads_positional_context(self) -> bool:
         """Whether the connected Odoo takes a context from a positional argument: 10 to 12

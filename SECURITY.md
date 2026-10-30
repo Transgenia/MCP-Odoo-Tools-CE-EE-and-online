@@ -233,9 +233,9 @@ server keeps the Odoo credential, the same policy becomes real enforcement.
   many2one links are not checked as touches; published content is an outbound
   channel by effect; counts and aggregates allow inference; `builder` equals
   `full` for confidentiality, because automations run code on the server; on
-  Odoo 10 to 12, the keys other than `default_<field>` of an object passed
-  positionally to a business method outside the policy's table are not held to
-  the context allowlist (planned for 1.5.2).
+  Odoo 10 to 12, a key of an object passed positionally to a business method
+  outside the policy's table that is the name of a field of the model is read as
+  a value, so it is not held to the context allowlist.
 
 ## Read-only mode
 

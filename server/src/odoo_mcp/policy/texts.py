@@ -175,6 +175,19 @@ CONTEXT_STRUCTURAL_DEFAULT_POSITIONAL_HINT = (
     "models, so it cannot be checked against the model this call names; " + POSITIONAL_REMEDY
     + ", where they are checked, or use profile 'full' (the user sets it in the plugin option "
     "'Permission profile')")
+# On Odoo 10 to 12, an object passed positionally to a method outside the argument table may be
+# the call's context or the method's values (design E1): the guarded session reads a key that is
+# a field of the model as a value, and any other key as a context key, held to the allowlist.
+CONTEXT_NOT_FIELD_POSITIONAL_HINT = (
+    "context key {key}, " + POSITIONAL_PLACE + ", is not a field of '{model}' and is not "
+    "allowed through these tools (allowed: {allowed}); " + POSITIONAL_REMEDY)
+# The same object when the model's field definitions cannot be read: refused (fail closed),
+# as every check that needs field metadata is.
+UNVERIFIED_POSITIONAL_HINT = (
+    "could not verify the keys of a positional argument, which Odoo 10 to 12 take as the "
+    "call's context: fields_get failed on '{model}', so the policy cannot tell the model's "
+    "fields from context keys; " + POSITIONAL_REMEDY + ", or check that the Odoo user can read "
+    "the field definitions of '{model}', then retry")
 CALL_LIST_HINT = "method '{method}' is not among the methods allowed on '{model}' ({list})"
 FILE_HINT = "the policy file rule '{key}' refuses it"
 INVALID_MODEL_HINT = ("the model name is not a valid Odoo model name (lowercase letters, digits, "
@@ -345,9 +358,13 @@ def path(policy: Policy, *, method: str, model: str, op: str, comodel: str, fiel
         layer=layer)
 
 
-def unverified(policy: Policy, op: str, model: str, *, layer: str = "B") -> PolicyDenied:
-    """The field metadata the checks need could not be read: refused, never sent."""
-    return _check(policy, op, model, "unverified", UNVERIFIED_HINT, layer=layer)
+def unverified(policy: Policy, op: str, model: str, *, layer: str = "B",
+               positional: bool = False) -> PolicyDenied:
+    """The field metadata the checks need could not be read: refused, never sent.
+    ``positional``: the metadata would have told the fields of ``model`` from the context keys
+    of an object passed positionally, which Odoo 10 to 12 may take as the context (design E1)."""
+    hint_text = UNVERIFIED_POSITIONAL_HINT.format(model=model) if positional else UNVERIFIED_HINT
+    return _check(policy, op, model, "unverified", hint_text, layer=layer)
 
 
 def attachment_create(policy: Policy, op: str, *, layer: str = "B") -> PolicyDenied:
@@ -391,6 +408,15 @@ def context(policy: Policy, op: str, model: str, key: Any, *, layer: str = "A",
     template = CONTEXT_POSITIONAL_HINT if positional else CONTEXT_HINT
     return _check(policy, op, model, "context",
                   template.format(key=plain_name(key), allowed=CONTEXT_ALLOWED), layer=layer)
+
+
+def context_not_field(policy: Policy, op: str, model: str, key: Any, *,
+                      layer: str = "B") -> PolicyDenied:
+    """On Odoo 10 to 12, a key of an object passed positionally to a method outside the
+    argument table that is not a field of ``model``, so a context key, and is not an allowed
+    one (design E1): the key is named (when it is a plain identifier), its value never is."""
+    return _check(policy, op, model, "context", CONTEXT_NOT_FIELD_POSITIONAL_HINT.format(
+        key=plain_name(key), model=model, allowed=CONTEXT_ALLOWED), layer=layer)
 
 
 def context_default(policy: Policy, op: str, model: str, key: Any, *,
