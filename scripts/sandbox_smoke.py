@@ -6,11 +6,15 @@
 Used by the sandbox matrix workflow after ``deploy_local.py sandbox up``:
 ``python3 scripts/sandbox_smoke.py --dir <sandbox dir> --expect 17
 [--install-automation]``.
-It starts ``server/run_stdio.py`` with the sandbox credentials (read from the
-owner-only ``.env``, never printed), speaks MCP over stdio exactly as Claude
-Code does, and checks ``odoo_version`` plus a bounded ``odoo_search_read``.
-It then checks the field entries of the plugin's cross-version table
-(``compat/deltas.py``) against the live instance, for every model it has.
+It starts ``server/run_stdio.py`` with the credential ``/odoo-tools:deploy-local``
+tells the user to set (read from the owner-only ``.env``, never printed): the
+admin's API key that ``deploy_local.py`` created on Odoo 14+, with no password,
+and the admin password on Odoo 10 to 13, which have no API keys. It speaks MCP
+over stdio exactly as Claude Code does, and checks ``odoo_version`` plus a
+bounded ``odoo_search_read``. With the key on Odoo saas~18.4 / 19.0+ the server
+must reach Odoo over JSON-2, which takes API keys only. It then checks the
+field entries of the plugin's cross-version table (``compat/deltas.py``)
+against the live instance, for every model it has.
 
 The permission policy is checked against the same instance (design 9.7):
 
@@ -31,13 +35,15 @@ The permission policy is checked against the same instance (design 9.7):
   automated actions module is installed. Both are removed again;
 * afterwards, the audit trail both sessions wrote to a folder inside the
   sandbox directory verifies with ``run_stdio.py --verify-audit``, records every
-  refusal above with its rule, and never holds the admin password. The folder
-  is removed when every check passes and kept for inspection otherwise.
+  refusal above with its rule, and never holds the admin password or the API
+  key. The folder is removed when every check passes and kept for inspection
+  otherwise.
 
 A check whose model or field does not exist on the series is skipped, with the
 reason in the report. ``--install-automation`` first installs the automated
 actions module (``base_action_rule`` on 10, ``base_automation`` from 11) over
-XML-RPC as the sandbox admin: odoo-tools itself never installs modules.
+XML-RPC as the sandbox admin, with the same credential: odoo-tools itself never
+installs modules.
 """
 
 from __future__ import annotations
@@ -64,8 +70,11 @@ from odoo_mcp.compat import EnvFacts, resolve_field, resolve_model
 from odoo_mcp.compat.deltas import FIELD_REMOVED, FIELD_RENAMES
 from odoo_mcp.compat.detect import parse_version
 from odoo_mcp.policy.tiers import BEST_EFFORT, DELEGATES, NEVER, TIERS, pattern_matches
+from odoo_mcp.transport.fallback import JSON2_SINCE, series_of
 
 RUN_STDIO = ROOT / "server" / "run_stdio.py"
+API_KEYS_SINCE = 14  # Odoo 14.0 added API keys; deploy_local.py creates the admin's from there
+CREDENTIALS = {"api_key": "API key", "password": "admin password"}
 DIGEST = re.compile(r"[0-9a-f]{12}")
 # "(profile 'standard', rule tier:security, alias of ...)": the rule token alone.
 RULE = re.compile(r"\(profile '[^']*', rule ([^\s,)]+)")
@@ -94,6 +103,22 @@ def read_env(path: Path) -> dict[str, str]:
             key, _, value = line.partition("=")
             values[key.strip()] = value.strip()
     return values
+
+
+def credential(env_file: dict[str, str], major: int) -> tuple[str, str, str]:
+    """(kind, api_key, password) for the MCP server, as /odoo-tools:deploy-local tells the
+    user: on Odoo 14+ the API key deploy_local.py created, with the password empty; on 10 to
+    13, which have no API keys, the admin password. No message holds either value."""
+    api_key = env_file.get("ODOO_API_KEY", "")
+    if major >= API_KEYS_SINCE:
+        if not api_key:
+            raise SystemExit("the sandbox .env holds no ODOO_API_KEY: deploy_local.py sandbox "
+                             f"up creates one for the admin user on Odoo {API_KEYS_SINCE}.0+")
+        return "api_key", api_key, ""
+    if api_key:
+        raise SystemExit(f"the sandbox .env holds an ODOO_API_KEY on Odoo {major}, which has "
+                         "no API keys")
+    return "password", "", env_file["ODOO_ADMIN_PASSWORD"]
 
 
 def call(proc: subprocess.Popen, msg_id: int, method: str, params: dict) -> dict:
@@ -325,6 +350,24 @@ def check_policy_block(version: dict, profile: str, offline: dict[str, Any]) -> 
     checks.notes.append(f"warnings: {', '.join(c for c in codes if c) or 'none'}"
                         + (" (W10: the sandbox admin is an administrator)" if "W10" in codes
                            else ""))
+    return checks
+
+
+def check_credential(version: dict, kind: str) -> Checks:
+    """What ``odoo_version`` says about the connection the credential made. With an API key
+    on Odoo saas~18.4 / 19.0+ the server uses JSON-2 (the only API left in Odoo 22), so a
+    fall back to /xmlrpc or /jsonrpc there means JSON-2 did not take the key."""
+    checks = Checks()
+    transport = version.get("transport")
+    checks.checked.append(f"signed in with the sandbox {CREDENTIALS[kind]} over {transport}")
+    series = series_of({"server_version": version.get("raw_version") or ""})
+    if kind == "api_key" and series is not None and series >= JSON2_SINCE:
+        label = f"Odoo {series[0]}.{series[1]}"
+        if transport == "json2":
+            checks.checked.append(f"{label}: JSON-2 takes the API key")
+        else:
+            checks.problems.append(f"{label} with an API key should use JSON-2; the server "
+                                   f"used {transport} ({version.get('transport_notice')})")
     return checks
 
 
@@ -651,8 +694,9 @@ def check_builder(run: Run, major: int, field_name: str, automation: bool | str)
 
 
 def check_audit(directory: Path, *, starts: int, refusals: Iterable[tuple[str, str]],
-                secret: str) -> Checks:
-    """The audit files verify, hold the expected starts and refusals, and no secret."""
+                withheld: dict[str, str]) -> Checks:
+    """The audit files verify, hold the expected starts and refusals, and none of the
+    ``withheld`` values (label: value, the sandbox admin password and its API key)."""
     checks = Checks()
     files = sorted(Path(directory).glob(AUDIT_FILES))
     if not files:
@@ -667,8 +711,9 @@ def check_audit(directory: Path, *, starts: int, refusals: Iterable[tuple[str, s
         else:
             checks.checked.append(f"--verify-audit {path.name}: chain intact")
         raw = path.read_bytes()
-        if secret and secret.encode("utf-8") in raw:
-            checks.problems.append(f"{path.name} holds the sandbox admin password")
+        for label, value in withheld.items():
+            if value and value.encode("utf-8") in raw:
+                checks.problems.append(f"{path.name} holds {label}")
         for line in raw.splitlines():
             try:
                 entry = json.loads(line)
@@ -702,11 +747,13 @@ class _TimeoutTransport(xmlrpc.client.Transport):
         return conn
 
 
-def install_automation(url: str, db: str, login: str, password: str, major: int,
+def install_automation(url: str, db: str, login: str, secret: str, major: int,
                        timeout: float = 900.0) -> str:
     """Install Odoo's automated actions module over XML-RPC, as the sandbox admin,
     before the MCP sessions start (test setup: the policy closes ir.module.module
-    to the agent). Returns what was done; the password is never shown."""
+    to the agent). ``secret`` is the server's credential: the API key on Odoo 14+,
+    which XML-RPC takes where the password goes, else the password. Returns what
+    was done; the secret is never shown."""
     module = "base_action_rule" if major == 10 else "base_automation"
 
     def proxy(service: str) -> xmlrpc.client.ServerProxy:
@@ -714,17 +761,17 @@ def install_automation(url: str, db: str, login: str, password: str, major: int,
                                          transport=_TimeoutTransport(timeout))
 
     try:
-        uid = proxy("common").authenticate(db, login, password, {})
+        uid = proxy("common").authenticate(db, login, secret, {})
         if not uid:
             raise SystemExit("the sandbox admin could not sign in over XML-RPC")
         objects = proxy("object")
-        rows = objects.execute_kw(db, uid, password, "ir.module.module", "search_read",
+        rows = objects.execute_kw(db, uid, secret, "ir.module.module", "search_read",
                                   [[["name", "=", module]]], {"fields": ["state"]})
         if not rows:
             return f"{module} is not available on this series"
         if rows[0].get("state") == "installed":
             return f"{module} was already installed"
-        objects.execute_kw(db, uid, password, "ir.module.module", "button_immediate_install",
+        objects.execute_kw(db, uid, secret, "ir.module.module", "button_immediate_install",
                            [[rows[0]["id"]]])
     except xmlrpc.client.Fault as exc:
         last = (str(exc.faultString or "").strip().splitlines() or [""])[-1]
@@ -760,10 +807,12 @@ def main(argv: list[str]) -> int:
     sandbox = Path(args.dir).expanduser()
     env_file = read_env(sandbox / ".env")
     url = f"http://localhost:{env_file['ODOO_PORT']}"
-    login, secret = env_file["ODOO_ADMIN_LOGIN"], env_file["ODOO_ADMIN_PASSWORD"]
+    login, password = env_file["ODOO_ADMIN_LOGIN"], env_file["ODOO_ADMIN_PASSWORD"]
+    kind, api_key, server_password = credential(env_file, args.expect)
     fixture = None
     if args.install_automation:
-        fixture = install_automation(url, env_file["ODOO_DB"], login, secret, args.expect)
+        fixture = install_automation(url, env_file["ODOO_DB"], login, api_key or password,
+                                     args.expect)
     offline = {profile: offline_policy(profile) for profile in ("standard", "builder")}
     audit_dir = Path(tempfile.mkdtemp(prefix="smoke-audit-", dir=str(sandbox)))
     env = dict(os.environ)
@@ -771,8 +820,8 @@ def main(argv: list[str]) -> int:
         "ODOO_URL": url,
         "ODOO_DB": env_file["ODOO_DB"],
         "ODOO_LOGIN": login,
-        "ODOO_PASSWORD": secret,
-        "ODOO_API_KEY": "",
+        "ODOO_PASSWORD": server_password,
+        "ODOO_API_KEY": api_key,
         "ODOO_POLICY": "standard",
         "ODOO_POLICY_FILE": "",
         "ODOO_READONLY": "",
@@ -782,6 +831,7 @@ def main(argv: list[str]) -> int:
     try:
         server = initialize(proc)
         version = tool(proc, 2, "odoo_version", {})
+        signed_in = check_credential(version, kind)
         partners = tool(proc, 3, "odoo_search_read",
                         {"model": "res.partner", "fields": ["name"], "limit": 1})
         deltas = check_deltas(proc, 3, version)
@@ -807,12 +857,14 @@ def main(argv: list[str]) -> int:
     finally:
         stop_server(proc)
 
-    audit = check_audit(audit_dir, starts=2, refusals=standard.refusals, secret=secret)
+    audit = check_audit(audit_dir, starts=2, refusals=standard.refusals,
+                        withheld={"the sandbox admin password": password,
+                                  "the sandbox API key": api_key})
     print(format_table(tier_rows, major))
     groups = {"standard: odoo_version": standard_block, "standard: refusals": standard,
               "standard: delegation": delegates, "builder: odoo_version": builder_block,
               "builder: studio tools": builder, "audit": audit}
-    report = {"server": server, "odoo": version,
+    report = {"server": server, "odoo": version, "credential": signed_in.as_dict(),
               "partners_read": len(partners.get("records", [])), "deltas": deltas,
               "policy": {name: checks.as_dict() for name, checks in groups.items()}}
     report["policy"]["tier_models"] = {f"{row['group']}:{row['pattern']}": row["found"]
@@ -825,6 +877,8 @@ def main(argv: list[str]) -> int:
         raise SystemExit(f"expected Odoo {args.expect}, the server reports {version}")
     if version.get("edition") != "community":
         raise SystemExit(f"expected a Community sandbox, got {version.get('edition')}")
+    if signed_in.problems:
+        raise SystemExit("credential: " + "; ".join(signed_in.problems))
     if report["partners_read"] < 1:
         raise SystemExit("res.partner returned no record")
     if not deltas["checked"]:
