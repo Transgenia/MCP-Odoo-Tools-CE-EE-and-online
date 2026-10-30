@@ -44,17 +44,22 @@ Then:
    2. Assisted setup by Transgenia: **dev@transgenia.org** · WhatsApp
       **+52 55 8034 0405** (https://wa.me/525580340405).
 4. **Claude Code:** the server did not start. The usual causes are empty Odoo URL,
-   database or login options, or a second copy of the plugin. Run the copies check
-   and, for the copy it keeps, the options check (they read what Claude Code prints,
-   contact nothing and never show the key):
+   database or login options, a second copy of the plugin, or, on Windows, no
+   `python3` command: the python.org installer provides only `python` and `py`, and
+   `claude mcp list` then reports the server as `Failed to connect` with
+   `Connection closed`, without naming Python. Run the copies check and, for the
+   copy it keeps, the options check (they read what Claude Code prints, contact
+   nothing and never show the key):
 
    ```bash
    claude plugin list --json | python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-copies
    claude plugin configure <id> --json | python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-options
    ```
 
-   If `claude` is not found, use `"$HOME/.local/bin/claude"`. Show both outputs as
-   they are and follow `/odoo-tools:odoo-setup-mcp`, Phase 0b. The commands the
+   If `claude` is not found, use `"$HOME/.local/bin/claude"`. If `python3` is not
+   found, that is the cause: give the Windows fix of `/odoo-tools:odoo-setup-mcp`,
+   Step 1A, and stop here. Otherwise show both outputs as they are and follow
+   `/odoo-tools:odoo-setup-mcp`, Phase 0b. The commands the
    copies check prints are for a terminal (PowerShell or Terminal), not for
    `/plugin`.
 5. Finish with the support report (step 4).

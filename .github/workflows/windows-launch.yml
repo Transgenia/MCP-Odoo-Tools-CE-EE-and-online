@@ -9,8 +9,11 @@ name: Windows launch
 # server and hooks run `python3`. Two cases:
 #   - python3: a python3.exe hard link next to python.exe (the fix the README
 #     and /odoo-tools:odoo-setup-mcp give). The server must connect.
-#   - python-only: no python3.exe on PATH. The job records what Claude Code
-#     reports there, to decide how the plugin starts on Windows; it does not fail.
+#   - python-only: no python3.exe on PATH. Claude Code 2.1.314 reports the
+#     server as "Failed to connect" with "Connection closed", without naming
+#     Python. README.md, docs/install.md, /odoo-tools:odoo-setup-mcp and
+#     /odoo-tools:odoo-doctor quote that message as the sign of a missing
+#     python3, so the job fails if a new Claude Code version reports it otherwise.
 #
 # The connection options are non-secret placeholders (127.0.0.1:9, nothing
 # listens there): the server starts without contacting Odoo.
@@ -114,5 +117,10 @@ jobs:
           "### Windows, ${{ matrix.case }}`n`n``$env:LINE```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           if ("${{ matrix.case }}" -eq "python3" -and $env:CONNECTED -ne "True") {
             "::error::with python3.exe on PATH, the plugin's MCP server did not start under Claude Code"
+            exit 1
+          }
+          $closed = $env:LINE -match 'Failed to connect' -and $env:LINE -match 'Connection closed'
+          if ("${{ matrix.case }}" -eq "python-only" -and -not $closed) {
+            "::error::without python3.exe, Claude Code no longer reports 'Failed to connect' with 'Connection closed'; update the Windows notes in README.md, docs/install.md, the setup skill and the doctor"
             exit 1
           }

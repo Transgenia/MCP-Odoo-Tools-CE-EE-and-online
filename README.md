@@ -201,7 +201,9 @@ verifies the connection with `odoo_version`.
     `py`. Either install Python from the Microsoft Store, or put a `python3.exe`
     on `PATH` (e.g. a copy of or hard link to `python.exe` in the Python folder).
     A PowerShell or `doskey` alias is not enough: Claude Code starts the command
-    directly, not through your shell.
+    directly, not through your shell. Without `python3`, `claude mcp list` reports
+    the plugin's server as `Failed to connect` with `Connection closed`, and
+    nothing names Python.
   - **Windows, session-start hooks:** they are shell commands, so they need Git for
     Windows (Git Bash). Without it Claude Code runs them in PowerShell, where they
     fail with a SessionStart hook error. The MCP server itself is not affected.

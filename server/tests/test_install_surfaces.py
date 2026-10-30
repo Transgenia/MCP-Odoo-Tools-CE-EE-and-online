@@ -88,3 +88,16 @@ def test_no_guide_sends_the_user_to_a_menu_that_does_not_exist() -> None:
     found = [str(path.relative_to(ROOT)) for path in _guides()
              if "/plugin manage" in path.read_text(encoding="utf-8")]
     assert not found, found
+
+
+def test_the_windows_guides_name_the_sign_of_a_missing_python3() -> None:
+    # windows-launch.yml, case python-only: without python3.exe, Claude Code 2.1.314 reports
+    # the server as "Failed to connect" with "Connection closed", and nothing names Python.
+    # The guides quote that message, and the workflow fails if Claude Code changes it.
+    sign = "`Failed to connect` with `Connection closed`"
+    for name in ("README.md", "docs/install.md", "skills/odoo-setup-mcp/SKILL.md",
+                 "commands/odoo-doctor.md"):
+        text = " ".join((ROOT / name).read_text(encoding="utf-8").split())
+        assert sign in text, name
+    workflow = (ROOT / ".github/workflows/windows-launch.yml").read_text(encoding="utf-8")
+    assert "-match 'Failed to connect' -and $env:LINE -match 'Connection closed'" in workflow

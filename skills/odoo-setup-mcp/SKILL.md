@@ -151,7 +151,9 @@ If it is missing, too old, or prints no version, give the fix for their OS:
   `doskey` alias is not enough, because Claude Code starts the command
   directly. If `python3` opens the Microsoft Store, that is the App execution
   alias stub: install the Store Python, or turn that alias off in Windows
-  Settings so the user's own `python3.exe` is found.
+  Settings so the user's own `python3.exe` is found. Without `python3`,
+  `claude mcp list` reports the plugin's server as `Failed to connect` with
+  `Connection closed`, and nothing names Python.
 - **Windows, session-start hooks:** they are shell commands and need Git for
   Windows (Git Bash); without it Claude Code runs them in PowerShell and shows a
   SessionStart hook error (`CLAUDE_CODE_GIT_BASH_PATH` points Claude Code at a Git

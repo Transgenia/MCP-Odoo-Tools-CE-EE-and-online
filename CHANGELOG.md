@@ -58,9 +58,14 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
   plugin from the checkout on Windows and runs `claude mcp list`, which starts the
   MCP server without a model call. It runs twice:
   - with a `python3.exe` hard link next to `python.exe` (the fix the guided route
-    gives), where the server must connect;
-  - with no `python3.exe`, as after the python.org installer, where it records what
-    Claude Code reports.
+    gives): the server connects;
+  - with no `python3.exe`, as after the python.org installer: Claude Code 2.1.314
+    reports the server as `Failed to connect` with `Connection closed`, without
+    naming Python.
+
+  The README, `docs/install.md`, the guided route and `/odoo-tools:odoo-doctor` now
+  name that message as the sign of a missing `python3` on Windows. The job fails if
+  a new Claude Code version reports it otherwise.
 - **Evals.** Two cases from that onboarding:
   - an `odoo_version` answer without `policy`;
   - `/plugin install` typed in PowerShell.
