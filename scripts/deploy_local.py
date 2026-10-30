@@ -314,6 +314,20 @@ def wait_for_odoo(url: str, timeout: float) -> dict[str, Any]:
                        "See the logs: deploy_local.py sandbox logs")
 
 
+def new_secret(nbytes: int) -> str:
+    """A random URL-safe secret that does not start with "-".
+
+    The Odoo image's entrypoint passes the database password to ``wait-for-psql.py`` on its
+    command line, where argparse reads a leading "-" as an option ("argument --db_password:
+    expected one argument"): the container restarts forever and ``sandbox up`` times out.
+    ``token_urlsafe`` starts with "-" about once in 64 draws.
+    """
+    while True:
+        value = secrets.token_urlsafe(nbytes)
+        if not value.startswith("-"):
+            return value
+
+
 def has_api_keys(version: str) -> bool:
     """Whether an Odoo series such as ``"14.0"`` has API keys."""
     return int(version.split(".")[0]) >= API_KEY_SINCE
@@ -381,6 +395,14 @@ class Sandbox:
         means "keep the current value, or the default".
         """
         existing = read_env(self.env_file)
+        if existing.get("PG_PASSWORD", "").startswith("-"):
+            # Made before 1.6.0 (see new_secret): Odoo never started with it, so nothing
+            # is lost by starting over. The message holds no part of the password.
+            raise SandboxError(
+                "This sandbox was created with a database password that the Odoo image "
+                "cannot use (fixed in odoo-tools 1.6.0), so Odoo never started. Run "
+                "`sandbox destroy --yes`, then `sandbox up` again."
+            )
         ready = existing.get("ODOO_READY") == "1"
         if ready and version and version != existing.get("ODOO_VERSION"):
             raise SandboxError(
@@ -413,11 +435,9 @@ class Sandbox:
             "POSTGRES_IMAGE": f"{pg_repo}:{POSTGRES_FOR[version]}",
             "ODOO_PLATFORM": "linux/amd64" if version in AMD64_ONLY else "",
             "ODOO_ADMIN_LOGIN": existing.get("ODOO_ADMIN_LOGIN", "admin"),
-            "ODOO_ADMIN_PASSWORD": existing.get("ODOO_ADMIN_PASSWORD")
-            or secrets.token_urlsafe(18),
-            "ODOO_MASTER_PASSWORD": existing.get("ODOO_MASTER_PASSWORD")
-            or secrets.token_urlsafe(24),
-            "PG_PASSWORD": existing.get("PG_PASSWORD") or secrets.token_urlsafe(24),
+            "ODOO_ADMIN_PASSWORD": existing.get("ODOO_ADMIN_PASSWORD") or new_secret(18),
+            "ODOO_MASTER_PASSWORD": existing.get("ODOO_MASTER_PASSWORD") or new_secret(24),
+            "PG_PASSWORD": existing.get("PG_PASSWORD") or new_secret(24),
             "ODOO_READY": "1" if ready else "0",
         }
         if existing.get("ODOO_API_KEY"):

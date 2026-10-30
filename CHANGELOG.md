@@ -134,6 +134,15 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
 
 ### Fixed
 
+- **A local sandbox that never started.**
+  - **The cause:** about one new sandbox in 64 got a database password that starts
+    with "-". The Odoo image passes that password to `wait-for-psql.py` on its
+    command line, which read it as an option. The Odoo container then restarted
+    forever, and `sandbox up` timed out. The sandbox matrix met it on Odoo 17.0.
+  - **The fix:** generated passwords no longer start with "-".
+  - **Sandboxes made before 1.6.0:** one made with such a password says to run
+    `sandbox destroy --yes`, then `sandbox up` again. Odoo never started with it, so
+    nothing is lost.
 - **The other keys of a context passed positionally, on Odoo 10 to 12.**
   - **The gap:** 1.5.1 held the `default_<field>` keys of an object passed
     positionally to a business method (a method outside the policy's argument
