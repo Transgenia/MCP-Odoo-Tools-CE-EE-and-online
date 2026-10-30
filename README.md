@@ -199,7 +199,8 @@ verifies the connection with `odoo_version`.
   - **Windows:** the command must be named `python3`. The Microsoft Store Python
     provides `python3.exe`; the python.org installer provides only `python` and
     `py`. Either install Python from the Microsoft Store, or put a `python3.exe`
-    on `PATH` (e.g. a copy of or hard link to `python.exe` in the Python folder).
+    on `PATH` (e.g. a copy of or hard link to `python.exe` in the Python folder;
+    the PowerShell command is in [docs/install.md](docs/install.md)).
     A PowerShell or `doskey` alias is not enough: Claude Code starts the command
     directly, not through your shell. Without `python3`, `claude mcp list` reports
     the plugin's server as `Failed to connect` with `Connection closed`, and

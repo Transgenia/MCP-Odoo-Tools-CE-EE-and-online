@@ -79,7 +79,20 @@ download, at install time or at start-up.
   `python3.exe` entry under **App execution aliases** in Windows Settings so
   your own `python3.exe` is found. Without `python3`, `claude mcp list` reports
   the plugin's server as `Failed to connect` with `Connection closed`, and
-  nothing names Python. The session-start hooks are shell commands and need Git for Windows (Git Bash);
+  nothing names Python. The hard link, in PowerShell:
+
+  ```powershell
+  $python = (Get-Command python -ErrorAction Stop).Source
+  New-Item -ItemType HardLink -Path (Join-Path (Split-Path $python) "python3.exe") -Target $python
+  ```
+
+  It needs write access to the Python folder: for an installation under
+  `C:\Program Files`, run PowerShell as administrator. If `Get-Command python`
+  finds nothing, or a file under `WindowsApps`, Python is not on `PATH`: run the
+  python.org installer again and select "Add python.exe to PATH", or install the
+  Store Python. CI checks this fix on Windows (`windows-launch.yml`).
+
+  The session-start hooks are shell commands and need Git for Windows (Git Bash);
   without it Claude Code runs them in PowerShell and shows a SessionStart hook
   error (set `CLAUDE_CODE_GIT_BASH_PATH` if Git Bash is installed but not found).
   The MCP server is not affected.
