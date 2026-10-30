@@ -1,0 +1,127 @@
+name: Windows launch
+
+# Starts the plugin's MCP server the way Claude Code does on Windows, with no
+# model call: Claude Code installs the plugin from this checkout and
+# `claude mcp list` starts every plugin server and reports whether it connected.
+#
+# A Windows onboarding on 2026-10-29 found no `python3` on the computer, and the
+# python.org installer provides only python.exe and py.exe, while the plugin's
+# server and hooks run `python3`. Two cases:
+#   - python3: a python3.exe hard link next to python.exe (the fix the README
+#     and /odoo-tools:odoo-setup-mcp give). The server must connect.
+#   - python-only: no python3.exe on PATH. Claude Code 2.1.314 reports the
+#     server as "Failed to connect" with "Connection closed", without naming
+#     Python. README.md, docs/install.md, /odoo-tools:odoo-setup-mcp and
+#     /odoo-tools:odoo-doctor quote that message as the sign of a missing
+#     python3, so when CLAUDE_CODE moves to a new version the job fails if that
+#     version reports it otherwise.
+#
+# The connection options are non-secret placeholders (127.0.0.1:9, nothing
+# listens there): the server starts without contacting Odoo.
+
+on:
+  pull_request:
+    paths:
+      - ".claude-plugin/**"
+      - "server/run_stdio.py"
+      - "server/src/**"
+      - ".github/workflows/windows-launch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Claude Code's own version, pinned like the other workflows pin their tools.
+  CLAUDE_CODE: "@anthropic-ai/claude-code@2.1.314"
+
+jobs:
+  launch:
+    name: windows, ${{ matrix.case }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [python3, python-only]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Install Claude Code
+        shell: pwsh
+        run: |
+          npm install -g "$env:CLAUDE_CODE"
+          claude --version
+      - name: Make python3 available (case python3) or absent (case python-only)
+        shell: pwsh
+        run: |
+          $python = (Get-Command python -ErrorAction Stop).Source
+          $dir = Split-Path $python
+          $link = Join-Path $dir "python3.exe"
+          if ("${{ matrix.case }}" -eq "python3") {
+            if (-not (Test-Path $link)) {
+              # The fix the guided route gives: a hard link named python3.exe next to python.exe.
+              New-Item -ItemType HardLink -Path $link -Target $python | Out-Null
+            }
+          } else {
+            # No python3.exe on PATH, as with the python.org installer: delete one that sits
+            # next to python.exe, and drop a folder that holds only a python3.exe (such as the
+            # App execution alias stub), so that python and py still resolve.
+            $kept = foreach ($folder in ($env:Path -split ';')) {
+              if (-not $folder) { continue }
+              $stub = Join-Path $folder "python3.exe"
+              if (Test-Path $stub) {
+                if (Test-Path (Join-Path $folder "python.exe")) { Remove-Item $stub -Force; $folder }
+              } else {
+                $folder
+              }
+            }
+            "Path=$($kept -join ';')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+      - name: Which Python commands resolve
+        shell: pwsh
+        run: |
+          foreach ($name in "python3", "python", "py") {
+            $found = Get-Command $name -ErrorAction SilentlyContinue
+            "{0,-8} {1}" -f $name, $(if ($found) { $found.Source } else { "(not found)" })
+          }
+      - name: Install the plugin from this checkout
+        shell: pwsh
+        run: |
+          claude plugin install odoo-tools --marketplace "$env:GITHUB_WORKSPACE" --scope user `
+            --config odoo_url=http://127.0.0.1:9 --config odoo_db=ci --config odoo_login=ci
+          claude plugin list
+      - name: Start the plugin's servers through Claude Code
+        id: list
+        shell: pwsh
+        run: |
+          $out = (claude mcp list 2>&1 | Out-String)
+          $out
+          $line = ($out -split "`n" | Where-Object { $_ -match 'plugin:odoo-tools:odoo' }) -join ' '
+          "line=$($line.Trim())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $connected = $line -match 'Connected'
+          "connected=$connected" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Summary
+        shell: pwsh
+        env:
+          LINE: ${{ steps.list.outputs.line }}
+          CONNECTED: ${{ steps.list.outputs.connected }}
+        run: |
+          "### Windows, ${{ matrix.case }}`n`n``$env:LINE```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ("${{ matrix.case }}" -eq "python3" -and $env:CONNECTED -ne "True") {
+            "::error::with python3.exe on PATH, the plugin's MCP server did not start under Claude Code"
+            exit 1
+          }
+          $closed = $env:LINE -match 'Failed to connect' -and $env:LINE -match 'Connection closed'
+          if ("${{ matrix.case }}" -eq "python-only" -and -not $closed) {
+            "::error::without python3.exe, Claude Code no longer reports 'Failed to connect' with 'Connection closed'; update the Windows notes in README.md, docs/install.md, the setup skill and the doctor"
+            exit 1
+          }

@@ -9,6 +9,7 @@ from typing import Any
 from ..compat import resolve_model
 from ..compat.detect import EnvFacts
 from ..errors import CompatError, OdooFault, TransportError
+from ..install_check import plugin_identity
 from ..policy.guard import user_has_group
 from ..policy.texts import ADMIN_WARNING
 from ..registry import NO_MODEL, Access, Internal, ToolContext, obj, registry
@@ -36,7 +37,9 @@ def _administrator(ctx: ToolContext, facts: EnvFacts) -> bool | None:
     "deployment (onprem/saas), the active transport (json2, jsonrpc or xmlrpc) and "
     "transport_notice, set when the deprecated /xmlrpc or /jsonrpc is in use on Odoo 19+. "
     "'policy' describes the odoo-tools permission policy in force (profile, file, digest, "
-    "hidden tools, openings, warnings, or the error that locked it).",
+    "hidden tools, openings, warnings, or the error that locked it). 'plugin' names the "
+    "odoo-tools version that answered and, in Claude Code, its installed copy "
+    "(plugin@marketplace): with two copies installed, it tells which one runs.",
     obj({}),
     access=Access(
         internal=(Internal("res.users", frozenset({"has_group"}),
@@ -46,14 +49,17 @@ def _administrator(ctx: ToolContext, facts: EnvFacts) -> bool | None:
 )
 def odoo_version(ctx: ToolContext, args: dict[str, Any]) -> Any:
     policy = ctx.policy
+    plugin = ctx.plugin if ctx.plugin is not None else plugin_identity("", "")
     if policy is not None and policy.locked:
         # Locked: say why without contacting Odoo (the server built no session).
-        return {"policy": policy.describe(registry.all()), "note": str(policy.lock_error())}
+        return {"plugin": plugin, "policy": policy.describe(registry.all()),
+                "note": str(policy.lock_error())}
     # The version itself needs no credentials; signing in first makes this the
     # connection check the guided route and /odoo-doctor rely on.
     _ = ctx.session.uid
     facts = ctx.session.facts()
     result: dict[str, Any] = {
+        "plugin": plugin,
         "version": facts.version,
         "raw_version": facts.raw_version,
         "edition": facts.edition,

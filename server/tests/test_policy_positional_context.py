@@ -17,6 +17,13 @@ Closed by construction, without refusing ordinary calls:
   * Layer B: the guarded session applies the same on 10 to 12, as a backstop; from 13 the
     positional objects are values, checked as before.
   * ``full`` is unchanged. A refusal names the key, never its value, and gives the remedy.
+
+1.6.0 closes what 1.5.1 left (known limit 10): on Odoo 10 to 12 the guarded session also decides
+the other keys of an object passed positionally to a method outside the table, with the model's
+fields. A field of the model is one of the method's values (checked as before); an allowed
+context key passes; any other key is a context key outside the allowlist, refused with rule
+``context``. When the fields cannot be read the call is refused (rule ``unverified``). From 13,
+and for the methods the table names, nothing changes.
 """
 
 from __future__ import annotations
@@ -27,9 +34,9 @@ from typing import Any
 import pytest
 from policy_fakes import ScriptedSession, call, guarded, policy, refused, server
 
-from odoo_mcp.errors import PolicyDenied
+from odoo_mcp.errors import PolicyDenied, TransportError
 from odoo_mcp.policy import texts
-from odoo_mcp.policy.check import STRUCTURAL_DEFAULT_FIELDS
+from odoo_mcp.policy.check import STRUCTURAL_DEFAULT_FIELDS, field_or_context_keys
 from odoo_mcp.policy.classify import (
     ARG_SHAPES,
     OBJECT,
@@ -226,13 +233,23 @@ def test_a_context_by_name_keeps_its_own_wording() -> None:
     assert PLACE not in text
 
 
-def test_the_documented_residual_other_keys_of_an_opaque_object_are_values() -> None:
-    # docs/policy.md, known limit 10: an object passed positionally to a method outside the
-    # table may be its values, so only its default_<field> keys meet the context rules.
-    raw = ScriptedSession()
+@pytest.mark.parametrize(("version", "refused_here"), [(10, True), (11, True), (12, True),
+                                                       (13, False), (17, False)])
+def test_the_other_keys_of_an_opaque_object_pass_layer_a_and_meet_the_guard_on_10_to_12(
+        version: int, refused_here: bool) -> None:
+    # Layer A has no field metadata and does not know the series: an object passed positionally
+    # to a method outside the table may be its values, so only its default_<field> keys meet the
+    # context rules there. On 10 to 12 the guard decides the other keys with the model's fields
+    # (1.6.0, known limit 10); from 13 they are values, as before.
+    raw = ScriptedSession(version=version)
     err, text = _execute(raw, "res.partner", "action_confirm", ids=[3],
                          args=[{"name": "x", "tracking_disable": True}])
-    assert err is False, text
+    assert err is refused_here, text
+    if refused_here:
+        assert "rule context)" in text and texts.LAYER_B_SUFFIX in text, text
+        assert raw.sent() == []
+    else:
+        assert raw.sent() == [("res.partner", "action_confirm")]
 
 
 # --- the refusal ------------------------------------------------------------------------------
@@ -546,9 +563,8 @@ def test_a_list_that_builds_no_context_still_runs_in_those_slots(version: int, v
 @pytest.mark.parametrize("version", [12, 13])
 @pytest.mark.parametrize("value", [
     [[4, 5], [4, 6]],                          # x2many links: pairs without a text key
-    [["draft", "Draft"], ["done", "Done"]],    # selection pairs, no default_ key
-    [["Acme", "a@example.com"]],               # a row of two columns
-    ["fr", "es"],                              # langs
+    [["name", "x"], ["email", "a@example.com"]],  # pairs whose keys are fields of the model
+    ["fr", "es"],                              # langs: text only, no pairs
 ])
 def test_a_business_methods_list_of_pairs_without_a_context_default_runs(version: int,
                                                                          value: Any) -> None:
@@ -556,6 +572,26 @@ def test_a_business_methods_list_of_pairs_without_a_context_default_runs(version
     err, text = _execute(raw, "res.partner", "action_confirm", ids=[3], args=[value])
     assert err is False, text
     assert ("res.partner", "action_confirm") in raw.sent()
+
+
+@pytest.mark.parametrize(("version", "refused_here"), [(12, True), (13, False)])
+@pytest.mark.parametrize(("value", "key", "hidden"), [
+    ([["draft", "Draft"], ["done", "Done"]], "draft", "Draft"),     # selection pairs
+    ([["Acme", MARKER]], "Acme", MARKER),                          # a row of two columns
+])
+def test_a_list_of_text_pairs_whose_keys_are_not_fields_is_a_context_on_12(
+        version: int, refused_here: bool, value: Any, key: str, hidden: str) -> None:
+    # dict() makes a context of them, and their keys are no fields of res.partner, so on 12
+    # (1.6.0) they are context keys outside the allowlist; passed by name they would run.
+    raw = ScriptedSession(version=version)
+    err, text = _execute(raw, "res.partner", "action_confirm", ids=[3], args=[value])
+    if not refused_here:
+        assert err is False, text
+        assert ("res.partner", "action_confirm") in raw.sent()
+        return
+    assert err is True and raw.sent() == [], text
+    assert f"context key '{key}', {PLACE}, is not a field of 'res.partner'" in text, text
+    assert REMEDY in text and hidden not in text
 
 
 @pytest.mark.parametrize("version", [12, 13])
@@ -649,6 +685,304 @@ def test_load_rows_are_the_one_parameter_of_pairs_and_read_nothing() -> None:
     parts = extract("load", [["name", "email"], [["Acme", "a@example.com"]]])
     assert (parts.values, parts.paths, parts.contexts) == ([], [], [])
     assert parts.columns == [(("name",), False), (("email",), False)]
+
+
+# --- 1.6.0: the other keys of an object passed to a method outside the table -----------------
+# On Odoo 10 to 12 such an object may be the call's context or the method's values. Its
+# default_<field> keys meet the context rules (above). The guarded session decides its other
+# keys with the model's fields: a field of the model is a value, checked as a business method's
+# values are; an allowed context key passes; any other key is a context key outside the
+# allowlist, refused with rule context. From 13, and for the methods the table names, nothing
+# changes.
+
+READS_POSITIONAL = [10, 11, 12]  # the series that take a context by position
+EVERY = [10, 11, 12, 13]
+LOOKUP = ("res.partner", ["type", "relation", "relation_field"])  # the guard's fields_get
+NOT_A_FIELD = "is not a field of 'res.partner' and is not allowed through these tools"
+
+
+def _refused_in_the_guard(info: Any, raw: ScriptedSession, key: str, *,
+                          rule: str = "context") -> str:
+    text = str(info.value)
+    assert (info.value.rule, info.value.layer) == (rule, "B"), text
+    if rule == "context":
+        assert f"context key '{key}', {PLACE}, {NOT_A_FIELD}" in text, text
+    assert REMEDY in text and MARKER not in text, text
+    assert raw.calls == [], "the call was sent"
+    return text
+
+
+@pytest.mark.parametrize("version", EVERY)
+@pytest.mark.parametrize(("method", "args", "ids"), [
+    ("action_confirm", [{"name": MARKER, "email": "a@example.com"}], [3]),  # ids=
+    ("action_confirm", [[3], {"name": MARKER}], None),                     # legacy form
+    ("x_model_method", [{"comment": MARKER, "vat": "X"}], None),           # model method
+    ("action_confirm", [[["name", MARKER], ["email", "a@example.com"]]], [3]),  # as pairs
+    ("action_confirm", [{"name": MARKER, "lang": "es_MX", "default_name": "y"}], [3]),
+])
+def test_a_key_that_is_a_field_of_the_model_is_a_value_on_every_series(
+        version: int, method: str, args: list[Any], ids: Any) -> None:
+    g, raw = _guard("res.partner", method, version=version, ids=ids)
+    g.execute("res.partner", method, args, {}, ids=ids)
+    assert raw.sent() == [("res.partner", method)]
+    assert raw.call("res.partner", method)[0] == args  # sent as given
+    raw = ScriptedSession(version=version)  # and through Layer A first
+    arguments: dict[str, Any] = {"args": args} if ids is None else {"args": args, "ids": ids}
+    err, text = _execute(raw, "res.partner", method, **arguments)
+    assert err is False, text
+
+
+@pytest.mark.parametrize("version", EVERY)
+@pytest.mark.parametrize(("args", "rule"), [
+    ([{"signup_token": MARKER}], "field"),                          # a withheld field
+    ([[["signup_token", MARKER]]], "field"),                        # the same, as a pair
+    ([{"user_ids": [[1, 4, {"login": MARKER}]]}], "relational"),     # x2many into res.users
+])
+def test_a_field_key_still_meets_the_rules_of_a_value(version: int, args: list[Any],
+                                                      rule: str) -> None:
+    # Read as one of the method's values, a field key meets what a business method's values
+    # meet (the call-class backstop), on every series as before.
+    g, raw = _guard("res.partner", "action_confirm", version=version, ids=[3])
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", "action_confirm", args, {}, ids=[3])
+    assert (info.value.rule, info.value.layer) == (rule, "B")
+    assert MARKER not in str(info.value) and raw.calls == []
+
+
+@pytest.mark.parametrize("version", EVERY)
+@pytest.mark.parametrize("args", [
+    [{"lang": "es_MX", "active_test": False}],
+    [{"tz": "UTC", "uid": 2, "allowed_company_ids": [1]}],
+    [[["lang", "es_MX"], ["skip_backorder", True]]],               # as pairs
+    [{"active_model": "res.partner", "active_ids": [3], "default_name": "x"}],
+])
+def test_an_allowed_context_key_that_is_no_field_passes_on_every_series(
+        version: int, args: list[Any]) -> None:
+    g, raw = _guard("res.partner", "action_confirm", version=version, ids=[3])
+    g.execute("res.partner", "action_confirm", args, {}, ids=[3])
+    assert raw.sent() == [("res.partner", "action_confirm")]
+
+
+@pytest.mark.parametrize("version", READS_POSITIONAL)
+@pytest.mark.parametrize(("method", "args", "ids", "key"), [
+    ("action_confirm", [{"tracking_disable": MARKER}], [3], "tracking_disable"),
+    ("action_confirm", [[3], {"name": "x", "mail_notrack": MARKER}], None, "mail_notrack"),
+    ("x_model_method", [{"force_company": MARKER}], None, "force_company"),
+    ("action_confirm", [{"mail_create_nolog": MARKER, "lang": "es_MX"}], [3],
+     "mail_create_nolog"),
+    # a field of another model (res.users) is no field of res.partner
+    ("action_confirm", [{"login": MARKER}], [3], "login"),
+    # any position: every object passed to such a method may be the context
+    ("action_confirm", ["a word", {"lang": "es_MX"}, {"check_move_validity": MARKER}], [3],
+     "check_move_validity"),
+])
+def test_a_key_that_is_no_field_and_not_allowed_is_refused_on_10_to_12(
+        version: int, method: str, args: list[Any], ids: Any, key: str) -> None:
+    g, raw = _guard("res.partner", method, version=version, ids=ids)
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", method, args, {}, ids=ids)
+    _refused_in_the_guard(info, raw, key)
+
+
+@pytest.mark.parametrize("version", [13, 17, 19])
+def test_from_13_a_key_that_is_no_field_is_a_value_as_before(version: int) -> None:
+    g, raw = _guard("res.partner", "action_confirm", version=version, ids=[3])
+    g.execute("res.partner", "action_confirm", [{"tracking_disable": MARKER}], {}, ids=[3])
+    assert raw.sent() == [("res.partner", "action_confirm")]
+
+
+def test_the_refusal_names_the_key_and_the_remedy_through_both_layers() -> None:
+    # Layer A lets the object pass (it has no field metadata and does not know the series);
+    # the guard on 12 refuses it before it is sent.
+    raw = ScriptedSession(version=12)
+    hint = ("context key 'tracking_disable', in a positional argument, which Odoo 10 to 12 "
+            "take as the call's context, is not a field of 'res.partner' and is not allowed "
+            f"through these tools (allowed: {texts.CONTEXT_ALLOWED}); pass the context by "
+            "name in kwargs 'context' (the same rules apply there) and the method's other "
+            "arguments by name, or put the values in the record's values")
+    err, text = _execute(raw, "res.partner", "action_confirm", ids=[3],
+                         args=[{"tracking_disable": MARKER}])
+    assert (err, text) == (True, refused("call", "res.partner", "context", hint, layer="B"))
+    assert MARKER not in text and raw.sent() == []
+
+
+def test_a_key_that_is_not_a_plain_name_is_described_not_echoed_by_the_guard() -> None:
+    g, raw = _guard("res.partner", "action_confirm", version=12, ids=[3])
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", "action_confirm", [{f"{MARKER} key": True}], {}, ids=[3])
+    assert (info.value.rule, info.value.layer) == ("context", "B")
+    assert f"context key of that name, {PLACE}, {NOT_A_FIELD}" in str(info.value)
+    assert MARKER not in str(info.value) and raw.calls == []
+
+
+@pytest.mark.parametrize("version", EVERY)
+@pytest.mark.parametrize(("value", "key"), [
+    ([["tracking_disable", MARKER]], "tracking_disable"),
+    ((("tracking_disable", MARKER),), "tracking_disable"),           # tuples
+    ([[4, 5], ["mail_notrack", MARKER]], "mail_notrack"),             # beside an x2many link
+    ([["name", "x"], ["force_company", MARKER]], "force_company"),    # beside a field
+    ([{"tracking_disable": 1, "x": 0}], "tracking_disable"),         # dict() reads a two-key
+])                                                                   # object as its key pair
+def test_pairs_are_held_as_the_context_they_build(version: int, value: Any, key: str) -> None:
+    g, raw = _guard("res.partner", "action_confirm", version=version, ids=[3])
+    if version > POSITIONAL_CONTEXT_UNTIL:  # from 13 the list is a value, as before
+        g.execute("res.partner", "action_confirm", [value], {}, ids=[3])
+        assert raw.sent() == [("res.partner", "action_confirm")]
+        return
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", "action_confirm", [value], {}, ids=[3])
+    _refused_in_the_guard(info, raw, key)
+
+
+@pytest.mark.parametrize("version", EVERY)
+@pytest.mark.parametrize("value", [
+    [[4, 5], [4, 6]],          # x2many links: dict() builds {4: 6}
+    [[None, 1], [2.5, "x"]],   # no key is text
+    [["name", "x"], [4, 5]],   # a field, and a key that is not text
+])
+def test_a_key_that_is_not_text_is_left_alone(version: int, value: Any) -> None:
+    # Odoo reads context keys by their names: a key that is not text changes nothing there.
+    g, raw = _guard("res.partner", "action_confirm", version=version, ids=[3])
+    g.execute("res.partner", "action_confirm", [value], {}, ids=[3])
+    assert raw.sent() == [("res.partner", "action_confirm")]
+
+
+@pytest.mark.parametrize("version", READS_POSITIONAL)
+@pytest.mark.parametrize("args", [
+    [{"name": "x"}],                       # a field, which the guard cannot confirm
+    [{"tracking_disable": MARKER}],         # a context key outside the allowlist
+    [[["name", MARKER]]],                   # as pairs
+    [{"lang": "es_MX"}, {"email": MARKER}],  # one key to decide, in a second object
+])
+def test_fields_that_cannot_be_read_refuse_the_call_on_10_to_12(version: int,
+                                                               args: list[Any]) -> None:
+    raw = ScriptedSession(version=version, failing={"res.partner"})
+    g, _raw = _guard("res.partner", "action_confirm", version=version, ids=[3], session=raw)
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", "action_confirm", args, {}, ids=[3])
+    text = _refused_in_the_guard(info, raw, "", rule="unverified")
+    assert "fields_get failed on 'res.partner'" in text, text
+    assert raw.metadata == [LOOKUP]  # it tried once, and sent nothing
+
+
+@pytest.mark.parametrize("version", READS_POSITIONAL)
+def test_the_fields_are_read_only_when_a_key_needs_them(version: int) -> None:
+    # Every key is a default_<field> or an allowed context key: no field lookup is needed to
+    # decide them, so the call runs even where the fields cannot be read (the call-class
+    # backstop then finds no field, as before).
+    raw = ScriptedSession(version=version, failing={"res.partner"})
+    g, _raw = _guard("res.partner", "action_confirm", version=version, ids=[3], session=raw)
+    g.execute("res.partner", "action_confirm", [{"lang": "es_MX", "default_name": "x"}], {},
+              ids=[3])
+    assert raw.sent() == [("res.partner", "action_confirm")]
+
+
+def test_from_13_fields_that_cannot_be_read_change_nothing() -> None:
+    raw = ScriptedSession(version=13, failing={"res.partner"})
+    g, _raw = _guard("res.partner", "action_confirm", version=13, ids=[3], session=raw)
+    g.execute("res.partner", "action_confirm", [{"tracking_disable": MARKER}], {}, ids=[3])
+    assert raw.sent() == [("res.partner", "action_confirm")]
+
+
+def test_a_connection_error_reading_the_fields_is_reported_and_sends_nothing() -> None:
+    class Offline(ScriptedSession):
+        def fields_get(self, model: str, attributes: Any = None) -> dict[str, Any]:
+            raise TransportError("connection refused")
+
+    raw = Offline(version=12)
+    g, _raw = _guard("res.partner", "action_confirm", version=12, ids=[3], session=raw)
+    with pytest.raises(TransportError):
+        g.execute("res.partner", "action_confirm", [{"tracking_disable": MARKER}], {}, ids=[3])
+    assert raw.calls == []
+
+
+@pytest.mark.parametrize("version", READS_POSITIONAL)
+def test_the_fields_are_read_once_per_call(version: int) -> None:
+    # The same metadata the call-class backstop reads, fetched once for the call (and cached
+    # by the session): no lookup per argument.
+    g, raw = _guard("res.partner", "action_confirm", version=version, ids=[3])
+    g.execute("res.partner", "action_confirm",
+              [{"name": "x"}, [["email", "a@example.com"]], {"vat": "X", "lang": "es_MX"}], {},
+              ids=[3])
+    assert raw.metadata == [LOOKUP]
+    assert raw.sent() == [("res.partner", "action_confirm")]
+
+
+def test_the_fields_are_those_of_the_model_the_call_names() -> None:
+    # default_code is a field of product.product: as a plain value it runs there.
+    g, raw = _guard("product.product", "x_set_values", version=12, ids=[1])
+    g.execute("product.product", "x_set_values", [{"name": "Widget", "default_code": "A-1"}],
+              {}, ids=[1])
+    assert raw.sent() == [("product.product", "x_set_values")]
+    # vat is a field of res.partner, not of product.product.
+    g, raw = _guard("product.product", "x_set_values", version=12, ids=[1])
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("product.product", "x_set_values", [{"vat": MARKER}], {}, ids=[1])
+    assert info.value.rule == "context"
+    assert "context key 'vat'" in str(info.value) and "'product.product'" in str(info.value)
+    assert MARKER not in str(info.value) and raw.calls == []
+
+
+@pytest.mark.parametrize("version", EVERY)
+@pytest.mark.parametrize(("method", "args"), [
+    ("search_count", [[], {"lang": "es_MX"}]),                      # a certain, allowed context
+    ("create", [{"name": "x", "tracking_disable": MARKER}]),        # create's values
+    ("copy_data", [[3], {"name": "Copy", "tracking_disable": MARKER}]),  # an object parameter
+])
+def test_the_methods_in_the_argument_table_are_unchanged(version: int, method: str,
+                                                         args: list[Any]) -> None:
+    # Their objects are values at a parameter, or a context after the parameters, decided as
+    # in 1.5.1 on every series: the new rule reads no field for them.
+    g, raw = _guard("res.partner", method, version=version)
+    g.execute("res.partner", method, args, {})
+    assert raw.sent() == [("res.partner", method)] and raw.metadata == []
+
+
+@pytest.mark.parametrize("version", READS_POSITIONAL)
+def test_a_known_methods_context_still_meets_the_whole_allowlist(version: int) -> None:
+    # search_count's object can only be a context: even a field name there is a context key,
+    # refused with the 1.5.1 wording (no field is read to decide it).
+    g, raw = _guard("res.partner", "search_count", version=version)
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", "search_count", [[], {"name": MARKER}], {})
+    assert (info.value.rule, info.value.layer) == ("context", "B")
+    assert f"context key 'name', {PLACE}, is not allowed" in str(info.value)
+    assert MARKER not in str(info.value) and raw.calls == [] and raw.metadata == []
+
+
+def test_full_forwards_a_key_that_is_no_field_unchanged() -> None:
+    g, raw = _guard("res.partner", "action_confirm", version=12, ids=[3],
+                    p=Policy(profile_name="full"))
+    g.execute("res.partner", "action_confirm", [{"tracking_disable": MARKER}], {}, ids=[3])
+    assert raw.sent() == [("res.partner", "action_confirm")] and raw.metadata == []
+
+
+def test_a_series_the_guard_cannot_tell_holds_the_other_keys() -> None:
+    class Unknown(ScriptedSession):
+        def facts(self) -> Any:
+            return SimpleNamespace(version=None)
+
+    g, raw = _guard("res.partner", "action_confirm", version=17, ids=[3], session=Unknown())
+    with pytest.raises(PolicyDenied) as info:
+        g.execute("res.partner", "action_confirm", [{"tracking_disable": MARKER}], {}, ids=[3])
+    _refused_in_the_guard(info, raw, "tracking_disable")
+
+
+def test_field_or_context_keys_are_the_keys_only_the_fields_decide() -> None:
+    value = {"name": 1, "default_x": 2, "lang": 3, "tracking_disable": 4, 5: 6, None: 7}
+    assert field_or_context_keys(value) == ["name", "tracking_disable"]
+    assert field_or_context_keys({}) == []
+
+
+def test_the_new_hints_say_where_the_key_sits_and_the_remedy() -> None:
+    p = Policy(profile_name="standard")
+    text = str(texts.context_not_field(p, "call", "res.partner", "tracking_disable"))
+    assert f"context key 'tracking_disable', {PLACE}, {NOT_A_FIELD}" in text
+    assert REMEDY in text and "rule context)" in text and texts.LAYER_B_SUFFIX in text
+    text = str(texts.unverified(p, "call", "res.partner", positional=True))
+    assert "fields_get failed on 'res.partner'" in text and REMEDY in text
+    assert "rule unverified)" in text
+    assert texts.UNVERIFIED_HINT in str(texts.unverified(p, "call", "res.partner"))
 
 
 if __name__ == "__main__":  # pragma: no cover

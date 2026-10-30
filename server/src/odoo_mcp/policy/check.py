@@ -20,8 +20,9 @@ checks:
     context nested in a specification, where a ``default_<field>`` must hold a
     plain value, and the objects in ``args`` that Odoo 10 to 12 may take as the
     context (``check_positional_contexts``). What needs field metadata (the
-    models a path or an x2many command reaches) is left to the guarded session,
-    which sees every actual Odoo call.
+    models a path or an x2many command reaches, and on Odoo 10 to 12 whether a
+    key of an object passed positionally to a business method is a field of the
+    model) is left to the guarded session, which sees every actual Odoo call.
 
 A tool declares its accesses with ``registry.Access`` (duck-typed here:
 ``arg_ops``, ``fixed``, ``optional``, ``dynamic``, ``degrade``,
@@ -69,6 +70,7 @@ __all__ = [
     "check_tool",
     "default_keys",
     "execute_touches",
+    "field_or_context_keys",
     "scope_for",
     "touches_for",
 ]
@@ -439,6 +441,22 @@ def default_keys(value: Mapping[Any, Any]) -> dict[str, Any]:
             if isinstance(key, str) and key.startswith("default_")}
 
 
+def field_or_context_keys(value: Mapping[Any, Any]) -> list[str]:
+    """The keys of an object passed positionally to a method outside the argument table
+    (``found.possible``) that only the model's fields can decide: text keys that are neither
+    ``default_<...>`` (the context rules decide those, ``check_positional_contexts``) nor an
+    allowed context key (``SAFE_CONTEXT_KEYS``, allowed either way).
+
+    On Odoo 10 to 12 such an object may be the call's context or the method's values, so the
+    guarded session reads each of these keys as a value when it is a field of the model, and as
+    a context key outside the allowlist otherwise, which it refuses (design E1). A key that is
+    not text, which only a list of ``[key, value]`` pairs can carry (x2many links such as
+    ``[4, 5]``), is left out: Odoo reads context keys by their names, so such a key changes
+    nothing as a context key."""
+    return [key for key in value if isinstance(key, str)
+            and not key.startswith("default_") and key not in SAFE_CONTEXT_KEYS]
+
+
 def check_positional_contexts(policy: Policy, model: str, found: PositionalContexts, *,
                               op: str = "call", layer: str = "A",
                               creating: bool | None = None) -> None:
@@ -455,12 +473,13 @@ def check_positional_contexts(policy: Policy, model: str, found: PositionalConte
     keys meet the context rules (a list or an object, a structural field on a call that can
     create, a withheld field), so no context default rides a positional context on any series,
     while a values object of ordinary fields, and a real field whose name starts with
-    ``default_`` holding a plain value (``default_code``), still run. Its other keys are
-    checked as values, as before (the guard's call-class backstop); holding them to the
-    allowlist would refuse every positional values object. The refusals name the key, never
-    its value, and give the remedy: pass the context by name, or put the values in the
-    record's values. Layer A runs this on every series (the series is not known yet); the
-    guarded session runs it again on 10 to 12."""
+    ``default_`` holding a plain value (``default_code``), still run. Its other keys need the
+    model's fields, which this layer does not have: on Odoo 10 to 12 the guarded session holds
+    them (``field_or_context_keys``), reading a field of the model as a value and refusing any
+    other key the allowlist leaves out; from 13 they are values, checked as before (the guard's
+    call-class backstop). The refusals name the key, never its value, and give the remedy: pass
+    the context by name, or put the values in the record's values. Layer A runs this on every
+    series (the series is not known yet); the guarded session runs it again on 10 to 12."""
     for context in found.certain:
         check_context(policy, model, context, op=op, layer=layer, creating=creating,
                       positional=True)

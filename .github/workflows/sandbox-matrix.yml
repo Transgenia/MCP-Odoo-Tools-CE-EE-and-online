@@ -3,6 +3,9 @@ name: Sandbox matrix
 # Starts every Odoo Community series offered by /odoo-tools:deploy-local and
 # checks it end to end through the plugin's own MCP server, so a broken image,
 # PostgreSQL pairing or RPC change shows up here and not on a user's machine.
+# The server signs in as the user is told to: with the admin API key that
+# `sandbox up` creates on 14.0+ (JSON-2 on 19.0), and with the password on
+# 10.0-13.0, which have no API keys. A second `sandbox up` must keep that key.
 # The smoke test also checks the permission policy against the live metadata of
 # each series (profiles standard and builder) and verifies the audit trail.
 
@@ -32,8 +35,8 @@ jobs:
       matrix:
         odoo: ["10.0", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Log in to GHCR (mirrors; the script falls back to Docker Hub)
@@ -45,7 +48,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: sandbox up
         run: python3 scripts/deploy_local.py sandbox up --odoo "${{ matrix.odoo }}" --no-demo --dir "$RUNNER_TEMP/sandbox" --timeout 600
-      - name: MCP smoke test (odoo_version, odoo_search_read, permission policy, audit)
+      - name: sandbox up again (reuses the database and the API key)
+        run: |
+          # Compares hashes in variables: the key itself is never printed.
+          key_hash() { sed -n 's/^ODOO_API_KEY=//p' "$RUNNER_TEMP/sandbox/.env" | sha256sum; }
+          before="$(key_hash)"
+          python3 scripts/deploy_local.py sandbox up --dir "$RUNNER_TEMP/sandbox" --timeout 600
+          if [ "$(key_hash)" != "$before" ]; then
+            echo "::error::the second sandbox up replaced ODOO_API_KEY instead of reusing it"
+            exit 1
+          fi
+      - name: MCP smoke test (API key on 14.0+, password on 10.0-13.0; odoo_version, odoo_search_read, permission policy, audit)
         run: |
           V="${{ matrix.odoo }}"
           python3 scripts/sandbox_smoke.py --dir "$RUNNER_TEMP/sandbox" --expect "${V%%.*}" --install-automation

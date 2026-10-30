@@ -11,6 +11,7 @@ policy applies, and a policy that let a call through would be reported.
 from __future__ import annotations
 
 import importlib.util
+import secrets
 import sys
 import threading
 from collections.abc import Iterator
@@ -325,26 +326,77 @@ def test_the_audit_of_a_session_verifies_and_holds_its_refusals(smoke: Any,
     log.start(srv.settings, srv.policy)
     checks = smoke.check_standard(runner(smoke, srv), "bot@example.com")
     audit = smoke.check_audit(tmp_path, starts=1, refusals=checks.refusals,
-                              secret="the-admin-password")
+                              withheld={"the sandbox admin password": "the-admin-password",
+                                        "the sandbox API key": secrets.token_hex(20)})
     assert audit.problems == []
     assert audit.checked[1] == "1 start lines, one per server start"
-    # a refusal the audit does not hold, a second start, a leaked secret
+    # a refusal the audit does not hold, a second start, a leaked password and key
     wrong = smoke.check_audit(tmp_path, starts=2, refusals=[("odoo_unlink", "profile:x")],
-                              secret="admin")
-    assert wrong.problems[1:] == [
+                              withheld={"the sandbox admin password": "admin",
+                                        "the sandbox API key": "sandbox"})
+    assert wrong.problems[2:] == [
         "the audit holds 1 start lines, expected 2",
         "the audit has no refused odoo_unlink call with rule profile:x"]
     assert wrong.problems[0].endswith("holds the sandbox admin password")
+    assert wrong.problems[1].endswith("holds the sandbox API key")
     # an edited line breaks the chain
     path = next(tmp_path.glob(smoke.AUDIT_FILES))
     lines = path.read_bytes().splitlines(keepends=True)
     denied = next(n for n, line in enumerate(lines) if b'"decision":"deny"' in line)
     lines[denied] = lines[denied].replace(b'"decision":"deny"', b'"decision":"allow"')
     path.write_bytes(b"".join(lines))
-    edited = smoke.check_audit(tmp_path, starts=1, refusals=[], secret="")
+    edited = smoke.check_audit(tmp_path, starts=1, refusals=[], withheld={})
     assert edited.problems and edited.problems[0].startswith(f"--verify-audit {path.name}: ")
-    assert smoke.check_audit(tmp_path / "empty", starts=1, refusals=[], secret="").problems \
+    assert smoke.check_audit(tmp_path / "empty", starts=1, refusals=[], withheld={}).problems \
         == [f"no audit file was written in {tmp_path / 'empty'}"]
+
+
+# --- the credential: the API key on 14+, the password on 10 to 13 (1.6.0) -----------
+
+def test_the_server_signs_in_as_the_user_is_told(smoke: Any) -> None:
+    key, password = secrets.token_hex(20), secrets.token_urlsafe(18)
+    with_key = {"ODOO_ADMIN_PASSWORD": password, "ODOO_API_KEY": key}
+    without = {"ODOO_ADMIN_PASSWORD": password}
+    for major in (14, 17, 18, 19):  # the key, and no password next to it
+        assert smoke.credential(with_key, major) == ("api_key", key, "")
+    for major in (10, 13):
+        assert smoke.credential(without, major) == ("password", "", password)
+    with pytest.raises(SystemExit, match="holds no ODOO_API_KEY") as missing:
+        smoke.credential(without, 14)
+    with pytest.raises(SystemExit, match="on Odoo 13, which has no API keys") as extra:
+        smoke.credential(with_key, 13)
+    for raised in (missing, extra):
+        assert key not in str(raised.value) and password not in str(raised.value)
+
+
+@pytest.mark.parametrize("raw,kind,transport,problem", [
+    ("19.0-20261015", "api_key", "json2", None),
+    ("19.0-20261015", "api_key", "jsonrpc",
+     "Odoo 19.0 with an API key should use JSON-2; the server used jsonrpc (why)"),
+    ("saas~18.4", "api_key", "xmlrpc",
+     "Odoo 18.4 with an API key should use JSON-2; the server used xmlrpc (why)"),
+    ("18.0-20261015", "api_key", "jsonrpc(auto)", None),  # JSON-2 starts at saas~18.4
+    ("13.0-20231201", "password", "jsonrpc(auto)", None),
+    ("19.0-20261015", "password", "jsonrpc(auto)", None),  # the notice, not a problem
+])
+def test_the_key_reaches_odoo_over_json2_where_odoo_has_it(smoke: Any, raw: str, kind: str,
+                                                           transport: str,
+                                                           problem: str | None) -> None:
+    checks = smoke.check_credential({"raw_version": raw, "transport": transport,
+                                     "transport_notice": "why"}, kind)
+    assert checks.problems == ([problem] if problem else [])
+    label = "API key" if kind == "api_key" else "admin password"
+    assert checks.checked[0] == f"signed in with the sandbox {label} over {transport}"
+    if raw.startswith("19") and kind == "api_key" and not problem:
+        assert checks.checked[1] == "Odoo 19.0: JSON-2 takes the API key"
+
+
+def test_the_matrix_reuses_the_key_before_the_smoke_signs_in_with_it() -> None:
+    matrix = (ROOT / ".github/workflows/sandbox-matrix.yml").read_text()
+    again = matrix.split("- name: sandbox up again", 1)[1].split("- name:", 1)[0]
+    assert "deploy_local.py sandbox up --dir" in again
+    assert "ODOO_API_KEY" in again and "sha256sum" in again and "exit 1" in again
+    assert matrix.index("- name: sandbox up again") < matrix.index("- name: MCP smoke test")
 
 
 # --- the fixture that installs the automated actions module -------------------------

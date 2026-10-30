@@ -30,3 +30,6 @@ Thumbs.db
 
 # plugin eval results
 evals/results/
+
+# Agent worktrees (Claude Code)
+.claude/worktrees/

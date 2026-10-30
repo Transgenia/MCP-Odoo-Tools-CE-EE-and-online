@@ -1,6 +1,6 @@
 ---
 name: odoo-setup-mcp
-description: START HERE. The guided route of the odoo-tools plugin by Transgenia — setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab).
+description: START HERE. The guided route of the odoo-tools plugin by Transgenia: setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab). Also when odoo_version answers without a `policy` block, or Configure options shows no Permission profile: an odoo-tools copy older than 1.5.0 answered (often a second copy), so stop before any write and run the copies check (run_stdio.py --check-copies).
 ---
 
 # odoo-tools — guided route (start here)
@@ -27,16 +27,42 @@ First look at your tool list, without running anything. If `odoo_version` is not
 in it, the MCP server is not running on this surface: go to **Phase 0b** now,
 before any shell command (Claude chat has neither the local server nor a shell).
 
-If it is there, call it once. If it succeeds, the plugin is already connected:
-say so, show the version/edition, and ask whether to go to **Phase 3
-(Training)**, **4 (Daily use)** or **5 (Deployment)**. (Do not read `ODOO_*`
-variables or credential files from the user's machine to find out.)
+If it is there, call it once and read its answer before you say anything:
+- **No `policy` key, and no `note`:** the server that answered is odoo-tools
+  older than 1.5.0, which has no permission policy. It is often a second copy,
+  installed from another place. **Stop here**: no training, no daily use, no
+  writes. Run the copies check below and help the user keep one current copy.
+- **A `note` key:** the permission policy is locked. Show the note, which names
+  the option or the file to fix. This is not a working connection.
+- **`plugin`:** the odoo-tools version that answered and its installed copy
+  (`plugin@marketplace`). Show it to the user.
+
+When it succeeds with a `policy` block, the plugin is connected: say so, show
+the version, edition and copy, and ask whether to go to **Phase 3 (Training)**,
+**4 (Daily use)** or **5 (Deployment)**. (Do not read `ODOO_*` variables or
+credential files from the user's machine to find out.)
+
+**The copies check (Claude Code only).** When `odoo_version` answers, this is
+Claude Code on the user's computer. Run the check once, even when everything
+works: two copies of odoo-tools can be active at once, and then the options
+dialog and the tools may belong to different copies.
+
+```bash
+claude plugin list --json | python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-copies
+```
+
+If `claude` is not found, use its full path, `"$HOME/.local/bin/claude"`. Show the
+output as it is. Exit code 1 means something to fix. The output names the copy to
+keep and gives the exact commands that remove the others. The user runs them in a
+terminal (PowerShell or Terminal), never as `/plugin` commands, then restarts
+Claude Code. Never run them in Cowork: there your commands reach a virtual
+machine, not the user's computer.
 
 Where you can run shell commands, this probe tells the later phases whether
 Python or the container route applies:
 
 ```bash
-echo "python3: $(python3 --version 2>/dev/null || echo missing)"; echo "docker: $(docker --version 2>/dev/null || echo missing)"
+echo "python3: $(python3 --version 2>/dev/null || echo missing)"; echo "git: $(git --version 2>/dev/null || echo missing)"; echo "docker: $(docker --version 2>/dev/null || echo missing)"
 ```
 
 ## Phase 0b — Are the Odoo tools loaded on this surface?
@@ -48,17 +74,24 @@ Desktop) · **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or mobil
 A user who describes an empty **odoo — Runs in each session** panel under the
 plugin's **Connectors** tab is on 2 or 3.
 
-- **1 — Claude Code.** The server did not start; the usual cause is that the
-  required options (Odoo URL, database, login) are empty. If you can run shell
-  commands, run `claude plugin list` to get the plugin's full id
-  (`odoo-tools@<marketplace>`), then `claude plugin configure <id> --json`
-  (Claude Code 2.1.285 or later) and read `unconfigured`: act only if `odoo_url`,
-  `odoo_db` or `odoo_login` is in it, because the unused one of `odoo_api_key` and
-  `odoo_password` and the options with defaults are listed there even on a working
-  setup. Otherwise ask the user to run `/plugin configure <id>`,
-  which opens the options dialog. Fix the options in Step 1C, then check Python
-  in Step 1A, then restart Claude.
-- **2 or 3 — Cowork or Claude chat.** These apps do not run this plugin's local
+- **1: Claude Code.** The server did not start. The usual causes are empty
+  required options (Odoo URL, database, login) or a second copy of the plugin.
+  If you can run shell commands, run the copies check of Phase 0. When it names
+  one copy to keep, check that copy's options (Claude Code 2.1.285 or later; the
+  output never shows the key):
+
+  ```bash
+  claude plugin configure <id> --json | python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-options
+  ```
+
+  `<id>` is the copy to keep, such as `odoo-tools@transgenia-odoo-tools`. Act on
+  what the check lists. Missing options go in the options dialog, which the user
+  opens inside Claude Code with `/plugin configure <id>`. If `python3` is missing,
+  neither check runs. Read `claude plugin list --json` yourself instead: more than
+  one `odoo-tools@...` id enabled here, or a version older than 1.5.0, is the
+  problem. One id listed for two scopes is one copy, and a project or local entry
+  counts only in its own folder (its `projectPath`, or a folder inside it). Then go to Step 1A. Fix the options in Step 1C, then restart Claude.
+- **2 or 3: Cowork or Claude chat.** These apps do not run this plugin's local
   MCP server and have no form for plugin options. Anthropic's plugin support
   matrix says Cowork "doesn't prompt for values" and ignores an MCP server whose
   options have no default, and chat ignores a plugin's local MCP server. The install is
@@ -115,20 +148,49 @@ If it is missing, too old, or prints no version, give the fix for their OS:
 - **Windows:** the command must be named `python3`. The Microsoft Store Python
   provides `python3.exe`; the python.org installer provides only `python` and
   `py`. Either install Python from the Store, or put a `python3.exe` on `PATH`
-  (a copy of or hard link to `python.exe` in the same folder). A PowerShell or
+  (a copy of or hard link to `python.exe` in the same folder; the command is
+  below). A PowerShell or
   `doskey` alias is not enough, because Claude Code starts the command
   directly. If `python3` opens the Microsoft Store, that is the App execution
   alias stub: install the Store Python, or turn that alias off in Windows
-  Settings so the user's own `python3.exe` is found.
+  Settings so the user's own `python3.exe` is found. Without `python3`,
+  `claude mcp list` reports the plugin's server as `Failed to connect` with
+  `Connection closed`, and nothing names Python. The hard link, in PowerShell:
+
+  ```powershell
+  $python = (Get-Command python -ErrorAction Stop).Source
+  New-Item -ItemType HardLink -Path (Join-Path (Split-Path $python) "python3.exe") -Target $python
+  ```
+
+  It needs write access to the Python folder: for an installation under
+  `C:\Program Files`, run PowerShell as administrator. If `Get-Command python`
+  finds nothing, or a file under `WindowsApps`, Python is not on `PATH`: run the
+  python.org installer again and select "Add python.exe to PATH", or install the
+  Store Python. CI checks this fix on Windows (`windows-launch.yml`).
 - **Windows, session-start hooks:** they are shell commands and need Git for
   Windows (Git Bash); without it Claude Code runs them in PowerShell and shows a
   SessionStart hook error (`CLAUDE_CODE_GIT_BASH_PATH` points Claude Code at a Git
   Bash it does not find). The MCP server is not affected.
+- **Windows, right after installing Claude Code, Git or Python:** open a new
+  PowerShell window and restart Claude Code. A window opened before the install
+  does not see the new `PATH`. `where.exe git` finding nothing while
+  `C:\Program Files\Git\cmd\git.exe` exists is that case, and so is `claude` not
+  being recognized (the native installer puts it in `%USERPROFILE%\.local\bin`).
 
 ### Step 1B — Gather the Odoo details (one at a time)
 
-1. **Odoo URL** — e.g. `https://my-company.odoo.com` (scheme + host, no path).
-2. **Database** — Settings → Database, or visible in the login URL.
+First ask what the connection is for (one question):
+- **To learn or practice:** prefer the sandbox (Phase 1, option 2). With a real
+  instance, recommend **Read-only mode** on and **Permission profile**
+  `readonly`.
+- **For real work:** **Permission profile** `standard` and **Read-only mode** on
+  for the first days. Turn writes on only when the user confirms they want them.
+
+1. **Odoo URL**: e.g. `https://my-company.odoo.com` (scheme and host only: no
+   path, no trailing slash).
+2. **Database**: Settings → Database, or visible in the login URL. On Odoo
+   Online (`*.odoo.com`) it is usually the subdomain (`my-company` for
+   `https://my-company.odoo.com`): suggest it and ask the user to confirm.
 3. **Login** — the login email of a **least-privilege** Odoo user.
 4. **API key** — Preferences → Account Security → New API Key (shown once).
    On Odoo < 14 (no API keys), fill **Password** instead.
@@ -169,13 +231,22 @@ echo the key.
 - Never ask the user to paste the secret into the chat, and do not export it in
   `~/.bashrc`, `~/.zshrc` or with `setx`.
 
+The options dialog does not say which copy of the plugin it edits. If the copies
+check (Phase 0) found more than one, fix that first. After saving, run the options
+check of Phase 0b on that copy and act on what it lists.
+
 Then restart Claude (or reload the MCP server) so it picks up the options.
 
 ## Phase 2 — Verify
 
-Call `odoo_version`: it reports version, edition (community/enterprise),
-deployment (onprem/saas) and the active transport — the connection works
-end-to-end. On Odoo 19+ the transport should be `json2`; a `transport_notice`
+Call `odoo_version`. Its answer must have both `plugin` and `policy`:
+- **No `policy`:** a copy older than 1.5.0 answered. Go back to Phase 0 and stop.
+- **A `note`:** the policy is locked. Show the note, fix what it names, and
+  reconnect.
+
+Otherwise the connection works end to end. Report the version, edition
+(community/enterprise), deployment (onprem/saas) and active transport, and
+`plugin.copy`. On Odoo 19+ the transport should be `json2`; a `transport_notice`
 means the deprecated endpoints are in use (typically no API key set), and it
 says how to fix that. Then a bounded read:
 `odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 3 }`.
@@ -276,9 +347,13 @@ Walk through this checklist, one item at a time, marking each ✓:
 3. **HTTPS URL** only; keep `auto` transport unless there is a reason.
 4. **Pilot first**: repeat the key workflows on the sandbox or a staging copy.
 5. **Backups** before bulk writes or Studio-style changes in production.
-6. **Every machine**: install the plugin (`/plugin install odoo-tools
-   --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`; on Claude Code
-   older than 2.1.275, `/plugin marketplace add` first) and run this route; machines without Python use container mode.
+6. **Every machine**: install the plugin once, from Transgenia's marketplace:
+   inside Claude Code, `/plugin install odoo-tools --marketplace
+   Transgenia/MCP-Odoo-Tools-CE-EE-and-online`; or in a terminal, `claude plugin
+   install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
+   --scope user`. On Claude Code older than 2.1.275, add the marketplace first.
+   Then run this route, which checks that only one copy is active. Machines
+   without Python use container mode.
 7. **Updates**: `/plugin` → **odoo-tools** → update; read the CHANGELOG before
    updating production users.
 8. **Odoo Online**: plan the API-key rotation (keys expire from Odoo 18;

@@ -645,7 +645,7 @@ as JSON. A team's policy repository can run it in CI.
 ## What `odoo_version` reports
 
 ```json
-"policy": {"profile": "standard", "file": null, "digest": "9f3166860347", "readonly": false,
+"policy": {"profile": "standard", "file": null, "digest": "21524d1933f3", "readonly": false,
            "hidden_tools": ["odoo_unlink", "odoo_add_field", "odoo_add_automation"],
            "opened_sensitive": [], "released_fields": [], "warnings": [],
            "error": null, "error_code": null}
@@ -676,7 +676,10 @@ names), never an argument value.
 - **After sign-in** (the guard): every Odoo call a tool makes is checked again,
   with its values and paths, as it is sent. Such a refusal ends with `The call
   was stopped before Odoo ran it: nothing was changed and no record data was
-  returned.` The server may have read field definitions to decide.
+  returned.` The server may have read field definitions to decide. On Odoo 10 to
+  12, a key of an object passed positionally to a business method that is neither
+  a field of the model nor an allowed context key is refused here (rule
+  `context`, see [known limit 10](#known-limits)).
 - A call outside a tool's own declared mapping is stopped as a bug in
   odoo-tools (rule `envelope`), in every profile; please report it.
 
@@ -883,16 +886,31 @@ To add a tool:
       context rules let it pass.
     - For any other method (a business method such as `action_confirm`), the
       policy cannot know where the parameters end, so every object passed
-      positionally may be the context: its `default_<field>` keys meet the context
-      rules (a list or an object, a structural field on a call that can create, a
-      withheld field), and a values object such as `{"default_code": "A-1"}` still
-      runs.
+      positionally may be the context or one of the method's values. Its
+      `default_<field>` keys meet the context rules on every series (a list or an
+      object, a structural field on a call that can create, a withheld field), and
+      a values object such as `{"default_code": "A-1"}` still runs. Since 1.6.0 the
+      guarded session also decides its other keys on Odoo 10 to 12, with the
+      model's fields: a key that is a field of the model is one of the method's
+      values, checked as the method's other arguments are (see
+      [Credential-like fields](#credential-like-fields)); an allowed context key
+      passes; any other key, such as `tracking_disable`, can only be a context key
+      and is refused (rule `context`). The fields are the definitions the guard
+      reads for its other checks (`fields_get`, cached), read only when such a key
+      is present; when Odoo refuses that lookup, the call is refused (rule
+      `unverified`). A key that is not text, which only a list of pairs can carry
+      (x2many links such as `[4, 5]`), names no context key Odoo reads and is left
+      alone. A list of text pairs whose first items are neither fields of the model
+      nor allowed context keys (selection pairs, a row of two columns) is therefore
+      refused there too when it is passed positionally: pass the method's arguments
+      by name.
 
-    The refusal (rule `context`) names the key, never its value, and says to pass
-    the context by name or to put the values in the record's values. What remains:
-    on Odoo 10 to 12, the other keys of an object passed positionally to a method
-    outside the policy's argument table are not held to the allowlist, because the
-    same object may be the method's values, which the policy cannot tell apart
-    without the method's parameters. Pass a context by name, in `kwargs["context"]`.
-    Planned for 1.5.2: on Odoo 10 to 12, the guarded session refuses the keys of
-    such an object that are not fields of the model.
+    The refusals (rule `context`) name the key, never its value, and say to pass
+    the context by name, in `kwargs["context"]`, and the method's other arguments
+    by name, or to put the values in the record's values. What remains: on Odoo 10
+    to 12, a key of such an object that is a field of the model is read as a
+    value, so a context key that has the name of one of the model's fields is not
+    held to the allowlist. The keys the allowlist leaves out on purpose
+    (`tracking_disable`, `mail_notrack`, `mail_create_nolog`) are refused unless
+    the model has a field of that name. Pass a context by name, in
+    `kwargs["context"]`.

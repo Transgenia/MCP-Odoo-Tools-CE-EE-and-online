@@ -1,5 +1,5 @@
 ---
-description: Diagnose odoo-tools - whether the Odoo tools run on this surface, the connection to Odoo (version, edition, deployment, transport, a sanity read), and a support report with no keys, URLs or data.
+description: Diagnose odoo-tools - whether the Odoo tools run on this surface, the connection to Odoo (version, edition, deployment, transport, a sanity read), and a support report with no keys, URLs or data. In Claude Code it also names the copy that answers and finds a second or pre-1.5.0 copy.
 ---
 
 # /odoo-doctor
@@ -43,14 +43,36 @@ Then:
       the same account; then run `/odoo-tools:odoo-setup-mcp`.
    2. Assisted setup by Transgenia: **dev@transgenia.org** · WhatsApp
       **+52 55 8034 0405** (https://wa.me/525580340405).
-4. **Claude Code:** the server did not start. The usual cause is that the Odoo URL,
-   database or login options are empty. Follow `/odoo-tools:odoo-setup-mcp`,
-   Phase 0b.
+4. **Claude Code:** the server did not start. The usual causes are empty Odoo URL,
+   database or login options, a second copy of the plugin, or, on Windows, no
+   `python3` command: the python.org installer provides only `python` and `py`, and
+   `claude mcp list` then reports the server as `Failed to connect` with
+   `Connection closed`, without naming Python. Run the copies check and, for the
+   copy it keeps, the options check (they read what Claude Code prints, contact
+   nothing and never show the key):
+
+   ```bash
+   claude plugin list --json | python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-copies
+   claude plugin configure <id> --json | python3 "${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py" --check-options
+   ```
+
+   If `claude` is not found, use `"$HOME/.local/bin/claude"`. If `python3` is not
+   found, that is the cause: give the Windows fix of `/odoo-tools:odoo-setup-mcp`,
+   Step 1A, and stop here. Otherwise show both outputs as they are and follow
+   `/odoo-tools:odoo-setup-mcp`, Phase 0b. The commands the
+   copies check prints are for a terminal (PowerShell or Terminal), not for
+   `/plugin`.
 5. Finish with the support report (step 4).
 
 ## 1. The instance
 
-1. Call the MCP tool `odoo_version` and report: `version`, `edition`
+1. Call the MCP tool `odoo_version`. First its `plugin` block: the odoo-tools
+   `version` that answered and its `copy` (`plugin@marketplace`). If the answer has
+   no `policy` key, a copy older than 1.5.0 answered, without the permission
+   policy. Say so, run the copies check of step 0 (this is Claude Code), and stop
+   here.
+
+   Otherwise report: `version`, `edition`
    (community/enterprise), `deployment` (onprem/saas), `transport` (`json2`,
    `jsonrpc`, `xmlrpc` or `jsonrpc(auto)`) and, when it is not null,
    `transport_notice`: Odoo 19 deprecates `/xmlrpc` and `/jsonrpc` and Odoo 22
@@ -64,6 +86,10 @@ Then:
    set the policy is locked: show the error, say that every other Odoo tool is
    disabled until the user fixes the file or the **Permission profile** /
    **Permission policy file** options and reconnects (`/mcp`), and stop here.
+2. Run the copies check of step 0 once and add its result to the table. Two
+   copies can be active while the connection works, and then the options dialog
+   and the tools may belong to different copies.
+
 ## 2. Sessions
 
 Call `odoo_connections` and list active sessions.

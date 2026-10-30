@@ -2,14 +2,30 @@
 
 ## As a Claude plugin (recommended)
 
-```
+Inside Claude Code (typed in a session):
+
+```text
 /plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online
 /odoo-tools:odoo-setup-mcp
 ```
 
-On Claude Code older than 2.1.275, which has no `--marketplace` flag, run
-`/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then
+Or in a terminal (PowerShell, Terminal or bash), then `/odoo-tools:odoo-setup-mcp`
+inside Claude Code:
+
+```bash
+claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user
+```
+
+`/plugin` commands go inside Claude Code; `claude plugin` commands go in a
+terminal. On Claude Code older than 2.1.275, which has no `--marketplace` flag,
+run `/plugin marketplace add Transgenia/MCP-Odoo-Tools-CE-EE-and-online` and then
 `/plugin install odoo-tools` instead of the first line.
+
+Install one copy only. The Claude plugin directory can offer an older version (it
+publishes a version after Anthropic reviews it), and two copies with the same name
+can be active at once: see [Two copies of odoo-tools](../README.md#two-copies-of-odoo-tools).
+`run_stdio.py --check-copies` and `--check-options` check the copies and the saved
+options; `/odoo-tools:odoo-doctor` runs them.
 
 Claude Code prompts for the connection options when the plugin is enabled
 (`/plugin` → **odoo-tools** → **Configure options** to change them). The API key
@@ -61,7 +77,22 @@ download, at install time or at start-up.
   Microsoft Store instead of printing a version, that is the Windows "App
   execution alias" stub: install the Store Python, or turn off the
   `python3.exe` entry under **App execution aliases** in Windows Settings so
-  your own `python3.exe` is found. The session-start hooks are shell commands and need Git for Windows (Git Bash);
+  your own `python3.exe` is found. Without `python3`, `claude mcp list` reports
+  the plugin's server as `Failed to connect` with `Connection closed`, and
+  nothing names Python. The hard link, in PowerShell:
+
+  ```powershell
+  $python = (Get-Command python -ErrorAction Stop).Source
+  New-Item -ItemType HardLink -Path (Join-Path (Split-Path $python) "python3.exe") -Target $python
+  ```
+
+  It needs write access to the Python folder: for an installation under
+  `C:\Program Files`, run PowerShell as administrator. If `Get-Command python`
+  finds nothing, or a file under `WindowsApps`, Python is not on `PATH`: run the
+  python.org installer again and select "Add python.exe to PATH", or install the
+  Store Python. CI checks this fix on Windows (`windows-launch.yml`).
+
+  The session-start hooks are shell commands and need Git for Windows (Git Bash);
   without it Claude Code runs them in PowerShell and shows a SessionStart hook
   error (set `CLAUDE_CODE_GIT_BASH_PATH` if Git Bash is installed but not found).
   The MCP server is not affected.
@@ -81,13 +112,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
 
 # container mode: the MCP server without a local Python
-docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.5.1
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.6.0
 ```
 
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
 images mirrored at `ghcr.io/transgenia/odoo` and `ghcr.io/transgenia/postgres`
 (falls back to Docker Hub), and keeps its generated passwords in
-`~/.odoo-tools/sandbox/.env` (owner-only).
+`~/.odoo-tools/sandbox/.env` (owner-only). On Odoo 14.0 and newer the same file
+holds the API key that Odoo creates for the sandbox's admin user, for the
+plugin's **Odoo API key** option.
 
 ## Run the MCP server directly
 
@@ -122,7 +155,9 @@ pip install -e "./server[otel]"     # OpenTelemetry OTLP tracing
 
 ## CLI fallback (optional)
 
-```
+Inside Claude Code:
+
+```text
 /odoo-tools:odoo-setup-cli
 ```
 Requires Node.js 18+. Installs the CLI to `~/.claude/tools/odoo-cli`.
@@ -143,7 +178,7 @@ audit folder writable by the container's user (`mcp`):
 
 docker run -i --rm --env-file ./odoo.env \
   -v ~/.config/odoo-tools/policy.json:/policy/policy.json:ro \
-  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.5.1
+  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.6.0
 ```
 
 Without an audit folder the audit lines go to `docker logs`. A remote HTTP mode, where the

@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -192,6 +193,64 @@ def test_each_directory_is_its_own_compose_project(tmp_path: Path) -> None:
     assert "name:" not in dl.COMPOSE_FILE  # the CLI flag is the single source
 
 
+def test_no_generated_secret_starts_with_a_dash(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The Odoo image's entrypoint hands the database password to wait-for-psql.py, whose
+    # argparse reads a leading "-" as an option: on 2026-10-30 the sandbox matrix's Odoo 17.0
+    # container restarted forever with "argument --db_password: expected one argument".
+    draws = iter(["-first", "second"])
+    monkeypatch.setattr(dl.secrets, "token_urlsafe", lambda nbytes: next(draws))
+    assert dl.new_secret(24) == "second"
+
+
+def test_prepare_writes_no_secret_that_starts_with_a_dash(tmp_path: Path,
+                                                          monkeypatch: pytest.MonkeyPatch) -> None:
+    draws = iter(["-a1", "b1", "-a2", "b2", "-a3", "b3"])
+    monkeypatch.setattr(dl.secrets, "token_urlsafe", lambda nbytes: next(draws))
+    env = dl.Sandbox(tmp_path / "sbx").prepare("17.0", 8069, "sandbox", "en_US", False,
+                                               "transgenia")
+    assert [env[name] for name in ("ODOO_ADMIN_PASSWORD", "ODOO_MASTER_PASSWORD",
+                                   "PG_PASSWORD")] == ["b1", "b2", "b3"]
+
+
+def test_a_sandbox_made_with_a_dash_password_says_to_start_over(tmp_path: Path) -> None:
+    box = dl.Sandbox(tmp_path / "sbx")
+    box.prepare("17.0", 8069, "sandbox", "en_US", False, "transgenia")
+    env = dl.read_env(box.env_file)
+    env["PG_PASSWORD"] = "-" + env["PG_PASSWORD"]
+    box.write_env(env)
+    with pytest.raises(dl.SandboxError) as caught:
+        box.prepare(None, None, None, None, None, "transgenia")
+    assert "`sandbox destroy --yes`, then `sandbox up` again" in str(caught.value)
+    assert env["PG_PASSWORD"] not in str(caught.value)
+    assert env["PG_PASSWORD"][1:] not in str(caught.value)
+
+
+def test_a_10_sandbox_or_one_that_worked_keeps_its_dash_password(tmp_path: Path) -> None:
+    # Review of 1.6.0: 10.0's entrypoint passes the password to Odoo itself, whose optparse
+    # takes "-..."; a sandbox that reached ODOO_READY=1 started with it. Neither is refused.
+    for version, ready in (("10.0", "0"), ("10.0", "1"), ("17.0", "1")):
+        box = dl.Sandbox(tmp_path / f"sbx-{version}-{ready}")
+        box.prepare(version, 8069, "sandbox", "en_US", False, "transgenia")
+        env = dl.read_env(box.env_file)
+        env.update(PG_PASSWORD="-" + env["PG_PASSWORD"], ODOO_READY=ready)
+        box.write_env(env)
+        kept = box.prepare(None, None, None, None, None, "transgenia")
+        assert kept["PG_PASSWORD"] == env["PG_PASSWORD"]
+
+
+def test_a_dash_password_is_refused_for_the_version_that_will_run(tmp_path: Path) -> None:
+    # Second review: a 10.0 sandbox that never got ready, retried as 11.0 (the same
+    # PostgreSQL), would run 11.0's wait-for-psql.py with that password and loop.
+    box = dl.Sandbox(tmp_path / "sbx")
+    box.prepare("10.0", 8069, "sandbox", "en_US", False, "transgenia")
+    env = dl.read_env(box.env_file)
+    env["PG_PASSWORD"] = "-" + env["PG_PASSWORD"]
+    box.write_env(env)
+    with pytest.raises(dl.SandboxError):
+        box.prepare("11.0", None, None, None, None, "transgenia")
+    assert box.prepare(None, None, None, None, None, "transgenia")["ODOO_VERSION"] == "10.0"
+
+
 def test_passwords_are_never_printed(tmp_path: Path, capsys: pytest.CaptureFixture[str],
                                      monkeypatch: pytest.MonkeyPatch) -> None:
     box = dl.Sandbox(tmp_path / "sbx")
@@ -210,12 +269,18 @@ def test_passwords_are_never_printed(tmp_path: Path, capsys: pytest.CaptureFixtu
 
     monkeypatch.setattr(dl, "rpc", fake_rpc)
     monkeypatch.setattr(dl, "wait_for_odoo", lambda url, t: {"server_version": "18.0"})
+    key = secrets.token_hex(20)  # what Odoo's shell prints on 14.0+ (1.6.0)
+    monkeypatch.setattr(dl.Sandbox, "odoo_shell", lambda self, db, script, timeout:
+                        subprocess.CompletedProcess(["docker"], 0, dl.API_KEY_MARK + key, ""))
     assert dl.main(["sandbox", "up", "--dir", str(box.dir)]) == 0
     out = capsys.readouterr().out
     assert ("db", "create_database") in calls
-    assert dl.read_env(box.env_file)["ODOO_READY"] == "1"  # marked only after success
+    saved = dl.read_env(box.env_file)
+    assert saved["ODOO_READY"] == "1"  # marked only after success
+    assert saved["ODOO_API_KEY"] == key
     for secret in ("PG_PASSWORD", "ODOO_ADMIN_PASSWORD", "ODOO_MASTER_PASSWORD"):
         assert env[secret] not in out
+    assert key not in out
     assert "dev@transgenia.org" in out and "wa.me/525580340405" in out
 
 

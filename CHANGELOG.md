@@ -4,6 +4,179 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-10-30
+
+One copy, the right copy, and the right place for each command. A Windows
+onboarding on 2026-10-29 ended with two copies of odoo-tools active in one folder:
+
+- 1.4.0 from the Claude plugin directory, in project scope, without the permission
+  policy;
+- 1.5.1 from Transgenia's marketplace, in user scope.
+
+What went wrong:
+
+- the options dialog saved the connection in the 1.4.0 copy, its server answered
+  `odoo_version`, and nothing said which copy that was;
+- `/plugin install` was typed in PowerShell;
+- `python3` was missing.
+
+1.6.0:
+
+- names the copy that answers;
+- finds a second or old copy and stops the guided route on it;
+- keeps terminal and Claude Code commands apart;
+- names the sign of a missing `python3` on Windows;
+- gives the sandbox an API key;
+- closes the remaining gap of the permission policy's known limit 10.
+
+The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 28.
+
+### Added
+
+- **`odoo_version` names the copy that answers.** A new `plugin` block gives the
+  odoo-tools version that answered and, in Claude Code, its installed copy
+  (`plugin@marketplace`). The copy is read from the name of the data folder Claude
+  Code gives each copy. The block is also there when the policy is locked. An
+  answer without a `policy` block comes from a copy older than 1.5.0.
+- **The copies check and the options check.** Both run no program, contact
+  nothing, never print a sensitive value whatever the input holds, and print
+  terminal commands and Claude Code commands apart. They read UTF-8, also from a
+  Windows pipe. Exit 0 ok, 1 to fix, 2 when the input is not that JSON.
+  - `run_stdio.py --check-copies` reads `claude plugin list --json` on stdin.
+    - It finds two active copies and copies older than 1.5.0. One plugin id
+      installed in two scopes is one copy.
+    - It skips a claude.ai copy that a local one shadows, and names the copy to
+      keep.
+    - It prints the exact terminal commands: a `cd` to the project folder, quoted
+      for bash and PowerShell, then `claude plugin uninstall <id> --scope <scope>`.
+    - For an old copy from Transgenia's marketplace it prints
+      `claude plugin marketplace update` and `claude plugin update` instead.
+      Installing again can reuse an outdated local copy of the marketplace.
+  - `run_stdio.py --check-options` reads `claude plugin configure <id> --json`. It
+    checks:
+    - the required options and a credential;
+    - the URL: scheme and host only. A user name or password in it is refused, and
+      nothing of the URL but its scheme, host and port is ever repeated;
+    - the permission options that a copy older than 1.5.0 lacks;
+    - a short timeout;
+    - plain http to another computer.
+- **Windows launch workflow.** `windows-launch.yml` installs Claude Code and the
+  plugin from the checkout on Windows and runs `claude mcp list`, which starts the
+  MCP server without a model call. It runs twice:
+  - with a `python3.exe` hard link next to `python.exe` (the fix the guided route
+    gives): the server connects;
+  - with no `python3.exe`, as after the python.org installer: Claude Code 2.1.314
+    reports the server as `Failed to connect` with `Connection closed`, without
+    naming Python.
+
+  The README, `docs/install.md`, the guided route and `/odoo-tools:odoo-doctor` now
+  name that message as the sign of a missing `python3` on Windows. When the job's
+  pinned Claude Code version moves, it fails if the new version reports it
+  otherwise.
+- **Evals.** Two cases from that onboarding:
+  - an `odoo_version` answer without `policy`;
+  - `/plugin install` typed in PowerShell.
+
+  Both failed at first, because the model answered without opening a skill. The
+  rules they need now sit in the always-loaded descriptions of `odoo-setup-mcp`,
+  `odoo-mcp-tools` and `/odoo-tools:odoo-doctor`, and the five cases pass in three
+  runs.
+
+### Changed
+
+- **The guided route stops on a second or old copy.** In `/odoo-tools:odoo-setup-mcp`:
+  - An `odoo_version` answer without `policy`, or with a locked `note`, stops the
+    route before any training, daily use or write.
+  - In Claude Code the copies check runs once, even when the connection works, and
+    the options check runs after saving.
+  - A purpose question comes first. For practice: Read-only mode and the `readonly`
+    profile. For real work: `standard`, with writes only on request.
+  - The database of an Odoo Online instance is suggested from its subdomain.
+  - The probe also looks for `git`.
+  - On Windows, after installing Claude Code, Git or Python, the user opens a new
+    terminal.
+
+  `/odoo-tools:odoo-doctor` reports `plugin`, stops without `policy`, and adds the
+  copies check to its table. `odoo-connect` documents `policy` and `plugin`.
+- **The local sandbox gives the plugin an API key on Odoo 14.0 to 19.0.**
+  - **Before:** `/odoo-tools:deploy-local` told the user to put the sandbox admin
+    password in the plugin's **Odoo password** option, whose title says Odoo < 14
+    only, whatever the series.
+  - **Now:** on Odoo 14.0 and newer, `sandbox up` has Odoo create an API key for
+    the admin user, through `odoo shell` in a one-off container of the sandbox and
+    Odoo's own `res.users.apikeys`. It checks that the key signs in, and keeps it in
+    the owner-only `.env` as `ODOO_API_KEY`, never printed. Later runs reuse it, and
+    replace it if it was removed in Odoo, where it is listed as "odoo-tools sandbox"
+    under Preferences > Account Security. The command tells the user to put it in
+    the **Odoo API key** option and leave **Odoo password** empty.
+  - **Unchanged:** Odoo 10.0 to 13.0 have no API keys and keep the password, and so
+    does a sandbox where the key cannot be made. The script then says why, and the
+    next `sandbox up` tries again.
+  - **CI:** the sandbox matrix signs in with the key on every series from 14.0
+    (over JSON-2 on 19.0) and with the password on 10.0 to 13.0. It checks that
+    neither reaches the audit trail, and that a second `sandbox up` keeps the key.
+- **Install commands by surface.** Every guide gives
+  `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
+  for inside Claude Code, and `claude plugin install odoo-tools --marketplace ...
+  --scope user` for a terminal. The README gains "Two copies of odoo-tools", which
+  covers:
+  - the signs;
+  - the `Plugin option "odoo_url" isn't set` message, which comes from Claude Code;
+  - the commands;
+  - that `odoo-tools@claude-plugins-official` does not exist;
+  - that the Claude plugin directory can offer an older version than the
+    marketplace;
+  - the claude.ai three-dot menu, which has no place for the options.
+
+  A test keeps slash commands out of terminal blocks, labels their blocks `text`,
+  and finds no "/plugin manage" (a Claude Code message, not a menu).
+- **Repository.**
+  - `CLAUDE.md` moves to `.claude/CLAUDE.md`, so `claude plugin validate --strict`
+    passes without a warning.
+  - `actions/checkout`, `actions/setup-python` and `actions/setup-node` move to
+    Node 24 versions that this repository already runs.
+  - The docker actions keep their versions: they run only after a release is
+    published.
+
+### Fixed
+
+- **A local sandbox that never started.**
+  - **The cause:** about one new sandbox in 64 got a database password that starts
+    with "-". From Odoo 11.0 on, the image passes that password to
+    `wait-for-psql.py` on its command line, which read it as an option. The Odoo
+    container then restarted forever, and `sandbox up` timed out. The sandbox
+    matrix met it on Odoo 17.0.
+  - **The fix:** generated passwords no longer start with "-".
+  - **Sandboxes made before 1.6.0:**
+    - One of Odoo 11.0 or later that never started with such a password says to
+      run `sandbox destroy --yes`, then `sandbox up` again. Nothing is lost.
+    - On 10.0 the image passes the password to Odoo itself, which takes it.
+    - A sandbox that already worked is never refused.
+- **The other keys of a context passed positionally, on Odoo 10 to 12.**
+  - **The gap:** 1.5.1 held the `default_<field>` keys of an object passed
+    positionally to a business method (a method outside the policy's argument
+    table, such as `action_confirm`) to the context rules, but not its other keys,
+    because the same object may be the method's values. So a key the allowlist
+    refuses, such as `tracking_disable`, could reach Odoo 10 to 12 as a context key
+    (known limit 10).
+  - **The fix:** on those series the guarded session now decides those keys with
+    the model's fields, read with the same cached `fields_get` it uses for its
+    other checks:
+    - a field of the model is one of the method's values, checked as before;
+    - an allowed context key passes;
+    - any other key is refused (rule `context`). The refusal names the key, never
+      its value, and says to pass the context by name in `kwargs["context"]` and
+      the method's other arguments by name, or to put the values in the record's
+      values.
+  - **When the fields cannot be read,** the call is refused (rule `unverified`).
+  - **Pairs:** a list of `[key, value]` pairs counts as the context it builds. So a
+    list of text pairs whose first items are neither fields nor allowed keys, passed
+    positionally to a business method, is refused there too. Pass it by name.
+  - **Unchanged:** Layer A, Odoo 13 and later, the methods in the argument table,
+    and profile `full`.
+  - **What remains:** a context key that has the name of one of the model's fields
+    is read as a value (known limit 10 in `docs/policy.md`).
+
 ## [1.5.1] - 2026-10-29
 
 Honest on every surface, local diagnostics, and what the Claude plugin directory

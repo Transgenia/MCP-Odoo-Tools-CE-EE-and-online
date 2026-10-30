@@ -22,6 +22,12 @@ Images come from Transgenia's registry (``ghcr.io/transgenia``, mirrors of the
 official ``odoo`` and ``postgres`` images); if that registry cannot be reached
 the official Docker Hub images are used instead. Passwords are generated here,
 written to ``<dir>/.env`` (owner-only) and never printed.
+
+On Odoo 14.0 and newer the admin user also gets an API key, for the plugin's
+"Odoo API key" option: Odoo creates it (``odoo shell`` in a one-off container
+of the sandbox), it is checked by signing in with it, kept in the same ``.env``
+as ``ODOO_API_KEY`` and never printed, and later runs reuse it. Odoo 10.0 to
+13.0 have no API keys and keep the password.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ import http.client
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 import socket
@@ -40,6 +47,7 @@ import sys
 import time
 import xml.parsers.expat
 import xmlrpc.client
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +128,40 @@ admin_passwd = {master}
 addons_path = /mnt/extra-addons
 data_dir = /var/lib/odoo
 list_db = True
+"""
+
+# API keys (res.users.apikeys) exist from Odoo 14.0; 10.0-13.0 sign in with the password.
+API_KEY_SINCE = 14
+API_KEY_NAME = "odoo-tools sandbox"  # how the key is listed in the admin's Account Security
+# Start of the one line on which Odoo's shell prints the new key for this script.
+API_KEY_MARK = "odoo-tools-sandbox-api-key:"
+# What a key looks like, loosely (Odoo 14.0-19.0 print 40 hex characters).
+API_KEY_SHAPE = re.compile(r"[A-Za-z0-9_-]{16,256}")
+# The .env entries that are secrets: never shown, whatever text they turn up in.
+SECRET_NAMES = ("PG_PASSWORD", "ODOO_ADMIN_PASSWORD", "ODOO_MASTER_PASSWORD", "ODOO_API_KEY")
+_HEX_RUN = re.compile(r"[0-9A-Fa-f]{32,}")  # key-shaped, in a line that is shown
+
+# Run by `odoo shell`, which executes a script read from stdin as the superuser and rolls
+# the transaction back when it ends. It calls Odoo's own API only, as the admin user.
+# _generate takes (scope, name) on 14.0-17.0 and adds expiration_date from 18.0, so the
+# parameters are read from its signature here. scope None makes a key valid for every RPC,
+# as the "New API Key" button does; no expiration date is what Odoo 18.0+ allow
+# administrators (other users must set one, within a maximum duration).
+_API_KEY_BODY = """\
+import inspect
+
+admin = env.ref("base.user_admin")
+apikeys = env["res.users.apikeys"].with_user(admin)
+values = {"scope": None, "name": NAME, "expiration_date": None}
+params = inspect.signature(apikeys._generate).parameters
+unknown = [p.name for p in params.values() if p.name not in values
+           and p.default is p.empty and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
+if unknown:
+    raise SystemExit("res.users.apikeys._generate takes unknown parameters: "
+                     + ", ".join(unknown))
+generated = apikeys._generate(**{n: v for n, v in values.items() if n in params})
+env.cr.commit()
+print(MARK + generated, flush=True)
 """
 
 
@@ -272,6 +314,63 @@ def wait_for_odoo(url: str, timeout: float) -> dict[str, Any]:
                        "See the logs: deploy_local.py sandbox logs")
 
 
+def new_secret(nbytes: int) -> str:
+    """A random URL-safe secret that does not start with "-".
+
+    The Odoo image's entrypoint passes the database password to ``wait-for-psql.py`` on its
+    command line, where argparse reads a leading "-" as an option ("argument --db_password:
+    expected one argument"): the container restarts forever and ``sandbox up`` times out.
+    ``token_urlsafe`` starts with "-" about once in 64 draws.
+    """
+    while True:
+        value = secrets.token_urlsafe(nbytes)
+        if not value.startswith("-"):
+            return value
+
+
+def has_api_keys(version: str) -> bool:
+    """Whether an Odoo series such as ``"14.0"`` has API keys."""
+    return int(version.split(".")[0]) >= API_KEY_SINCE
+
+
+def api_key_script(name: str = API_KEY_NAME) -> str:
+    """The Python that ``odoo shell`` runs to create an API key for the admin user and print
+    it after API_KEY_MARK (see _API_KEY_BODY)."""
+    return f"NAME = {name!r}\nMARK = {API_KEY_MARK!r}\n" + _API_KEY_BODY
+
+
+def parse_api_key(output: str | None) -> str | None:
+    """The key the script printed: what follows API_KEY_MARK on the last line that starts
+    with it, when it looks like a key. Every other line (Odoo's log, warnings) is ignored."""
+    found = None
+    for line in (output or "").splitlines():
+        line = line.strip()
+        if line.startswith(API_KEY_MARK):
+            found = line[len(API_KEY_MARK):].strip()
+    return found if found and API_KEY_SHAPE.fullmatch(found) else None
+
+
+def last_line(text: str | None, hidden: Iterable[str] = ()) -> str:
+    """The last non-empty line of a command's output, safe to show in an error: never a line
+    with API_KEY_MARK, and every value of ``hidden`` and any long hex run taken out."""
+    lines = [line.strip() for line in (text or "").splitlines()
+             if line.strip() and API_KEY_MARK not in line]
+    shown = lines[-1] if lines else ""
+    for value in hidden:
+        if value:
+            shown = shown.replace(value, "<hidden>")
+    return _HEX_RUN.sub("<hidden>", shown)[:200]
+
+
+def key_uid(url: str, db: str, login: str, key: str) -> Any:
+    """The uid Odoo signs ``login`` in as with ``key`` over XML-RPC, which takes an API key
+    where the password goes from 14.0 on; False or None when it refuses or does not answer."""
+    try:
+        return rpc(url, "common", "authenticate", [db, login, key, {}])
+    except (*NOT_READY, SandboxError):
+        return None
+
+
 # --------------------------------------------------------------------- sandbox
 
 
@@ -289,12 +388,25 @@ class Sandbox:
                 lang: str | None, demo: bool | None, registry: str) -> dict[str, str]:
         """Write compose/conf/.env.
 
-        Secrets are always reused (the PostgreSQL volume is initialised with them).
+        Secrets are always reused (the PostgreSQL volume is initialised with them), and so
+        is the admin's API key, which lives in the database.
         Once a database exists (``ODOO_READY=1``) its version, name, language and
         demo setting are fixed; before that, a retry may change them. ``None``
         means "keep the current value, or the default".
         """
         existing = read_env(self.env_file)
+        if (existing.get("PG_PASSWORD", "").startswith("-")
+                and existing.get("ODOO_READY") != "1"
+                and (version or existing.get("ODOO_VERSION") or DEFAULT_VERSION) != "10.0"):
+            # Made before 1.6.0 (see new_secret). From 11.0 the image's entrypoint runs
+            # wait-for-psql.py, so Odoo never started and nothing is lost by starting
+            # over; 10.0 passes the password to Odoo itself, which takes it. The message
+            # holds no part of the password.
+            raise SandboxError(
+                "This sandbox was created with a database password that the Odoo image "
+                "cannot use (fixed in odoo-tools 1.6.0), so Odoo never started. Run "
+                "`sandbox destroy --yes`, then `sandbox up` again."
+            )
         ready = existing.get("ODOO_READY") == "1"
         if ready and version and version != existing.get("ODOO_VERSION"):
             raise SandboxError(
@@ -327,13 +439,13 @@ class Sandbox:
             "POSTGRES_IMAGE": f"{pg_repo}:{POSTGRES_FOR[version]}",
             "ODOO_PLATFORM": "linux/amd64" if version in AMD64_ONLY else "",
             "ODOO_ADMIN_LOGIN": existing.get("ODOO_ADMIN_LOGIN", "admin"),
-            "ODOO_ADMIN_PASSWORD": existing.get("ODOO_ADMIN_PASSWORD")
-            or secrets.token_urlsafe(18),
-            "ODOO_MASTER_PASSWORD": existing.get("ODOO_MASTER_PASSWORD")
-            or secrets.token_urlsafe(24),
-            "PG_PASSWORD": existing.get("PG_PASSWORD") or secrets.token_urlsafe(24),
+            "ODOO_ADMIN_PASSWORD": existing.get("ODOO_ADMIN_PASSWORD") or new_secret(18),
+            "ODOO_MASTER_PASSWORD": existing.get("ODOO_MASTER_PASSWORD") or new_secret(24),
+            "PG_PASSWORD": existing.get("PG_PASSWORD") or new_secret(24),
             "ODOO_READY": "1" if ready else "0",
         }
+        if existing.get("ODOO_API_KEY"):
+            env["ODOO_API_KEY"] = existing["ODOO_API_KEY"]
         self.dir.mkdir(parents=True, exist_ok=True)
         if os.name == "posix":
             os.chmod(self.dir, 0o700)
@@ -352,15 +464,19 @@ class Sandbox:
 
     # -- docker
 
-    def compose(self, *args: str, check: bool = True, capture: bool = False,
-                ) -> subprocess.CompletedProcess[str]:
-        cmd = compose_command() + [
+    def command(self, *args: str) -> list[str]:
+        """The ``docker compose`` command line for this sandbox's project."""
+        return compose_command() + [
             "--project-name", self.project,
             "--project-directory", str(self.dir),
             "-f", str(self.compose_file),
             "--env-file", str(self.env_file),
             *args,
         ]
+
+    def compose(self, *args: str, check: bool = True, capture: bool = False,
+                ) -> subprocess.CompletedProcess[str]:
+        cmd = self.command(*args)
         result = subprocess.run(cmd, text=True, capture_output=capture, check=False)
         if check and result.returncode != 0:
             detail = (result.stderr or "").strip()[-800:] if capture else ""
@@ -402,6 +518,74 @@ class Sandbox:
                               check=False, capture=True)
         return "odoo" in result.stdout.split()
 
+    # -- API key (Odoo 14.0+)
+
+    def secret_values(self) -> list[str]:
+        """The sandbox's secrets as written in .env, to take out of any text that is shown."""
+        env = read_env(self.env_file)
+        return [env[name] for name in SECRET_NAMES if env.get(name)]
+
+    def odoo_shell(self, db: str, script: str, timeout: float,
+                   ) -> subprocess.CompletedProcess[str]:
+        """Run ``script`` with ``odoo shell`` in a one-off container of the odoo service.
+
+        The image's entrypoint adds the database host, user and password from the service's
+        environment when the first argument is ``odoo``. ``--no-deps`` leaves the running
+        stack alone, and ``run`` publishes no port. The output is captured and never shown:
+        it may hold a secret. A timeout raises SandboxError, without that output.
+        """
+        cmd = self.command("run", "--rm", "--no-deps", "-T", "odoo",
+                           "odoo", "shell", "-d", db, "--no-http")
+        try:
+            return subprocess.run(cmd, input=script, capture_output=True, encoding="utf-8",
+                                  errors="replace", timeout=timeout, check=False)
+        except subprocess.TimeoutExpired:
+            pass  # raised below, so that no exception keeps the captured output
+        raise SandboxError(f"Odoo's shell did not finish within {int(timeout)}s")
+
+    def create_api_key(self, db: str, timeout: float) -> str:
+        """A new API key for the admin user, created by Odoo itself (``api_key_script``).
+
+        Raises SandboxError when Odoo prints none; its message holds no secret."""
+        result = self.odoo_shell(db, api_key_script(), timeout)
+        key = parse_api_key(result.stdout)
+        if key:
+            return key
+        detail = last_line(result.stderr or result.stdout, self.secret_values())
+        reason = (f"Odoo's shell exited with code {result.returncode}" if result.returncode
+                  else "Odoo's shell printed no API key")
+        raise SandboxError(f"{reason}: {detail}" if detail else reason)
+
+    def ensure_api_key(self, env: dict[str, str], url: str, uid: Any, timeout: float,
+                       ) -> str | None:
+        """Make sure ``.env`` holds an API key the admin user signs in with (Odoo 14.0+).
+
+        A key already there is reused while Odoo accepts it; otherwise Odoo creates one,
+        which must sign in before it is written. Returns None when the key is in place, or
+        why not: the sandbox then works with the password. The key is never shown.
+        """
+        db, login = env["ODOO_DB"], env["ODOO_ADMIN_LOGIN"]
+        current = env.get("ODOO_API_KEY", "")
+        if current and key_uid(url, db, login, current) == uid:
+            _say("[5/5] API key: reusing the one in .env")
+            return None
+        if current:
+            _say("[5/5] API key: the one in .env no longer signs in (removed in Odoo?), "
+                 "Odoo creates a new one")
+            del env["ODOO_API_KEY"]
+            self.write_env(env)
+        else:
+            _say("[5/5] API key: Odoo creates one for the admin user")
+        try:
+            key = self.create_api_key(db, timeout)
+        except SandboxError as exc:
+            return str(exc)
+        if key_uid(url, db, login, key) != uid:
+            return "Odoo created a key but does not sign in with it"
+        env["ODOO_API_KEY"] = key
+        self.write_env(env)
+        return None
+
 
 # -------------------------------------------------------------------- commands
 
@@ -431,18 +615,18 @@ def cmd_up(args: argparse.Namespace) -> int:
     if version in AMD64_ONLY and platform.machine().lower() in ("arm64", "aarch64"):
         _say(f"Note: the Odoo {version} image is amd64-only; it runs emulated on this ARM "
              "machine (slower, first start can take several minutes).")
-    _say(f"[1/4] Downloading images (first run: ~1-2 GB) — {env['ODOO_IMAGE']}")
+    _say(f"[1/5] Downloading images (first run: ~1-2 GB): {env['ODOO_IMAGE']}")
     env = box.pull(env, args.registry)
-    _say("[2/4] Starting PostgreSQL + Odoo")
+    _say("[2/5] Starting PostgreSQL + Odoo")
     box.compose("up", "-d")
     url = f"http://localhost:{env['ODOO_PORT']}"
-    _say(f"[3/4] Waiting for Odoo on {url}")
+    _say(f"[3/5] Waiting for Odoo on {url}")
     info = wait_for_odoo(url, args.timeout)
     db = env["ODOO_DB"]
     if db in (rpc(url, "db", "list", []) or []):
-        _say(f"[4/4] Database '{db}' already exists — reusing it")
+        _say(f"[4/5] Database '{db}' already exists: reusing it")
     else:
-        _say(f"[4/4] Creating database '{db}' (demo data: "
+        _say(f"[4/5] Creating database '{db}' (demo data: "
              f"{'yes' if env['ODOO_DEMO'] == '1' else 'no'}). This takes 1-5 minutes.")
         rpc(url, "db", "create_database",
             [env["ODOO_MASTER_PASSWORD"], db, env["ODOO_DEMO"] == "1", env["ODOO_LANG"],
@@ -454,6 +638,14 @@ def cmd_up(args: argparse.Namespace) -> int:
         raise SandboxError("The database exists but the admin login failed.")
     env["ODOO_READY"] = "1"  # from now on version/db/lang/demo are fixed
     box.write_env(env)
+    if has_api_keys(version):
+        no_key = box.ensure_api_key(env, url, uid, args.timeout)
+        if no_key:
+            _say(f"Note: the sandbox has no API key ({no_key}). It works with the password "
+                 "instead; the next `sandbox up` tries again.")
+    else:
+        no_key = f"Odoo {version} has no API keys (they start with 14.0)"
+        _say(f"[5/5] API key: none, {no_key}; the plugin signs in with the password")
     summary = {
         "status": "ready",
         "odoo_version": info.get("server_version", env["ODOO_VERSION"]),
@@ -462,6 +654,12 @@ def cmd_up(args: argparse.Namespace) -> int:
         "database": db,
         "login": env["ODOO_ADMIN_LOGIN"],
         "password": f"ODOO_ADMIN_PASSWORD in {box.env_file} (not printed)",
+        "api_key": (f"ODOO_API_KEY in {box.env_file} (not printed)" if no_key is None
+                    else f"none: {no_key}"),
+        # The plugin options to fill (/plugin > odoo-tools > Configure options).
+        "plugin_credential": ("Odoo API key = ODOO_API_KEY, Odoo password empty"
+                              if no_key is None
+                              else "Odoo password = ODOO_ADMIN_PASSWORD, Odoo API key empty"),
         "image": env["ODOO_IMAGE"],
         "directory": str(box.dir),
     }
