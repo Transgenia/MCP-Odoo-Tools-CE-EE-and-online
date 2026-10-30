@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 from fake_odoo_http import FakeOdoo
 
-from odoo_mcp import __version__
+from odoo_mcp import __version__, install_check
 from odoo_mcp.__main__ import main
 from odoo_mcp.config import Settings
 from odoo_mcp.install_check import (
@@ -60,6 +60,12 @@ WINDOWS_LIST: list[dict[str, Any]] = [
 ]
 
 SECRET = "4d1f-NOT-A-REAL-KEY-9c2e"
+
+
+@pytest.fixture(autouse=True)
+def _in_the_project_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The check runs where the user ran `claude plugin list --json`: their project folder.
+    monkeypatch.setattr(install_check, "_current_folder", lambda: TEST_FOLDER)
 
 
 def _schema(with_policy: bool) -> dict[str, Any]:
@@ -192,7 +198,8 @@ def test_one_current_copy_is_fine_and_the_claude_ai_copy_behind_it_too() -> None
 
 
 def test_a_project_copy_of_another_folder_is_not_active_here() -> None:
-    other = dict(WINDOWS_LIST[0], enabled=False, projectEnabled=False)
+    other = dict(WINDOWS_LIST[0], projectPath=os.path.join(HOME, "elsewhere"), enabled=False,
+                 projectEnabled=False)
     report = check_copies([other, WINDOWS_LIST[1]])
     assert report.ok and "other folder" in report.render()
 
@@ -224,10 +231,14 @@ def test_no_copy_at_all() -> None:
 
 
 @pytest.mark.parametrize("here", [True, False])
-def test_one_plugin_id_installed_in_two_scopes_is_one_copy(here: bool) -> None:
+def test_one_plugin_id_installed_in_two_scopes_is_one_copy(here: bool,
+                                                           monkeypatch: pytest.MonkeyPatch) -> None:
     # Claude Code 2.1.314, one id at user scope and at project scope in folder "two",
     # listed in that folder (here) and in an unrelated one: `enabled` and
     # `projectEnabled` are per id and folder, not per installation.
+    if here:
+        monkeypatch.setattr(install_check, "_current_folder",
+                            lambda: os.path.join(HOME, "projects", "two"))
     entries = [
         {"id": "odoo-tools@transgenia-odoo-tools", "version": "1.6.0", "scope": "user",
          "enabled": True, "projectPath": None, "projectEnabled": here},
@@ -239,6 +250,24 @@ def test_one_plugin_id_installed_in_two_scopes_is_one_copy(here: bool) -> None:
     assert report.ok and report.terminal == [], report.render()
     assert [c["state"] for c in report.data["copies"]] == (
         ["active", "active"] if here else ["active", "other folder"])
+
+
+def test_a_local_copy_counts_in_its_folder_and_below(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Second review of 1.6.0: a local installation lives in .claude/settings.local.json,
+    # and `projectEnabled` reads only settings.json, so Claude Code 2.1.314 lists it with
+    # `enabled` true and `projectEnabled` false in its own folder. An old local copy next
+    # to a current user copy passed as ok.
+    local = {"id": "odoo-tools@other-mkt", "version": "1.4.0", "scope": "local",
+             "enabled": True, "projectPath": TEST_FOLDER, "projectEnabled": False}
+    for folder in (TEST_FOLDER, os.path.join(TEST_FOLDER, "sub", "deeper")):
+        monkeypatch.setattr(install_check, "_current_folder", lambda folder=folder: folder)
+        report = check_copies([local, WINDOWS_LIST[1]])
+        assert [p["code"] for p in report.problems] == ["duplicates", "no-policy"]
+        assert report.terminal == ["cd ~/Downloads/Test-Oct2026",
+                                   "claude plugin uninstall odoo-tools@other-mkt --scope local"]
+    monkeypatch.setattr(install_check, "_current_folder",
+                        lambda: os.path.join(HOME, "elsewhere"))
+    assert check_copies([local, WINDOWS_LIST[1]]).ok
 
 
 def test_an_old_copy_from_transgenias_marketplace_is_updated_not_reinstalled() -> None:
@@ -277,15 +306,22 @@ def test_a_known_marketplace_is_updated_before_an_install() -> None:
     ("D:\\Proyectos\\odoo", "cd D:/Proyectos/odoo"),
     (os.path.join(HOME, "Cost$Center"), "# first change to this folder by hand: ~/Cost$Center"),
     (os.path.join(HOME, "hey!"), "# first change to this folder by hand: ~/hey!"),
+    # PowerShell's cd reads [ ] as wildcards; Git Bash mangles a network path's backslashes.
+    (os.path.join(HOME, "proj[1]"), "# first change to this folder by hand: ~/proj[1]"),
+    ("\\\\server\\share\\odoo", "# first change to this folder by hand: \\\\server\\share\\odoo"),
 ])
-def test_the_cd_line_is_quoted_whenever_a_shell_would_read_the_path(folder: str,
-                                                                    line: str) -> None:
+def test_the_cd_line_is_quoted_whenever_a_shell_would_read_the_path(
+        folder: str, line: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(install_check, "_current_folder", lambda: folder)
     entry = dict(WINDOWS_LIST[0], projectPath=folder)
     assert check_copies([entry, WINDOWS_LIST[1]]).terminal[0] == line
 
 
-def test_a_folder_with_a_space_gets_a_cd_that_bash_and_powershell_both_read() -> None:
-    spaced = dict(WINDOWS_LIST[0], projectPath=os.path.join(HOME, "My Projects", "odoo"))
+def test_a_folder_with_a_space_gets_a_cd_that_bash_and_powershell_both_read(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = os.path.join(HOME, "My Projects", "odoo")
+    monkeypatch.setattr(install_check, "_current_folder", lambda: folder)
+    spaced = dict(WINDOWS_LIST[0], projectPath=folder)
     report = check_copies([spaced, WINDOWS_LIST[1]])
     assert report.terminal[0] == 'cd ~/"My Projects/odoo"'
 
@@ -362,6 +398,15 @@ def test_nothing_of_the_url_but_its_scheme_and_host_is_ever_shown(url: str) -> N
         assert any("user name or password" in t for t in texts)
 
 
+def test_a_url_with_an_at_sign_is_not_shown_even_when_its_split_looks_clean() -> None:
+    # Second review: a password holding "#" moves the split, so the "host" was the user
+    # name and the "port" the start of the password.
+    url = f"https://admin:4242#{SECRET}@erp.example.com"
+    for as_json in (False, True):
+        code, text = _run("options", _options(odoo_url=url), as_json=as_json)
+        assert code == 1 and "admin" not in text and "4242" not in text and SECRET not in text
+
+
 def test_a_url_without_a_host_is_not_shown_at_all() -> None:
     report = check_options(_options(odoo_url=f"admin:{SECRET}@erp.example.com"))
     assert "Odoo URL: set, not shown (no scheme and host could be read)" in report.lines
@@ -410,19 +455,21 @@ def test_odd_note_details_do_not_stop_the_copies_check() -> None:
     assert code == 0
 
 
-def test_the_checks_read_utf8_whatever_the_code_page() -> None:
+def test_the_checks_read_utf8_whatever_the_code_page(tmp_path: Path) -> None:
     # Claude Code prints UTF-8; Python on Windows reads a pipe as cp1252, where the
     # second byte of an accented capital (0x81) does not decode. PYTHONIOENCODING
-    # plays that here, with and without a BOM.
-    entries = [dict(WINDOWS_LIST[0], projectPath="/srv/Ángel/odoo"), WINDOWS_LIST[1]]
+    # plays that here, with and without a BOM, run from the project folder.
+    folder = tmp_path / "Ángel" / "odoo"
+    folder.mkdir(parents=True)
+    entries = [dict(WINDOWS_LIST[0], projectPath=str(folder)), WINDOWS_LIST[1]]
     payload = json.dumps(entries, ensure_ascii=False).encode("utf-8")
     env = dict(os.environ, PYTHONIOENCODING="cp1252")
     for prefix in (b"", b"\xef\xbb\xbf"):
         done = subprocess.run([sys.executable, str(RUN_STDIO), "--check-copies"],
                               input=prefix + payload, capture_output=True, env=env,
-                              timeout=60, check=False)
+                              cwd=folder, timeout=60, check=False)
         assert done.returncode == 1, done.stderr.decode("utf-8", "replace")
-        assert 'cd "/srv/Ángel/odoo"' in done.stdout.decode("utf-8")
+        assert "Ángel/odoo\"" in done.stdout.decode("utf-8")
 
 
 def test_the_json_report_is_machine_readable() -> None:

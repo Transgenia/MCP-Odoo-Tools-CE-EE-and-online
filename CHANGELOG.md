@@ -51,7 +51,7 @@ The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 2
       for bash and PowerShell, then `claude plugin uninstall <id> --scope <scope>`.
     - For an old copy from Transgenia's marketplace it prints
       `claude plugin marketplace update` and `claude plugin update` instead.
-      Installing again would reuse the outdated local copy of the marketplace.
+      Installing again can reuse an outdated local copy of the marketplace.
   - `run_stdio.py --check-options` reads `claude plugin configure <id> --json`. It
     checks:
     - the required options and a credential;

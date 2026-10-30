@@ -238,6 +238,19 @@ def test_a_10_sandbox_or_one_that_worked_keeps_its_dash_password(tmp_path: Path)
         assert kept["PG_PASSWORD"] == env["PG_PASSWORD"]
 
 
+def test_a_dash_password_is_refused_for_the_version_that_will_run(tmp_path: Path) -> None:
+    # Second review: a 10.0 sandbox that never got ready, retried as 11.0 (the same
+    # PostgreSQL), would run 11.0's wait-for-psql.py with that password and loop.
+    box = dl.Sandbox(tmp_path / "sbx")
+    box.prepare("10.0", 8069, "sandbox", "en_US", False, "transgenia")
+    env = dl.read_env(box.env_file)
+    env["PG_PASSWORD"] = "-" + env["PG_PASSWORD"]
+    box.write_env(env)
+    with pytest.raises(dl.SandboxError):
+        box.prepare("11.0", None, None, None, None, "transgenia")
+    assert box.prepare(None, None, None, None, None, "transgenia")["ODOO_VERSION"] == "10.0"
+
+
 def test_passwords_are_never_printed(tmp_path: Path, capsys: pytest.CaptureFixture[str],
                                      monkeypatch: pytest.MonkeyPatch) -> None:
     box = dl.Sandbox(tmp_path / "sbx")

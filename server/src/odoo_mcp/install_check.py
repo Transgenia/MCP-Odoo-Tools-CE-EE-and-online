@@ -54,8 +54,8 @@ _SCOPE_RANK = {"local": 3, "project": 2, "user": 1}
 # A cd line: a path of these characters needs no quotes in bash or PowerShell.
 _SAFE_CD = re.compile(r"[A-Za-z0-9._/:~-]+")
 # Read by a shell even inside double quotes (bash: $ ` " and ! history expansion;
-# PowerShell: $ ` "): no one quoting serves both shells.
-_CD_BY_HAND = frozenset('"$`!')
+# PowerShell: $ ` ", and [ ] as wildcards in cd): no one quoting serves both shells.
+_CD_BY_HAND = frozenset('"$`![]')
 _DRIVE = re.compile(r"^[A-Za-z]:\\")
 
 
@@ -177,7 +177,8 @@ def _cd(path: str) -> str:
         shown = shown.replace("\\", "/")
     if _SAFE_CD.fullmatch(shown):
         return f"cd {shown}"
-    if not shown.isprintable() or any(char in _CD_BY_HAND for char in shown):
+    if (not shown.isprintable() or "\\" in shown  # a network path, which Git Bash mangles
+            or any(char in _CD_BY_HAND for char in shown)):
         printable = "".join(char if char.isprintable() else "?" for char in shown)
         return f"# first change to this folder by hand: {printable}"
     if shown.startswith("~/"):
@@ -185,20 +186,36 @@ def _cd(path: str) -> str:
     return f'cd "{shown}"'
 
 
+def _current_folder() -> str:
+    """The folder the check runs in: the user's project folder, where they ran
+    ``claude plugin list --json``."""
+    return os.getcwd()
+
+
+def _covers(project: str) -> bool:
+    """Whether the current folder is ``project`` or a folder inside it."""
+    try:
+        base = os.path.normcase(os.path.realpath(project))
+        here = os.path.normcase(os.path.realpath(_current_folder()))
+        return os.path.commonpath([base, here]) == base
+    except (OSError, ValueError):  # another drive, an unreadable path
+        return False
+
+
 def _copy_state(entry: dict[str, Any]) -> str:
     details = entry.get("noteDetails")
     if isinstance(details, list) and any(isinstance(d, dict) and d.get("type") == _SHADOWED
                                          for d in details):
         return "shadowed"
-    if entry.get("scope") in ("project", "local"):
-        # Claude Code reports `enabled` and `projectEnabled` per plugin id and folder,
-        # not per installation: a project installation made in another folder shows
-        # `enabled` true when the same id is active here through another scope, with
-        # `projectEnabled` false. It is active here only when this folder enables it.
-        if "projectEnabled" not in entry:  # an older Claude Code: `enabled` alone
-            return "active" if entry.get("enabled") is True else "other folder"
-        if entry.get("projectEnabled") is not True:
-            return "other folder"
+    # Claude Code reports `enabled` per plugin id and folder, not per installation: a
+    # project installation of another folder shows `enabled` true when the same id is
+    # active here through another scope. `projectEnabled` reads only
+    # .claude/settings.json, not settings.local.json, so a local installation in its own
+    # folder shows it false. An installation counts here when this folder is its project
+    # folder or inside it.
+    if (entry.get("scope") in ("project", "local") and isinstance(entry.get("projectPath"), str)
+            and not _covers(entry["projectPath"])):
+        return "other folder"
     return "active" if entry.get("enabled") is True else "disabled"
 
 
@@ -234,7 +251,7 @@ def _uninstall(entry: dict[str, Any]) -> list[str]:
 def _install_commands(known: bool) -> list[str]:
     """Commands that install a current copy from Transgenia's marketplace. When that
     marketplace is already known here, its local copy may be outdated, and
-    ``install --marketplace`` reuses it as it is: update it first."""
+    ``install --marketplace`` can reuse it as it is: update it first."""
     commands = [f"claude plugin marketplace update {MARKETPLACE}"] if known else []
     commands.append(f"claude plugin install {PLUGIN_NAME} --marketplace "
                     f"{MARKETPLACE_SOURCE} --scope user")
@@ -252,7 +269,7 @@ def _update_commands(keep: dict[str, Any], known: bool) -> list[str]:
     commands = []
     if scope in ("project", "local") and isinstance(keep.get("projectPath"), str):
         commands.append(_cd(keep["projectPath"]))
-    # Uninstalling and installing again would reuse the outdated local copy of the
+    # Uninstalling and installing again can reuse an outdated local copy of the
     # marketplace and put the same version back: update the marketplace, then the plugin.
     return commands + [f"claude plugin marketplace update {MARKETPLACE}",
                        f"claude plugin update {OUR_ID} --scope {scope}"]
@@ -339,7 +356,9 @@ def _url_problems(url: str) -> tuple[list[str], list[str], str | None]:
         return ["the Odoo URL cannot be read; use https://your-host"], [], None
     host = parts.hostname or ""
     shown = None
-    if parts.scheme in ("http", "https") and host:
+    # With an "@" the split itself is unsafe: in https://admin:4242#pw@host the host
+    # reads as "admin" and the port as 4242. Nothing of such a URL is shown.
+    if parts.scheme in ("http", "https") and host and "@" not in url:
         shown = f"{parts.scheme}://{f'[{host}]' if ':' in host else host}"
         shown += f":{port}" if port is not None else ""
     if "@" in url:

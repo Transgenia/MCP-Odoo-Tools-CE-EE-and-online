@@ -90,7 +90,7 @@ plugin's **Connectors** tab is on 2 or 3.
   neither check runs. Read `claude plugin list --json` yourself instead: more than
   one `odoo-tools@...` id enabled here, or a version older than 1.5.0, is the
   problem. One id listed for two scopes is one copy, and a project or local entry
-  counts only when its `projectEnabled` is true. Then go to Step 1A. Fix the options in Step 1C, then restart Claude.
+  counts only in its own folder (its `projectPath`, or a folder inside it). Then go to Step 1A. Fix the options in Step 1C, then restart Claude.
 - **2 or 3: Cowork or Claude chat.** These apps do not run this plugin's local
   MCP server and have no form for plugin options. Anthropic's plugin support
   matrix says Cowork "doesn't prompt for values" and ignores an MCP server whose
