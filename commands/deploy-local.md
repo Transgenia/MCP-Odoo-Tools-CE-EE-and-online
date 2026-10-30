@@ -57,7 +57,9 @@ Ask (single choice):
    (`ghcr.io/transgenia/odoo`, `ghcr.io/transgenia/postgres`, mirrors of the
    official images; if it is unreachable the script falls back to Docker Hub),
    the first download is ~1-2 GB, a database is created, and the passwords are
-   generated locally into `~/.odoo-tools/sandbox/.env` (owner-only). Ask for a yes.
+   generated locally into `~/.odoo-tools/sandbox/.env` (owner-only). On Odoo 14.0
+   and newer, Odoo also creates an API key for the admin user, kept in the same
+   file. Ask for a yes.
 3. Run (with the chosen values):
 
    ```bash
@@ -68,15 +70,27 @@ Ask (single choice):
    minutes; let it finish. On `ERROR:` read the message to the user and follow
    its fix (port busy → `--port`, engine stopped → start Docker).
 4. On success the script prints the URL, database, login and **where** the
-   password is. **Do not read, print or copy the `.env` file or any password.**
-   Tell the user to open `~/.odoo-tools/sandbox/.env` in their own editor and use
-   `ODOO_ADMIN_PASSWORD` to sign in at the URL.
+   password and, on Odoo 14.0 and newer, the API key are. **Do not read, print or
+   copy the `.env` file, any password or the API key, and never ask for them in
+   the chat.** Tell the user to open `~/.odoo-tools/sandbox/.env` in their own
+   editor and use `ODOO_ADMIN_PASSWORD` to sign in at the URL.
 5. Connect the plugin to the sandbox: `/plugin` → **odoo-tools** → **Configure
    options**: URL `http://localhost:<port>`, database (default `sandbox`), login
-   `admin`, **Password** = `ODOO_ADMIN_PASSWORD` (leave API key empty). Then
-   restart Claude and call `odoo_version` to verify. Remind them these options
-   are the plugin's single connection: going back to production later means
-   entering the production values again.
+   `admin`, and the credential of the series (the summary's `plugin_credential`
+   says which):
+   - **Odoo 14.0 to 19.0**: **Odoo API key** = `ODOO_API_KEY` from the `.env`,
+     and leave **Password** empty. Odoo created this key for `admin`; it is listed
+     as "odoo-tools sandbox" under Preferences > Account Security.
+   - **Odoo 10.0 to 13.0**, which have no API keys: **Password** =
+     `ODOO_ADMIN_PASSWORD`, and leave **Odoo API key** empty.
+   - If the summary says the sandbox has no API key (`api_key` starts with
+     `none:`), use the password as on 10.0 to 13.0: on the sandbox it works in
+     the Password field too, although that field is titled for Odoo < 14. Read
+     the reason to the user; the next `sandbox up` tries to create the key again.
+
+   Then restart Claude and call `odoo_version` to verify. Remind them these
+   options are the plugin's single connection: going back to production later
+   means entering the production values again.
 6. Hand over to the **Training** phase of `/odoo-tools:odoo-setup-mcp`.
 
 ## Mode B — MCP server in a container (existing Odoo)
@@ -140,7 +154,7 @@ Ask (single choice):
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox down          # stop, keep data
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox up            # start again
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox up            # start again; on 14.0+ creates the API key if missing
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes  # deletes the database
 ```

@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -210,12 +211,18 @@ def test_passwords_are_never_printed(tmp_path: Path, capsys: pytest.CaptureFixtu
 
     monkeypatch.setattr(dl, "rpc", fake_rpc)
     monkeypatch.setattr(dl, "wait_for_odoo", lambda url, t: {"server_version": "18.0"})
+    key = secrets.token_hex(20)  # what Odoo's shell prints on 14.0+ (1.6.0)
+    monkeypatch.setattr(dl.Sandbox, "odoo_shell", lambda self, db, script, timeout:
+                        subprocess.CompletedProcess(["docker"], 0, dl.API_KEY_MARK + key, ""))
     assert dl.main(["sandbox", "up", "--dir", str(box.dir)]) == 0
     out = capsys.readouterr().out
     assert ("db", "create_database") in calls
-    assert dl.read_env(box.env_file)["ODOO_READY"] == "1"  # marked only after success
+    saved = dl.read_env(box.env_file)
+    assert saved["ODOO_READY"] == "1"  # marked only after success
+    assert saved["ODOO_API_KEY"] == key
     for secret in ("PG_PASSWORD", "ODOO_ADMIN_PASSWORD", "ODOO_MASTER_PASSWORD"):
         assert env[secret] not in out
+    assert key not in out
     assert "dev@transgenia.org" in out and "wa.me/525580340405" in out
 
 
