@@ -39,10 +39,14 @@ per-model rules). To keep the 1.4 behaviour, set the profile to `full`. See
 the plugin's data folder (`${CLAUDE_PLUGIN_DATA}/audit`, kept 90 days).
 
 These options are a Claude Code feature. Cowork does not prompt for plugin options
-and ignores this plugin's MCP server because its connection options have no
-default, and Claude chat ignores a plugin's local MCP server, so the Odoo tools are
-not available in either (the plugin's skills and
-commands still load). See [Where it works](../README.md#where-it-works) and
+and ignores this plugin's MCP server because its connection options have no default,
+and Claude chat ignores a plugin's local MCP server, so the Odoo tools are not
+available in either (the plugin's skills and commands still load). Claude Desktop
+names that case for this server with the status `not_started` and the reason
+`user_config_unsupported`; no update of the plugin changes it. A cloud session of
+Claude Code is a separate case: it has the plugin synced but not its options, which
+stay on the computer where you entered them, so use a local session. See
+[Where it works](../README.md#where-it-works) and
 [If the Odoo tools do not appear](../README.md#if-the-odoo-tools-do-not-appear).
 
 Without the interactive dialog (scripts, remote or headless machines; Claude Code
@@ -68,7 +72,8 @@ download, at install time or at start-up.
 `python3 --version`.
 
 - Linux and macOS usually already have it (on macOS, from Apple's Command Line
-  Tools).
+  Tools, `xcode-select --install`; if the Mac asks for an administrator and you
+  are not one, your IT team installs them).
 - **Windows:** the Microsoft Store Python provides `python3.exe`; the python.org
   installer provides only `python.exe` and `py.exe`. Install Python from the
   Store, or put a `python3.exe` on `PATH` (e.g. a copy of or hard link to

@@ -10,13 +10,17 @@ verification, hands-on training, daily use and deployment. No Odoo to practise
 with? **`/odoo-tools:deploy-local`** starts a local sandbox. **`/odoo-doctor`**
 checks an existing connection.
 
-Using Cowork or claude.ai chat? The Odoo tools do not run there: the plugin's
-skills and commands load, but those apps do not start its MCP server and have no
-form for the connection options. Nothing is wrong with your account, your Odoo or
-your Python. Open the **Code** tab of Claude Desktop (or Claude Code in a terminal,
-VS Code or JetBrains): the plugin you installed on your Claude account appears there
-as a synced plugin when you sign in with the same account. Or ask Transgenia for
-assisted setup (below). See [Where it works](README.md#where-it-works).
+Using Cowork or claude.ai chat? The Odoo tools do not run there: the plugin's skills
+and commands load, but those apps do not start its MCP server and have no form for
+the connection options. Nothing is wrong with your account, your Odoo or your
+Python. If Claude or the app shows this plugin's server as `not_started` with the
+reason `user_config_unsupported`, that is this case, not a bug, and no update
+changes it. Open a local session of the **Code** tab of Claude Desktop (or Claude
+Code in a terminal, VS Code or JetBrains): the plugin you installed on your Claude
+account appears there as a synced plugin when you sign in with the same account. A
+cloud session of the Code tab does not work either, for another reason: your
+connection options stay on your computer. Or ask Transgenia for assisted setup
+(below). See [Where it works](README.md#where-it-works).
 
 ## If something fails: the support report
 

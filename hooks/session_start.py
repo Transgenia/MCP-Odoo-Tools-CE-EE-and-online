@@ -92,9 +92,10 @@ TRANSGENIA = "Transgenia: dev@transgenia.org, WhatsApp +52 55 8034 0405"
 SURFACE_CONTEXT = (
     "odoo-tools plugin status: In Cowork and Claude chat this plugin's Odoo tools (odoo_*) "
     "do not run at all, whatever Python or options; only its skills and commands load "
-    "there, and nothing is wrong with the user's account, Odoo or Python. Offer the user, "
-    "in this order: the Code tab of Claude Desktop (the plugin is synced there when they "
-    "sign in with the same account) or Claude Code; and assisted setup by " + TRANSGENIA
+    "there, and nothing is wrong with the user's account, Odoo or Python; no update of the "
+    "plugin changes that. Offer the user, in this order: a local session of the Code tab "
+    "of Claude Desktop (the plugin is synced there when they sign in with the same "
+    "account) or Claude Code; and assisted setup by " + TRANSGENIA
     + ". In Claude Code, the connection options are set in /plugin > odoo-tools > "
     "Configure options, where the user types them, never in the chat. "
     "/odoo-tools:odoo-doctor diagnoses. This note comes from the plugin's local "
@@ -104,8 +105,9 @@ SURFACE_CONTEXT = (
 )
 SURFACE_MESSAGE = (
     "odoo-tools: In Cowork and Claude chat this plugin's Odoo tools do not run, whatever "
-    "Python or options. Open the Code tab of Claude Desktop (the plugin is synced there "
-    "when you sign in with the same account) or Claude Code, or ask for assisted setup by "
+    "Python or options. Open a local session of the Code tab of Claude Desktop (the plugin "
+    "is synced there when you sign in with the same account) or Claude Code, or ask for "
+    "assisted setup by "
     + TRANSGENIA + ". In Claude Code, set the connection in /plugin > odoo-tools > "
     "Configure options. /odoo-tools:odoo-doctor diagnoses."
 )

@@ -54,13 +54,13 @@ CANARIES = {
 FIRST_MESSAGE = (
     "odoo-tools: python3 is not runnable on this computer. In Claude Code the Odoo MCP "
     "server needs Python 3.9+ as python3 (README, Requirements). In Cowork and Claude chat "
-    "the Odoo tools do not run with or without Python: use the Code tab of Claude Desktop, "
-    "or contact Transgenia (dev@transgenia.org, WhatsApp +52 55 8034 0405)."
+    "the Odoo tools do not run with or without Python: use a local session of the Code tab "
+    "of Claude Desktop, or contact Transgenia (dev@transgenia.org, WhatsApp +52 55 8034 0405)."
 )
 # The surface notice, in its order.
 # The order of docs/product-rules.md, rule 3: the Code tab, then Transgenia's assisted
 # setup; then the Claude Code options and the doctor.
-SURFACE = ("In Cowork and Claude chat", "Code tab of Claude Desktop",
+SURFACE = ("In Cowork and Claude chat", "a local session of the Code tab of Claude Desktop",
            "assisted setup by Transgenia: dev@transgenia.org, WhatsApp +52 55 8034 0405",
            "/plugin > odoo-tools > Configure options", "/odoo-tools:odoo-doctor diagnoses")
 LINE = re.compile(r"^odoo-tools session diagnostics: entrypoint=(\S+) server_last=(\S+) "
@@ -196,6 +196,9 @@ def test_no_record_puts_the_surface_first(tmp_path: Path) -> None:
     _in_order(context, SURFACE)
     _in_order(message, SURFACE)
     assert "whatever Python or options" in message and len(message) < len(context)
+    # The note runs in every session, Cowork's included, so it names only the way out (a
+    # local session): the doctor and the guided route explain a cloud session there.
+    assert "no update of the plugin changes that" in context and "cloud" not in context
     assert _line(context).groups() == ("claude-desktop", "none", "none",
                                        str(_data(tmp_path) / "diagnostics"))
     for text in (message, context):
