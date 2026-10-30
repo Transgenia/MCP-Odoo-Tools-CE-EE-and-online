@@ -4,6 +4,138 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-10-30
+
+One copy, the right copy, and the right place for each command. A Windows
+onboarding on 2026-10-29 ended with two copies of odoo-tools active in one folder:
+
+- 1.4.0 from the Claude plugin directory, in project scope, without the permission
+  policy;
+- 1.5.1 from Transgenia's marketplace, in user scope.
+
+What went wrong:
+
+- the options dialog saved the connection in the 1.4.0 copy, its server answered
+  `odoo_version`, and nothing said which copy that was;
+- `/plugin install` was typed in PowerShell;
+- `python3` was missing.
+
+1.6.0:
+
+- names the copy that answers;
+- finds a second or old copy and stops the guided route on it;
+- keeps terminal and Claude Code commands apart;
+- gives the sandbox an API key;
+- closes the remaining gap of the permission policy's known limit 10.
+
+The policy digest changes (`TIERS_VERSION` 2026-10-30.1); the tool count stays 28.
+
+### Added
+
+- **`odoo_version` names the copy that answers.** A new `plugin` block gives the
+  odoo-tools version that answered and, in Claude Code, its installed copy
+  (`plugin@marketplace`). The copy is read from the name of the data folder Claude
+  Code gives each copy. The block is also there when the policy is locked. An
+  answer without a `policy` block comes from a copy older than 1.5.0.
+- **The copies check and the options check.** Both run no program, contact
+  nothing, never print a sensitive value whatever the input holds, and print
+  terminal commands and Claude Code commands apart. Exit 0 ok, 1 to fix, 2 when the
+  input is not that JSON.
+  - `run_stdio.py --check-copies` reads `claude plugin list --json` on stdin. It
+    finds two active copies and copies older than 1.5.0, skips a claude.ai copy that
+    a local one shadows, names the copy to keep, and prints the exact terminal
+    commands: a `cd` to the project folder, then
+    `claude plugin uninstall <id> --scope <scope>`.
+  - `run_stdio.py --check-options` reads `claude plugin configure <id> --json`. It
+    checks:
+    - the required options and a credential;
+    - the URL: scheme and host only, and a user name or password in it is refused
+      and never echoed;
+    - the permission options that a copy older than 1.5.0 lacks;
+    - a short timeout;
+    - plain http to another computer.
+- **Windows launch workflow.** `windows-launch.yml` installs Claude Code and the
+  plugin from the checkout on Windows and runs `claude mcp list`, which starts the
+  MCP server without a model call. It runs twice:
+  - with a `python3.exe` hard link next to `python.exe` (the fix the guided route
+    gives), where the server must connect;
+  - with no `python3.exe`, as after the python.org installer, where it records what
+    Claude Code reports.
+- **Evals.** Two cases from that onboarding:
+  - an `odoo_version` answer without `policy`;
+  - `/plugin install` typed in PowerShell.
+
+  Both failed at first, because the model answered without opening a skill. The
+  rules they need now sit in the always-loaded descriptions of `odoo-setup-mcp`,
+  `odoo-mcp-tools` and `/odoo-tools:odoo-doctor`, and the five cases pass in three
+  runs.
+
+### Changed
+
+- **The guided route stops on a second or old copy.** In `/odoo-tools:odoo-setup-mcp`:
+  - An `odoo_version` answer without `policy`, or with a locked `note`, stops the
+    route before any training, daily use or write.
+  - In Claude Code the copies check runs once, even when the connection works, and
+    the options check runs after saving.
+  - A purpose question comes first. For practice: Read-only mode and the `readonly`
+    profile. For real work: `standard`, with writes only on request.
+  - The database of an Odoo Online instance is suggested from its subdomain.
+  - The probe also looks for `git`.
+  - On Windows, after installing Claude Code, Git or Python, the user opens a new
+    terminal.
+
+  `/odoo-tools:odoo-doctor` reports `plugin`, stops without `policy`, and adds the
+  copies check to its table. `odoo-connect` documents `policy` and `plugin`.
+- **Install commands by surface.** Every guide gives
+  `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`
+  for inside Claude Code, and `claude plugin install odoo-tools --marketplace ...
+  --scope user` for a terminal. The README gains "Two copies of odoo-tools", which
+  covers:
+  - the signs;
+  - the `Plugin option "odoo_url" isn't set` message, which comes from Claude Code;
+  - the commands;
+  - that `odoo-tools@claude-plugins-official` does not exist;
+  - that the Claude plugin directory can offer an older version than the
+    marketplace;
+  - the claude.ai three-dot menu, which has no place for the options.
+
+  A test keeps slash commands out of terminal blocks, labels their blocks `text`,
+  and finds no "/plugin manage" (a Claude Code message, not a menu).
+- **Repository.**
+  - `CLAUDE.md` moves to `.claude/CLAUDE.md`, so `claude plugin validate --strict`
+    passes without a warning.
+  - `actions/checkout`, `actions/setup-python` and `actions/setup-node` move to
+    Node 24 versions that this repository already runs.
+  - The docker actions keep their versions: they run only after a release is
+    published.
+
+### Fixed
+
+- **The other keys of a context passed positionally, on Odoo 10 to 12.**
+  - **The gap:** 1.5.1 held the `default_<field>` keys of an object passed
+    positionally to a business method (a method outside the policy's argument
+    table, such as `action_confirm`) to the context rules, but not its other keys,
+    because the same object may be the method's values. So a key the allowlist
+    refuses, such as `tracking_disable`, could reach Odoo 10 to 12 as a context key
+    (known limit 10).
+  - **The fix:** on those series the guarded session now decides those keys with
+    the model's fields, read with the same cached `fields_get` it uses for its
+    other checks:
+    - a field of the model is one of the method's values, checked as before;
+    - an allowed context key passes;
+    - any other key is refused (rule `context`). The refusal names the key, never
+      its value, and says to pass the context by name in `kwargs["context"]` and
+      the method's other arguments by name, or to put the values in the record's
+      values.
+  - **When the fields cannot be read,** the call is refused (rule `unverified`).
+  - **Pairs:** a list of `[key, value]` pairs counts as the context it builds. So a
+    list of text pairs whose first items are neither fields nor allowed keys, passed
+    positionally to a business method, is refused there too. Pass it by name.
+  - **Unchanged:** Layer A, Odoo 13 and later, the methods in the argument table,
+    and profile `full`.
+  - **What remains:** a context key that has the name of one of the model's fields
+    is read as a value (known limit 10 in `docs/policy.md`).
+
 ## [1.5.1] - 2026-10-29
 
 Honest on every surface, local diagnostics, and what the Claude plugin directory

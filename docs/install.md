@@ -97,7 +97,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
 
 # container mode: the MCP server without a local Python
-docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.5.1
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.6.0
 ```
 
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
@@ -161,7 +161,7 @@ audit folder writable by the container's user (`mcp`):
 
 docker run -i --rm --env-file ./odoo.env \
   -v ~/.config/odoo-tools/policy.json:/policy/policy.json:ro \
-  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.5.1
+  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.6.0
 ```
 
 Without an audit folder the audit lines go to `docker logs`. A remote HTTP mode, where the
