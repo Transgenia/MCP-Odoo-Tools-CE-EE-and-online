@@ -43,12 +43,15 @@ class ToolContext:
     called directly (tests) may get a plain session and manager. ``policy`` is the
     server's permission policy; only ``odoo_version``, ``odoo_list_models`` and
     ``odoo_access_check`` read it, and a handler called directly gets ``None`` and
-    behaves as before the policy existed.
+    behaves as before the policy existed. ``plugin`` is this server's identity
+    (``install_check.plugin_identity``: the odoo-tools version and, in Claude Code,
+    the installed copy), which ``odoo_version`` reports; ``None`` when called directly.
     """
 
     session: Any
     manager: Any
     policy: Any = None
+    plugin: Any = None
 
 
 # A tool handler receives (context, arguments) and returns a JSON-serialisable

@@ -58,6 +58,7 @@ from .errors import (
     PolicyError,
     TransportError,
 )
+from .install_check import plugin_identity
 from .observability import Observability
 from .policy import Policy
 from .policy.guard import GuardedSession, ManagerView
@@ -168,6 +169,9 @@ class McpServer:
         # Metadata for support (ODOO_DIAG_DIR); serve() writes start and stop.
         self.diag = diagnostics if diagnostics is not None else Diagnostics.from_settings(
             settings)
+        # Which odoo-tools answers (version, and in Claude Code the installed copy):
+        # odoo_version reports it, so two copies installed side by side can be told apart.
+        self.plugin = plugin_identity(settings.diag_dir, settings.audit_dir)
         self.obs = obs or Observability(
             metrics=settings.metrics,
             metrics_port=settings.metrics_port,
@@ -277,7 +281,7 @@ class McpServer:
             # Odoo call against the policy before the transport is touched.
             session = GuardedSession(raw, scope) if raw is not None else None
             ctx = ToolContext(session=session, manager=ManagerView(self.manager),
-                              policy=self.policy)
+                              policy=self.policy, plugin=self.plugin)
             with self.obs.span(name):
                 result = tool.handler(ctx, arguments)
             text = json.dumps(scope.annotate(result), default=str, ensure_ascii=False)

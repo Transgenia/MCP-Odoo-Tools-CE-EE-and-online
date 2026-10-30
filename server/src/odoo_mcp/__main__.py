@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 """CLI entry point: ``odoo-mcp`` / ``python -m odoo_mcp``.
 
-Without options it serves MCP over stdio. Three offline commands exit instead,
+Without options it serves MCP over stdio. Five offline commands exit instead,
 and none contacts Odoo:
 
   * ``--check-policy FILE [--profile P] [--explain MODEL:OP[:METHOD] ...]
@@ -16,7 +16,14 @@ and none contacts Odoo:
     report (``diagnostics.py``): the plugin, Python and OS versions, the last
     diagnostics events, a 7-day audit summary and the policy, with no keys, URLs,
     logins or record data. The folders default to ODOO_DIAG_DIR and
-    ODOO_AUDIT_DIR. It exits 0, files present or not (2 on bad usage).
+    ODOO_AUDIT_DIR. It exits 0, files present or not (2 on bad usage);
+  * ``--check-copies [--json]`` reads ``claude plugin list --json`` on stdin and
+    checks that one odoo-tools copy, 1.5.0 or newer, is active
+    (``install_check.py``);
+  * ``--check-options [--json]`` reads ``claude plugin configure <id> --json`` on
+    stdin and checks that copy's options. Both exit 0 when there is nothing to
+    fix, 1 when there is, 2 when the input is not that JSON; neither runs a
+    program or prints a secret.
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ import sys
 from .audit import verify_main
 from .config import Settings
 from .diagnostics import diagnose_main
+from .install_check import check_main
 from .policy.cli import check_policy_main
 from .policy.model import PROFILES, parse_explain
 from .registry import registry
@@ -79,23 +87,45 @@ def main(argv: list[str] | None = None) -> int:
                         help="with --diagnose: the diagnostics folder (default ODOO_DIAG_DIR)")
     parser.add_argument("--audit-dir", metavar="DIR",
                         help="with --diagnose: the audit folder (default ODOO_AUDIT_DIR)")
+    parser.add_argument(
+        "--check-copies",
+        action="store_true",
+        help="read `claude plugin list --json` on stdin and check that one odoo-tools "
+        "copy, 1.5.0 or newer, is active; prints the commands that fix it (exit 0 ok, "
+        "1 to fix, 2 bad input). It runs no program and never contacts Odoo",
+    )
+    parser.add_argument(
+        "--check-options",
+        action="store_true",
+        help="read `claude plugin configure <id> --json` on stdin and check that copy's "
+        "options: connection, credential, URL, permission options (exit 0 ok, 1 to fix, "
+        "2 bad input). It prints no secret and never contacts Odoo",
+    )
     parser.add_argument("--json", action="store_true",
-                        help="with --check-policy or --diagnose: print the report as JSON")
+                        help="with --check-policy, --diagnose, --check-copies or "
+                        "--check-options: print the report as JSON")
     args = parser.parse_args(argv)
     checking = args.check_policy is not None
     commands = [flag for flag, used in (("--verify-audit", args.verify_audit is not None),
                                         ("--check-policy", checking),
-                                        ("--diagnose", args.diagnose)) if used]
+                                        ("--diagnose", args.diagnose),
+                                        ("--check-copies", args.check_copies),
+                                        ("--check-options", args.check_options)) if used]
     if len(commands) > 1:
         parser.error(f"use one of {', '.join(commands)}, not several")
     if not checking and (args.profile is not None or args.explain):
         parser.error("--profile and --explain need --check-policy FILE")
-    if args.json and not (checking or args.diagnose):
-        parser.error("--json needs --check-policy FILE or --diagnose")
+    if args.json and not (checking or args.diagnose or args.check_copies
+                          or args.check_options):
+        parser.error("--json needs --check-policy FILE, --diagnose, --check-copies or "
+                     "--check-options")
     if not args.diagnose and (args.diag_dir is not None or args.audit_dir is not None):
         parser.error("--diag-dir and --audit-dir need --diagnose")
     if args.verify_audit is not None:
         return verify_main(args.verify_audit, sys.stdout)
+    if args.check_copies or args.check_options:
+        return check_main("copies" if args.check_copies else "options", sys.stdin,
+                          sys.stdout, as_json=args.json)
     if args.diagnose:
         return diagnose_main(diag_dir=args.diag_dir, audit_dir=args.audit_dir,
                              as_json=args.json, tools=registry.all(), out=sys.stdout)
