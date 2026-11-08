@@ -159,6 +159,15 @@ copy installed for your user), then restart Claude Code. The directory's copy is
 `odoo-tools@anthropic-plugin-directory`; there is no
 `odoo-tools@claude-plugins-official`.
 
+A copy named `odoo-tools@inline` is not installed: the app loaded it for one
+session (Claude Code names a copy loaded with `--plugin-dir` this way), as the
+Claude desktop app did in a support case. `claude plugin list` does not show it and
+`claude plugin configure` cannot set its options, so install the plugin for your
+user (above, or **+** > **Add plugins** in a local session of the Code tab, with the
+scope of your user account). The support report of `/odoo-tools:odoo-doctor` names
+the copy on its `copy:` line, read from the plugin's data folder
+(`~/.claude/plugins/data/odoo-tools-inline` for this one).
+
 ## Install
 
 Install it once, from Transgenia's marketplace, in **one** of these two ways.
@@ -210,7 +219,8 @@ verifies the connection with `odoo_version`.
 
 ### Requirements
 
-- **MCP server:** Python 3.9+ available as **`python3`** on `PATH`. The plugin
+- **MCP server:** Python 3.9+ available as **`python3`** on `PATH` (CI tests 3.9
+  and 3.11 to 3.15; a newer Python never needs changing). The plugin
   runs the bundled server source directly:
   `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`. The server uses only the
   Python standard library, so nothing is installed or downloaded when it starts.

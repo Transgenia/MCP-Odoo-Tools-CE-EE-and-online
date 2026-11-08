@@ -57,6 +57,8 @@ _SAFE_CD = re.compile(r"[A-Za-z0-9._/:~-]+")
 # PowerShell: $ ` ", and [ ] as wildcards in cd): no one quoting serves both shells.
 _CD_BY_HAND = frozenset('"$`![]')
 _DRIVE = re.compile(r"^[A-Za-z]:\\")
+# The marketplace part of a data folder's name, as Claude Code writes it.
+_DATA_FOLDER = re.compile(r"[A-Za-z0-9_-]{1,100}")
 
 
 class InputError(Exception):
@@ -101,7 +103,9 @@ def _copy_from_data_path(path: str, leaf: str) -> str | None:
         return None
     folder = parts[-2]
     prefix = PLUGIN_NAME + "-"
-    if not folder.startswith(prefix) or len(folder) == len(prefix):
+    # Claude Code names the folder after the plugin id with every character other
+    # than a letter, digit, "_" or "-" replaced by "-": anything else is not its.
+    if not folder.startswith(prefix) or not _DATA_FOLDER.fullmatch(folder[len(prefix):]):
         return None
     return f"{PLUGIN_NAME}@{folder[len(prefix):]}"
 

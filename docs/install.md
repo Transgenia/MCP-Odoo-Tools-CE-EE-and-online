@@ -56,7 +56,10 @@ a working setup), and `claude plugin configure <id> --values-stdin` saves values
 read from stdin as a JSON object of single-line strings; restart Claude Code
 afterwards. `<id>` is the full `name@marketplace` id shown
 by `claude plugin list` (for example `odoo-tools@synced`). Pipe the JSON from a
-protected file or a secret manager; never put the key in the command line.
+protected file or a secret manager; never put the key in the command line. A copy
+named `odoo-tools@inline` was loaded for one session with `--plugin-dir`, not
+installed, so `claude plugin configure` cannot find it: install the plugin for your
+user instead (see [Two copies of odoo-tools](../README.md#two-copies-of-odoo-tools)).
 
 The `mcpServers` entry launches the server with:
 
@@ -69,7 +72,8 @@ this runs the bundled source as shipped: no virtualenv, no install step and no
 download, at install time or at start-up.
 
 **Requirement:** Python 3.9+ reachable as `python3` on `PATH`. Check with
-`python3 --version`.
+`python3 --version`. CI tests 3.9 and 3.11 to 3.15; a newer Python never needs
+changing.
 
 - Linux and macOS usually already have it (on macOS, from Apple's Command Line
   Tools, `xcode-select --install`; if the Mac asks for an administrator and you
@@ -117,7 +121,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox status|down|logs
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/deploy_local.py" sandbox destroy --yes
 
 # container mode: the MCP server without a local Python
-docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.6.0
+docker run -i --rm --env-file ~/.odoo-tools/mcp/odoo.env ghcr.io/transgenia/odoo-mcp-tools:1.6.1
 ```
 
 The sandbox binds Odoo to `127.0.0.1:8069` (change with `--port`), uses the
@@ -183,7 +187,7 @@ audit folder writable by the container's user (`mcp`):
 
 docker run -i --rm --env-file ./odoo.env \
   -v ~/.config/odoo-tools/policy.json:/policy/policy.json:ro \
-  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.6.0
+  -v ~/.odoo-tools/audit:/audit ghcr.io/transgenia/odoo-mcp-tools:1.6.1
 ```
 
 Without an audit folder the audit lines go to `docker logs`. A remote HTTP mode, where the

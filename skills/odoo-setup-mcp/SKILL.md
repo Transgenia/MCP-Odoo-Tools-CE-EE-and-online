@@ -1,6 +1,6 @@
 ---
 name: odoo-setup-mcp
-description: START HERE. The guided route of the odoo-tools plugin by Transgenia: setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab, or the app reports its server as not_started with the reason user_config_unsupported). Also when odoo_version answers without a `policy` block, or Configure options shows no Permission profile: an odoo-tools copy older than 1.5.0 answered (often a second copy), so stop before any write and run the copies check (run_stdio.py --check-copies).
+description: START HERE. The guided route of the odoo-tools plugin by Transgenia: setup, training, daily use and deployment of Claude + Odoo (Community, Enterprise, Odoo Online, versions 10-19). Use when the user installs the plugin, asks how to start, how to connect Odoo, wants to learn or practice, wants a local sandbox, is taking it to their team or production, or when odoo_version fails or the Odoo tools are missing (for example an empty "odoo — Runs in each session" panel under the plugin's Connectors tab, or the app reports its server as not_started with the reason user_config_unsupported). Any Python 3.9 or newer runs the server, 3.15 included: never suggest another version. Also when odoo_version answers without a `policy` block, or Configure options shows no Permission profile: an odoo-tools copy older than 1.5.0 answered (often a second copy), so stop before any write and run the copies check (run_stdio.py --check-copies).
 ---
 
 # odoo-tools — guided route (start here)
@@ -76,14 +76,23 @@ plugin's **Connectors** tab is on 2 or 3. So is a user whose app reports this
 plugin's server with the status `not_started` and the reason
 `user_config_unsupported`: the name Cowork and chat give this case (Claude Code
 supports plugin options), expected on macOS and Windows alike, not a fault of the
-plugin or the app, and no update of the plugin changes it.
+plugin or the app, and no update of the plugin changes it. So, in the Claude
+desktop app, is a session whose `odoo-tools session diagnostics:` line has
+`entrypoint=claude-desktop` and a `diag_dir` in `odoo-tools-inline`, unless the
+user is sure they are in a local session of the Code tab: that copy,
+`odoo-tools@inline`, is one the app loaded for the session (Claude Code names a
+copy loaded with `--plugin-dir` this way), not one installed from the Code tab or
+a terminal.
 
 - **1: Claude Code.** If this session itself runs in Anthropic's cloud (a cloud
   session of the Code tab, or Claude Code on the web), the options the user saved
   on their computer are not here, so the server cannot start: offer a local
   session, as in the offers under 2 or 3, and stop. Otherwise the server did not
   start. The usual causes are empty required options (Odoo URL, database, login)
-  or a second copy of the plugin.
+  or a second copy of the plugin. In the Claude desktop app
+  (`entrypoint=claude-desktop`), an `odoo-tools@inline` copy (its `diag_dir` ends
+  in `odoo-tools-inline`) is not installed, so neither check below can see it:
+  first offer a copy installed for the user (offer 1 under 2 or 3).
   If you can run shell commands, run the copies check of Phase 0. When it names
   one copy to keep, check that copy's options (Claude Code 2.1.285 or later; the
   output never shows the key):
@@ -111,11 +120,12 @@ plugin or the app, and no update of the plugin changes it.
      cloud session, which lacks the options saved on their computer). A plugin
      installed on their Claude account appears there as a synced plugin at the
      next session start when they sign in to Claude Code (2.1.273 or later) with
-     that claude.ai account; if it does not show, `/reload-plugins` or the install
-     commands. Claude Code needs no administrator rights: its native installer
-     puts it in the user's home folder. On a Team or Enterprise plan the
-     organization decides which plugins its members get and whether the Code tab
-     offers local sessions. Continue from Step 1B.
+     that claude.ai account; if it does not show, `/reload-plugins`, the install
+     commands, or in a local session of the Code tab **+** > **Add plugins** with
+     the scope of their user account. Claude Code needs no administrator rights:
+     its native installer puts it in the user's home folder. On a Team or
+     Enterprise plan the organization decides which plugins its members get and
+     whether the Code tab offers local sessions. Continue from Step 1B.
   2. **Cowork only: the CLI fallback**, `/odoo-tools:odoo-setup-cli` (Node 18+),
      when the session can run Node, reach their Odoo, and the user can edit the
      CLI's `.env` file themselves. The key must not be typed into the chat: advise
@@ -124,11 +134,11 @@ plugin or the app, and no update of the plugin changes it.
   3. **☎ Transgenia** for assisted setup, with the official channels above.
 
   Do not walk them through Python or the plugin options on these apps: those
-  steps cannot work there. In Cowork, shell commands run in a virtual machine,
-  not on the user's computer, so a Python version read there says nothing about
-  their computer: never report one. Do not give Odoo-side advice either
-  (subscription plan, API key, database): it only applies once the tools run and
-  Odoo refuses the connection. If your context has a line starting with
+  steps cannot work there. In Cowork, shell commands may run in a virtual machine
+  rather than on the user's computer, and either way the tools do not start there,
+  so a Python version read there proves nothing: never report one. Do not give
+  Odoo-side advice either (subscription plan, API key, database): it only applies
+  once the tools run and Odoo refuses the connection. If your context has a line starting with
   `odoo-tools session diagnostics:`, the plugin's session-start hook wrote it on
   the user's computer; `/odoo-tools:odoo-doctor` turns it into a support report
   they can send to Transgenia.
@@ -155,6 +165,8 @@ standard library. Claude Code runs it as
 `python3 ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: nothing is installed or
 downloaded, and no virtualenv is created. It needs **Python 3.9 or newer,
 reachable as `python3`**. The output of Phase 0 must say `Python 3.9` or newer.
+A newer Python is never the problem: CI tests 3.9 and 3.11 to 3.15, so never ask
+the user to change a 3.14 or 3.15.
 If it is missing, too old, or prints no version, give the fix for their OS:
 - **macOS:** `xcode-select --install` (Apple's Command Line Tools include
   `python3`), or a python.org / Homebrew Python. Each can ask for an

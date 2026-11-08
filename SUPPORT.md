@@ -30,11 +30,12 @@ to Transgenia. The report holds no API keys, passwords, URLs, logins or record
 data.
 
 - In Claude Code the doctor builds it with
-  `python3 <plugin folder>/server/run_stdio.py --diagnose`, which only reads the
+  `python3 <plugin folder>/server/run_stdio.py --diagnose`. Its `copy:` line says
+  which copy of the plugin it belongs to (1.6.1). The command only reads the
   plugin's local diagnostics and audit files and contacts nothing.
-- In Cowork, Claude's commands run in a virtual machine, not on your computer,
-  so the doctor writes the report from the line the plugin's session-start hook
-  leaves for Claude (Cowork runs the plugin's hooks on your computer itself).
+- In Cowork, Claude's commands may run in a virtual machine rather than on your
+  computer, so the doctor writes the report from the line the plugin's
+  session-start hook leaves for Claude (the hooks run on your computer itself).
 - In Claude chat the plugin's hooks do not run, so the report names the surface
   only.
 

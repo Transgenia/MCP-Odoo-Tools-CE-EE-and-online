@@ -37,20 +37,25 @@ env:
 
 jobs:
   launch:
-    name: windows, ${{ matrix.case }}
+    name: windows, ${{ matrix.case }}, py${{ matrix.python }}
     runs-on: windows-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         case: [python3, python-only]
+        python: ["3.12"]
+        include:
+          # A Windows user ran the plugin on Python 3.15.1 (2026-11-08).
+          - case: python3
+            python: "3.15"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
@@ -115,7 +120,7 @@ jobs:
           LINE: ${{ steps.list.outputs.line }}
           CONNECTED: ${{ steps.list.outputs.connected }}
         run: |
-          "### Windows, ${{ matrix.case }}`n`n``$env:LINE```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "### Windows, ${{ matrix.case }}, py${{ matrix.python }}`n`n``$env:LINE```n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           if ("${{ matrix.case }}" -eq "python3" -and $env:CONNECTED -ne "True") {
             "::error::with python3.exe on PATH, the plugin's MCP server did not start under Claude Code"
             exit 1

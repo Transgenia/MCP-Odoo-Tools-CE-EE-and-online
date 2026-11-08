@@ -75,8 +75,9 @@ def test_missing_folders_still_exit_0(tmp_path: Path, capsys: pytest.CaptureFixt
                       "--audit-dir", str(tmp_path / "nada")], capsys)
     lines = out.splitlines()
     assert code == 0 and lines[0] == HEADER
-    assert lines[1].startswith("plugin: ") and lines[2].startswith("python: ")
-    assert lines[3].startswith("os: ")
+    assert lines[1].startswith("plugin: ")
+    assert lines[2] == "copy: none (not a Claude Code data folder)"
+    assert lines[3].startswith("python: ") and lines[4].startswith("os: ")
     assert f"diagnostics folder: {tmp_path / 'nope'} (missing)" in lines
     assert lines.count("  none") == 2  # no server events, no hook events
     assert "audit: missing" in lines
@@ -314,3 +315,32 @@ def test_the_report_shows_the_policy_the_server_loaded(tmp_path: Path,
     text = diagnostics.render_report(report)
     assert "policy at the server's last start: profile builder, digest 0123456789ab" in text
     assert "profile standard" in text  # the command's own environment, labelled as such
+
+
+# The copy, from the name of the data folder (1.6.1). A Windows user of the Claude
+# desktop app sent a report whose folder was .../plugins/data/odoo-tools-inline: the
+# copy the app loaded for the session, which no terminal command can configure.
+@pytest.mark.parametrize(("folder", "line"), [
+    ("odoo-tools-inline",
+     "copy: odoo-tools@inline (loaded for one session with --plugin-dir, not installed)"),
+    ("odoo-tools-synced", "copy: odoo-tools@synced (synced from the claude.ai account)"),
+    ("odoo-tools-transgenia-odoo-tools",
+     "copy: odoo-tools@transgenia-odoo-tools (installed from that marketplace)"),
+])
+def test_the_report_names_the_copy(folder: str, line: str, tmp_path: Path,
+                                   capsys: pytest.CaptureFixture[str]) -> None:
+    data = tmp_path / ".claude" / "plugins" / "data" / folder
+    code, out = _run(["--diagnose", "--diag-dir", str(data / "diagnostics"),
+                      "--audit-dir", str(data / "audit")], capsys)
+    assert code == 0 and out.splitlines()[2] == line
+    code, out = _run(["--diagnose", "--json", "--diag-dir", str(data / "diagnostics"),
+                      "--audit-dir", str(data / "audit")], capsys)
+    assert json.loads(out)["copy"] == line.split(" ", 2)[1]
+
+
+def test_the_copy_of_a_windows_report() -> None:
+    folder = "C:/Users/someone/.claude/plugins/data/odoo-tools-inline/diagnostics"
+    report = diagnostics.build_report(Settings(), folder, "", [])
+    assert report["copy"] == "odoo-tools@inline"
+    assert diagnostics.render_report(report).splitlines()[2].startswith(
+        "copy: odoo-tools@inline (loaded for one session")

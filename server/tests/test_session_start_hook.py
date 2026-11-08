@@ -199,6 +199,8 @@ def test_no_record_puts_the_surface_first(tmp_path: Path) -> None:
     # The note runs in every session, Cowork's included, so it names only the way out (a
     # local session): the doctor and the guided route explain a cloud session there.
     assert "no update of the plugin changes that" in context and "cloud" not in context
+    # a Python version is never the cause there (a user on 3.15.1, 2026-11-08)
+    assert "any Python 3.9 or newer, 3.15 included" in context
     assert _line(context).groups() == ("claude-desktop", "none", "none",
                                        str(_data(tmp_path) / "diagnostics"))
     for text in (message, context):

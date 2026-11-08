@@ -4,6 +4,65 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-11-08
+
+A Windows user of the Claude desktop app could not start the plugin and sent the
+1.6.0 support report: Python 3.15.1, no server event, and the data folder
+`.../plugins/data/odoo-tools-inline`. That is how Claude Code names a copy loaded for
+one session with `--plugin-dir`, here by the desktop app: not an install from the
+Code tab or a terminal, so `claude plugin list` does not show it and
+`claude plugin configure` cannot find it. The report did not say which copy it was,
+the doctor said Cowork always runs commands in a virtual machine, and models
+suggested another Python.
+
+### Added
+
+- **The support report names the copy.** `run_stdio.py --diagnose` prints a `copy:`
+  line after `plugin:`, read from the name of the plugin's data folder as
+  `odoo_version` reads it:
+  - `odoo-tools@inline` (loaded for one session with `--plugin-dir`, not installed);
+  - `odoo-tools@synced` (synced from the claude.ai account);
+  - `odoo-tools@<marketplace>` (installed from that marketplace);
+  - `none` outside Claude Code.
+
+  `--json` carries `copy`.
+- **Python 3.14 and 3.15 in CI.** The server matrix runs 3.9 and 3.11 to 3.15 (3.9
+  on Ubuntu 24.04). The Windows launch workflow adds a run on Python 3.15 with
+  `python3.exe`. Before release, the 1.6.0 server started on Python 3.15.0b4 with no
+  options, answered `initialize`, listed its tools and passed its suite.
+- **Eval `inline-copy-report`.** The case in Arabic, with its report. With the final
+  text no reply blamed Python in 10 runs; on 1.6.0, 3 replies of 10 suggested
+  changing it.
+
+### Changed
+
+- **The doctor and the guided route read the copy from the data folder** in
+  `diag_dir`.
+  - In the Claude desktop app (`entrypoint=claude-desktop`), an `odoo-tools@inline`
+    copy with no server start goes with Cowork and Claude chat, unless the user is
+    sure they are in a local session of the Code tab.
+  - In Claude Code the copies and options checks cannot see it, so the doctor
+    offers a copy installed for the user first: **+** > **Add plugins** with the
+    user's scope in a local session of the Code tab, or
+    `claude plugin install ... --scope user`.
+  - The advice is scoped to the desktop app because `claude plugin eval` and
+    developers load the plugin with `--plugin-dir` too: unscoped, it took over the
+    `old-copy-answers` eval.
+  - The README ("Two copies of odoo-tools"), `docs/install.md` and `SUPPORT.md`
+    explain the inline copy and the `copy:` line.
+- **A newer Python is never the cause.** The doctor, the guided route (its
+  description included), the README, `docs/install.md` and the session-start hook's
+  note say that any Python 3.9 or newer runs the server, 3.15 included, and never to
+  suggest another version.
+- **Cowork may run commands on the computer.** The doctor, the guided route and
+  `SUPPORT.md` said Cowork's commands always run in a virtual machine; Anthropic's
+  support matrix also documents Cowork sessions on the computer. They now say the
+  commands may run in a virtual machine, and that a Python version read there proves
+  nothing, since the Odoo tools do not start in Cowork either way.
+- **A data folder name Claude Code cannot write names no copy.** `odoo_version` and
+  the report accept only letters, digits, "_" and "-" after `odoo-tools-`, the
+  characters Claude Code leaves in that name.
+
 ## [1.6.0] - 2026-10-30
 
 One copy, the right copy, and the right place for each command. A Windows
