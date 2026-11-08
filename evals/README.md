@@ -20,3 +20,8 @@ as in Cowork. There, set the entrypoint a terminal would have:
 ```bash
 CLAUDE_CODE_ENTRYPOINT=cli claude plugin eval . --ablation none --runs 1 --trust-plugin --no-publish --max-cost-usd 5
 ```
+
+The eval loads the plugin with `--plugin-dir`, so in every case the session's own
+copy is `odoo-tools@inline` (data folder `odoo-tools-inline`), as for a developer.
+Advice that the doctor gives for such a copy is scoped to the Claude desktop app
+(`entrypoint=claude-desktop`) for that reason.

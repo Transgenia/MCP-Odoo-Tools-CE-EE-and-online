@@ -83,6 +83,14 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 
+# The deepest nesting a message may have. MCP messages nest a few levels, and a domain, a web_read
+# specification or x2many values about twenty; the arguments are then walked recursively (policy,
+# validation, audit), so the limit keeps those walks far from Python's recursion limit. ``json`` alone
+# gives no single answer: Python 3.9-3.11 stop near 1000 levels, 3.12 and 3.13 near 10000, and 3.14+
+# parse as deep as the stack allows, so a deeper message is a parse error on every interpreter.
+MAX_NESTING = 128
+TOO_DEEP = f"parse error: nested deeper than {MAX_NESTING} levels"
+
 
 def _with_guidance(exc: OdooMcpError) -> str:
     """Connection problems also say where to fix them and who can help."""
@@ -144,6 +152,21 @@ def _valid_id(value: Any) -> bool:
 
 def _is_tool_call(msg: Any) -> bool:
     return isinstance(msg, dict) and msg.get("method") == "tools/call" and "id" in msg
+
+
+def _too_deep(raw: bytes, msg: Any) -> bool:
+    """Whether the parsed message nests more than MAX_NESTING lists and objects, walked without
+    recursion. A line with no more opening brackets than the limit cannot, strings included."""
+    if raw.count(b"[") + raw.count(b"{") <= MAX_NESTING or not isinstance(msg, (dict, list)):
+        return False
+    stack: list[tuple[Any, int]] = [(msg, 1)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > MAX_NESTING:
+            return True
+        children = value.values() if isinstance(value, dict) else value
+        stack.extend((child, depth + 1) for child in children if isinstance(child, (dict, list)))
+    return False
 
 
 class McpServer:
@@ -432,8 +455,14 @@ class McpServer:
             return
         try:
             msg = json.loads(line.decode("utf-8"))
-        except (ValueError, RecursionError) as exc:  # ValueError covers bad UTF-8
+        except RecursionError:  # json's own nesting limit, deeper than MAX_NESTING everywhere
+            self._write(_error(None, PARSE_ERROR, TOO_DEEP))
+            return
+        except ValueError as exc:  # ValueError covers bad UTF-8
             self._write(_error(None, PARSE_ERROR, f"parse error: {type(exc).__name__}"))
+            return
+        if _too_deep(line, msg):
+            self._write(_error(None, PARSE_ERROR, TOO_DEEP))
             return
         if isinstance(msg, list):  # JSON-RPC batch (MCP 2025-03-26)
             if msg:

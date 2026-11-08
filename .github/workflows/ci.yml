@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.11", "3.12", "3.13"]
+        # 3.15: a Windows user ran the plugin on Python 3.15.1 (2026-11-08).
+        python: ["3.9", "3.11", "3.12", "3.13", "3.14", "3.15"]
     defaults:
       run:
         working-directory: server

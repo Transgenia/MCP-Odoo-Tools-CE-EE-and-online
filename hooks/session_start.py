@@ -91,9 +91,10 @@ TRANSGENIA = "Transgenia: dev@transgenia.org, WhatsApp +52 55 8034 0405"
 # Claude Code and assisted setup by Transgenia; then where the options are set and the doctor.
 SURFACE_CONTEXT = (
     "odoo-tools plugin status: In Cowork and Claude chat this plugin's Odoo tools (odoo_*) "
-    "do not run at all, whatever Python or options; only its skills and commands load "
-    "there, and nothing is wrong with the user's account, Odoo or Python; no update of the "
-    "plugin changes that. Offer the user, in this order: a local session of the Code tab "
+    "do not run at all, whatever Python or options (any Python 3.9 or newer, 3.15 "
+    "included, runs the server: never suggest another version); only its skills and "
+    "commands load there, and nothing is wrong with the user's account, Odoo or "
+    "Python; no update of the plugin changes that. Offer the user, in this order: a local session of the Code tab "
     "of Claude Desktop (the plugin is synced there when they sign in with the same "
     "account) or Claude Code; and assisted setup by " + TRANSGENIA
     + ". In Claude Code, the connection options are set in /plugin > odoo-tools > "

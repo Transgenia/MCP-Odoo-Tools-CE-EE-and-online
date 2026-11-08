@@ -14,10 +14,13 @@ step 1.
 If it is not, this plugin's MCP server is not running in this session. Until it
 runs, nothing else can be the cause, so:
 
-- Do not run shell commands and do not check Python. In Cowork, the commands you
-  run go to a virtual machine, not to the user's computer: a Python version read
-  there says nothing about the computer, so never report one. (The plugin's own
-  hooks are different: Cowork runs them on the computer itself.)
+- Do not run shell commands and do not check Python: any Python 3.9 or newer
+  runs the server, 3.15 included (CI tests 3.9 and 3.11 to 3.15), so never
+  suggest another version. In Cowork, the commands you run may go to a virtual
+  machine rather than to the user's computer (Anthropic also documents Cowork
+  sessions that run on the computer), and either way the Odoo tools do not start
+  there: a Python version read there proves nothing, so never report one. (The
+  plugin's own hooks run on the user's computer.)
 - Do not give advice about the Odoo side yet (subscription plan, API key, transport,
   database). It only matters once the tools load and Odoo refuses the connection.
 
@@ -25,15 +28,23 @@ Then:
 
 1. Read any line in your context that starts with `odoo-tools session diagnostics:`.
    The plugin's session-start hook writes it from the user's computer, outside any
-   virtual machine. Note its
-   `entrypoint`, `server_last`, `age_h` and `diag_dir`.
+   virtual machine. Note its `entrypoint`, `server_last`, `age_h` and `diag_dir`.
+   The folder in `diag_dir` names this copy of the plugin: `odoo-tools-synced` is
+   the copy synced from the user's Claude account; `odoo-tools-inline` is
+   `odoo-tools@inline`, a copy the app loaded for this session (Claude Code names a
+   copy loaded with `--plugin-dir` this way), not one installed from the Code tab
+   or a terminal; any other `odoo-tools-<marketplace>` is installed from that
+   marketplace.
 2. Find the surface. If the user already said it (Cowork, Claude chat, claude.ai,
    the Code tab, a terminal, VS Code, JetBrains), use that. If the app reports this
    plugin's server with the status `not_started` and the reason
    `user_config_unsupported`, the surface is Cowork or Claude chat: go to item 3.
-   If this session runs in the cloud (a cloud session of the **Code** tab, or
-   Claude Code on the web; the diagnostics line then shows an `entrypoint` such as
-   `remote_desktop`), go to item 4. Otherwise ask one question: **1)** Claude Code
+   So does an `odoo-tools@inline` copy (item 1) in the Claude desktop app (the
+   line shows `entrypoint=claude-desktop` and `server_last=none`), unless the user
+   is sure they are in a local session of the **Code** tab. If this session runs
+   in the cloud (a cloud session of the **Code** tab, or Claude Code on the web;
+   the diagnostics line then shows an `entrypoint` such as `remote_desktop`), go
+   to item 4. Otherwise ask one question: **1)** Claude Code
    (terminal, VS Code or JetBrains, or the **Code** tab of Claude Desktop) ·
    **2)** Cowork · **3)** Claude chat (claude.ai web, desktop or mobile).
 3. **Cowork or Claude chat:** say it plainly. This plugin's Odoo tools do not run
@@ -49,7 +60,9 @@ Then:
    1. A **local** session of the **Code** tab of Claude Desktop (on the user's
       computer, not a cloud session), or Claude Code. The plugin installed on
       their Claude account appears there as a synced plugin when they sign in with
-      the same account; then run `/odoo-tools:odoo-setup-mcp`. Claude Code itself
+      the same account. If it does not, they install it for their user: **+** >
+      **Add plugins** in a local session, with the scope of their user account.
+      Then run `/odoo-tools:odoo-setup-mcp`. Claude Code itself
       needs no administrator rights on the computer; on a Team or Enterprise plan
       the organization decides which plugins its members get and whether the
       Code tab offers local sessions.
@@ -82,6 +95,13 @@ Then:
    show both outputs as they are and follow `/odoo-tools:odoo-setup-mcp`,
    Phase 0b. The commands the copies check prints are for a terminal (PowerShell
    or Terminal), not for `/plugin`.
+
+   In the Claude desktop app (`entrypoint=claude-desktop`), an `odoo-tools@inline`
+   copy is not installed: the copies check does not list it and
+   `claude plugin configure` cannot find it. Offer a copy installed for the user
+   instead (item 3, offer 1, or in a terminal
+   `claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user`),
+   then the options check of that copy.
 6. Finish with the support report (step 4).
 
 ## 1. The instance
@@ -139,7 +159,8 @@ Always end with a support report the user can send to Transgenia:
   ```
 
   and show its output as it is, in a code block. It reads only the plugin's local
-  diagnostics and audit files and contacts nothing. If `python3` is missing, say
+  diagnostics and audit files and contacts nothing. Its `copy:` line names the copy
+  as step 0, item 1 reads it from the data folder. If `python3` is missing, say
   so and give the report below instead.
 - **Cowork, Claude chat or a cloud session:** write a short report from step 0:
   the surface, the `entrypoint`, `server_last` and `age_h` values of the session

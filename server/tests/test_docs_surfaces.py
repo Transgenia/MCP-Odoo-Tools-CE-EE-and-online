@@ -248,3 +248,38 @@ def test_a_cloud_session_is_not_promised_the_odoo_tools() -> None:
     local = [cells for surface, cells in rows.items() if "local session" in surface]
     assert len(local) == 1 and local[0][0].strip("*").startswith("Yes")
     # the hook's notes say "a local session" too: test_session_start_hook.SURFACE
+
+
+# --- 1.6.1: a copy the Claude desktop app loaded (a Windows user, 2026-11-08)
+#
+# The 1.6.0 support report showed a data folder .../plugins/data/odoo-tools-inline (how
+# Claude Code names a copy loaded with --plugin-dir), Python 3.15.1 and no server event.
+# Nothing said which copy that was, a terminal's `claude plugin configure` cannot find
+# it, models suggested another Python, and the doctor said Cowork always runs commands
+# in a virtual machine, while Anthropic documents Cowork sessions on the computer.
+
+
+def test_an_inline_copy_is_named_where_users_and_claude_look() -> None:
+    doctor = (ROOT / "commands/odoo-doctor.md").read_text(encoding="utf-8")
+    step0 = " ".join(doctor[doctor.index("## 0."):doctor.index("## 1.")].split())
+    # The inline advice is for the desktop app: `claude plugin eval` and developers load
+    # the plugin with --plugin-dir too, and unscoped it took over old-copy-answers.
+    for phrase in ("odoo-tools-inline", "odoo-tools@inline", "--plugin-dir",
+                   "entrypoint=claude-desktop", "may go to a virtual machine",
+                   "3.15 included", "never suggest another version"):
+        assert phrase in step0, phrase
+    assert "go to a virtual machine, not to the user's computer" not in step0
+    skill = (ROOT / "skills/odoo-setup-mcp/SKILL.md").read_text(encoding="utf-8")
+    assert "odoo-tools-inline" in skill
+    assert "3.15 included" in skill.split("---", 2)[1]  # the always-loaded description
+    assert "reach a virtual machine, not the user's computer" not in " ".join(skill.split())
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    copies = readme.split("### Two copies of odoo-tools", 1)[1].split("\n## ", 1)[0]
+    assert "odoo-tools@inline" in copies and "`copy:`" in copies
+    support = (ROOT / "SUPPORT.md").read_text(encoding="utf-8")
+    assert "virtual machine, not on your computer" not in support and "`copy:`" in support
+    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert '"3.14", "3.15"' in ci
+    windows = (ROOT / ".github/workflows/windows-launch.yml").read_text(encoding="utf-8")
+    assert 'python: "3.15"' in windows
+    assert (ROOT / "evals/inline-copy-report/prompt.md").is_file()

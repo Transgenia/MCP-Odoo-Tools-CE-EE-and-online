@@ -488,3 +488,11 @@ def test_the_cli_flags(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFi
     assert json.loads(capsys.readouterr().out)["ok"] is True
     with pytest.raises(SystemExit):
         main(["--check-copies", "--diagnose"])
+
+
+@pytest.mark.parametrize("folder", ["odoo-tools-two words", "odoo-tools-mark$et",
+                                    "odoo-tools-" + "x" * 101, "odoo-tools-ma.rket"])
+def test_a_folder_name_claude_code_cannot_write_names_no_copy(folder: str) -> None:
+    # Claude Code replaces every character other than a letter, digit, "_" or "-".
+    assert plugin_identity(f"/home/u/.claude/plugins/data/{folder}/diagnostics", "") \
+        .get("copy") is None

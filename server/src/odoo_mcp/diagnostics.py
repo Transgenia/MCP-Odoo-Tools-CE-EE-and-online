@@ -73,6 +73,7 @@ from .errors import (
     PolicyError,
     TransportError,
 )
+from .install_check import plugin_identity
 from .policy.model import PROFILES
 
 try:  # POSIX only: Windows appends without the lock
@@ -964,6 +965,9 @@ def build_report(settings: Any, diag_dir: str | None, audit_dir: str | None,
     return {
         "report": HEADER,
         "plugin": PLUGIN_VERSION,
+        # The copy, from the name of the data folder Claude Code gives it, as
+        # odoo_version reports it; None outside Claude Code.
+        "copy": plugin_identity(diag_dir or "", audit_dir or "").get("copy"),
         "python": platform.python_version(),
         "os": os_info(),
         "diagnostics": diagnostics,
@@ -997,12 +1001,29 @@ def _counted(counts: Mapping[str, int]) -> str:
                      sorted(counts.items(), key=lambda item: (-item[1], item[0]))) or "none"
 
 
+# What a copy's marketplace part says about how it got there (README, "Two copies
+# of odoo-tools"). Claude Code names a copy loaded with --plugin-dir "@inline": in a
+# support case of 2026-11-08, that was the copy the Claude desktop app loaded.
+COPY_NOTES = {
+    "inline": "loaded for one session with --plugin-dir, not installed",
+    "synced": "synced from the claude.ai account",
+}
+
+
+def copy_line(copy: str | None) -> str:
+    if not copy:
+        return "copy: none (not a Claude Code data folder)"
+    note = COPY_NOTES.get(copy.split("@", 1)[-1], "installed from that marketplace")
+    return f"copy: {copy} ({note})"
+
+
 def render_report(report: Mapping[str, Any]) -> str:
     """The report as text, one fact per line."""
     system = report["os"]
     lines = [
         report["report"],
         f"plugin: {report['plugin']}",
+        copy_line(report.get("copy")),
         f"python: {report['python']}",
         f"os: {system['system']} {system['release']} {system['machine']}",
     ]
