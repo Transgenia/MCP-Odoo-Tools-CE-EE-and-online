@@ -272,6 +272,7 @@ def test_an_inline_copy_is_named_where_users_and_claude_look() -> None:
     skill = (ROOT / "skills/odoo-setup-mcp/SKILL.md").read_text(encoding="utf-8")
     assert "odoo-tools-inline" in skill
     assert "3.15 included" in skill.split("---", 2)[1]  # the always-loaded description
+    assert "reach a virtual machine, not the user's computer" not in " ".join(skill.split())
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     copies = readme.split("### Two copies of odoo-tools", 1)[1].split("\n## ", 1)[0]
     assert "odoo-tools@inline" in copies and "`copy:`" in copies

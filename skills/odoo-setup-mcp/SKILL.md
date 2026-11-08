@@ -55,8 +55,8 @@ If `claude` is not found, use its full path, `"$HOME/.local/bin/claude"`. Show t
 output as it is. Exit code 1 means something to fix. The output names the copy to
 keep and gives the exact commands that remove the others. The user runs them in a
 terminal (PowerShell or Terminal), never as `/plugin` commands, then restarts
-Claude Code. Never run them in Cowork: there your commands reach a virtual
-machine, not the user's computer.
+Claude Code. Never run them in Cowork: there your commands may go to a virtual
+machine rather than to the user's computer.
 
 Where you can run shell commands, this probe tells the later phases whether
 Python or the container route applies:
