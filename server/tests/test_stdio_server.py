@@ -22,9 +22,11 @@ from odoo_mcp.server import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
     INVALID_REQUEST,
+    MAX_NESTING,
     METHOD_NOT_FOUND,
     PARSE_ERROR,
     SUPPORTED_PROTOCOL_VERSIONS,
+    TOO_DEEP,
     McpServer,
 )
 from odoo_mcp.telemetry import PLUGIN_VERSION
@@ -350,7 +352,7 @@ def test_requests_with_invalid_ids_are_rejected(bad_id: Any) -> None:
 def test_hostile_input_never_stops_the_loop() -> None:
     replies = _run([
         {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": {"a": 1}}},
-        "[" * 100_000 + "]" * 100_000,  # RecursionError while parsing
+        "[" * 100_000 + "]" * 100_000,  # too deep: Python 3.14+ parses it when the stack allows
         {"jsonrpc": "2.0", "id": 1, "method": "x\ud800"},  # lone surrogate echoed back
         {"jsonrpc": "2.0", "id": {"x": 1}, "method": "tools/call", "params": {"name": "odoo_version"}},
         _req("ping", msg_id=99),
@@ -358,6 +360,26 @@ def test_hostile_input_never_stops_the_loop() -> None:
     assert {"jsonrpc": "2.0", "id": 99, "result": {}} in replies
     codes = [r["error"]["code"] for r in replies if isinstance(r, dict) and "error" in r]
     assert PARSE_ERROR in codes and METHOD_NOT_FOUND in codes and INVALID_REQUEST in codes
+    assert {"jsonrpc": "2.0", "id": None, "error": {"code": PARSE_ERROR, "message": TOO_DEEP}} in replies
+
+
+# Python 3.14's json measures the C stack: with a large one (GitHub's runners) it parsed the
+# 100,000 levels above, which 3.9-3.13 refuse. One limit gives the same answer everywhere.
+@pytest.mark.parametrize("depth", [MAX_NESTING, MAX_NESTING + 1, 5_000])
+def test_one_nesting_limit_on_every_python(depth: int) -> None:
+    lists = depth - 2  # the request and its params are the first two levels
+    line = '{"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {"a": %s}}' % ("[" * lists + "]" * lists)
+    assert line.count("[") + line.count("{") == depth
+    reply = _run([line])
+    if depth <= MAX_NESTING:
+        assert reply == [{"jsonrpc": "2.0", "id": 7, "result": {}}]
+    else:
+        assert reply == [{"jsonrpc": "2.0", "id": None, "error": {"code": PARSE_ERROR, "message": TOO_DEEP}}]
+
+
+def test_brackets_inside_strings_are_not_nesting() -> None:
+    reply = _run([_req("ping", {"text": "[{" * MAX_NESTING}, msg_id=8)])
+    assert reply == [{"jsonrpc": "2.0", "id": 8, "result": {}}]
 
 
 def test_unexpected_handler_failure_answers_internal_error(

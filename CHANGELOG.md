@@ -63,6 +63,17 @@ suggested another Python.
   the report accept only letters, digits, "_" and "-" after `odoo-tools-`, the
   characters Claude Code leaves in that name.
 
+### Fixed
+
+- **A message nested deeper than 128 levels is a parse error on every Python.** The
+  new 3.14 and 3.15 CI jobs failed the hostile-input test: their `json` parses as deep
+  as the C stack allows, so on GitHub's runners a line of 100,000 nested brackets went
+  through as a batch, while 3.9 to 3.13 refuse it. The stdio server now answers
+  `parse error: nested deeper than 128 levels` (-32700) to any message with more than
+  128 levels of lists and objects, before the policy, the validation or the audit
+  walk its arguments. MCP messages nest a few levels; a domain, a `web_read`
+  specification or x2many values about twenty.
+
 ## [1.6.0] - 2026-10-30
 
 One copy, the right copy, and the right place for each command. A Windows
