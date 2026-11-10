@@ -4,7 +4,9 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.3] - 2026-11-10
+
+There is no 1.6.2: that number was never released.
 
 ### Security
 
@@ -31,14 +33,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ### Added
 
-- A local preflight for plugin folders, `scripts/directory_preflight.py` (not Anthropic's
-  scanner; a clean result is not an approval). It is a heuristic with known limits.
-- `docs/design/remote-mcp-threat-model.md`, a design-only summary of three options for a
-  remote MCP server and of its threat model, with the gates before any credential is
-  accepted. Nothing is built, tested with Claude or published.
-- A code-free edition for Anthropic's directory in `distribution/directory` (not in the
-  release zip, not submitted), a `directory-edition` CI job, and `docs/directory-channel.md`
-  (what Anthropic's review portal flagged for 1.6.1, what to ask, what the owner decides).
+- For maintainers; none of it changes what the plugin does. A code-free edition for
+  Anthropic's directory in `distribution/directory` (not in this release's zip, not
+  submitted); a local preflight for plugin folders, `scripts/directory_preflight.py` (not
+  Anthropic's scanner); a `directory-edition` CI job; and two design documents,
+  `docs/directory-channel.md` and `docs/design/remote-mcp-threat-model.md` (nothing is built).
+- `scripts/check_release_version.py` also checks the image pins in `docs/install.md` and
+  `commands/deploy-local.md` and that the CHANGELOG section of the release is not empty.
 
 ## [1.6.1] - 2026-11-08
 

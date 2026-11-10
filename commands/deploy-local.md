@@ -98,7 +98,7 @@ Ask (single choice):
 1. Download the image built and published by Transgenia (ask first):
 
    ```bash
-   docker pull ghcr.io/transgenia/odoo-mcp-tools:1.6.1
+   docker pull ghcr.io/transgenia/odoo-mcp-tools:1.6.3
    ```
 
 2. Create a credentials file with **placeholders only**, readable by the user
@@ -141,7 +141,7 @@ Ask (single choice):
    the absolute path of the file:
 
    ```bash
-   claude mcp add odoo-tools-docker --scope user -- docker run -i --rm --env-file "$HOME/.odoo-tools/mcp/odoo.env" ghcr.io/transgenia/odoo-mcp-tools:1.6.1
+   claude mcp add odoo-tools-docker --scope user -- docker run -i --rm --env-file "$HOME/.odoo-tools/mcp/odoo.env" ghcr.io/transgenia/odoo-mcp-tools:1.6.3
    ```
 
 4. Restart Claude and call `odoo_version` from the `odoo-tools-docker` server.

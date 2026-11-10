@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The image tag the docs and the deploy command pin: it must be the version being released.
+IMAGE_PIN = re.compile(r"ghcr\.io/transgenia/odoo-mcp-tools:([0-9]+(?:\.[0-9]+)*)")
+PIN_FILES = ("docs/install.md", "commands/deploy-local.md")
 
 
 def problems(version: str) -> list[str]:
@@ -36,8 +39,20 @@ def problems(version: str) -> list[str]:
     )
     found["odoo_mcp/__init__.py"] = runtime.group(1) if runtime else "<missing>"
     issues = [f"{name} has {value}" for name, value in found.items() if value != version]
-    if f"## [{version}]" not in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"):
+    for rel in PIN_FILES:
+        tags = set(IMAGE_PIN.findall((ROOT / rel).read_text(encoding="utf-8")))
+        issues += [f"{rel} pins the image {tag}" for tag in sorted(tags) if tag != version]
+    # release.yml publishes this section as the release notes, and it runs after the tag exists:
+    # a heading that is not at the start of a line, or an empty section, would leave a tag
+    # and a failed release.
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    section = re.search(
+        rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)", changelog, re.MULTILINE | re.DOTALL
+    )
+    if section is None:
         issues.append(f"CHANGELOG.md has no '## [{version}]' section")
+    elif not section.group(1).strip():
+        issues.append(f"CHANGELOG.md '## [{version}]' section is empty")
     return issues
 
 
