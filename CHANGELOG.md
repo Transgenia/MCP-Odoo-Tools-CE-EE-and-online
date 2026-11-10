@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- **A gateway password in `ODOO_URL` could reach the model and the log.** With
+  `https://user:pass@host` (HTTP basic auth in front of Odoo), a character in the user
+  information that normalizes to a reserved one (a full-width `@`) made the standard URL
+  parser quote the whole network location, password included, in its error; a password
+  written with a raw `#`, `/` or `?` was read as a host or a port, quoted by `http.client`
+  and printed by `odoo_connections`. Such a URL is now not used and not shown: it fails
+  before any request with a fixed text that says to write those characters as `%23`,
+  `%2F` and `%3F`. The same goes for a URL with an `@` in its path, query or fragment and
+  no readable `user:pass@`. Checked on 1.6.1; if a gateway password may have appeared in a
+  conversation or in Claude Code's MCP log through such an error, change it. The Odoo API
+  key and the Odoo login password were never involved.
+
 ## [1.6.1] - 2026-11-08
 
 A Windows user of the Claude desktop app could not start the plugin and sent the

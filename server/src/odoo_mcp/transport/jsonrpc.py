@@ -30,7 +30,7 @@ import urllib.request
 from typing import Any
 
 from ..errors import AuthError, OdooFault, RateLimited, TransportError
-from .base import parse_retry_after, tls_context
+from .base import URL_UNREADABLE, hides_user_info, parse_retry_after, tls_context
 
 # Raised so FallbackTransport knows this specific failure is recoverable by
 # switching transports rather than a genuine application error.
@@ -62,12 +62,18 @@ def split_userinfo(url: str) -> tuple[str, str | None]:
     """Return ``(url_without_userinfo, basic_auth_header_or_None)``.
 
     ``https://user:pass@host`` is valid in ODOO_URL (HTTP basic auth in front of
-    Odoo); urllib cannot use it directly and would echo it in errors.
+    Odoo); urllib cannot use it directly and would echo it in errors. A URL whose
+    user information cannot be set apart (see ``hides_user_info``) comes back as ``""``, which
+    no request can use: the errors a parser or http.client raises for it quote the whole
+    network location, so that URL is not kept. Any other malformed URL comes back unchanged
+    and fails later.
     """
+    if hides_user_info(url):
+        return "", None  # every call fails, before a request is sent
     try:
         parts = urllib.parse.urlsplit(url)
         has_userinfo = parts.username is not None or parts.password is not None
-    except ValueError:  # malformed URL: the request below reports it cleanly
+    except ValueError:  # malformed URL, no user information: the request below reports it cleanly
         return url, None
     if not has_userinfo:
         return url, None
@@ -128,8 +134,8 @@ class JsonRpcTransport:
         except (http.client.HTTPException, OSError, EOFError) as exc:
             # Sent, then the reply was cut or timed out: the call may have run.
             raise TransportError(f"jsonrpc transport error: {type(exc).__name__}: {exc}") from None
-        except ValueError as exc:  # malformed URL
-            raise JsonRpcUnavailable(f"jsonrpc transport error: {exc}") from None
+        except ValueError:  # malformed URL: the parser's text would quote the user info
+            raise JsonRpcUnavailable(f"jsonrpc transport error: {URL_UNREADABLE}") from None
 
         try:
             data = json.loads(body.decode("utf-8"))

@@ -154,7 +154,10 @@ where to verify it:
 - **Basic auth in front of Odoo.** `ODOO_URL` may carry `user:pass@`; JSON-RPC
   sends it as an `Authorization` header (never on a redirect, which is refused
   anyway) and no error, log line or tool result echoes the password (the
-  `odoo_connections` tool strips the `user:pass@` from the URL it reports). JSON-2 needs that same
+  `odoo_connections` tool strips the `user:pass@` from the URL it reports; a URL whose
+  `user:pass@` part cannot be read, for example a password with a raw `#`, `/` or `?`
+  (write them as `%23`, `%2F`, `%3F`), is not used and not shown, and neither is a URL with an `@` in its path, query or
+  fragment and no readable `user:pass@`). JSON-2 needs that same
   header for its API key, so such a URL stays on the legacy endpoints (and
   cannot work from Odoo 22 / Odoo Online saas~21.1, where they are removed). Note that **Odoo URL**
   is not a `sensitive` plugin option: a password embedded there is stored in the
