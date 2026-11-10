@@ -33,6 +33,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 - A local preflight for plugin folders, `scripts/directory_preflight.py` (not Anthropic's
   scanner; a clean result is not an approval). It is a heuristic with known limits.
+- `docs/design/remote-mcp-threat-model.md`, a design-only summary of three options for a
+  remote MCP server and of its threat model, with the gates before any credential is
+  accepted. Nothing is built, tested with Claude or published.
 
 ## [1.6.1] - 2026-11-08
 
