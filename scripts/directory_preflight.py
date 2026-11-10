@@ -261,7 +261,15 @@ EVAL_WORD = re.compile(r"\beval\b", re.IGNORECASE)
 
 INLINE_SHELL = re.compile(r"(?<![\\`])!`[^`\n]+`|^[ \t>*+-]*(?:`{3,}|~{3,})[ \t]*!", re.MULTILINE)
 FRONTMATTER_FENCE = "---"
-EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF]")
+# The emoji blocks as code point ranges. A regex class with astral escapes reads as overlapping
+# ranges to some scanners (CodeQL reports them as \ufffd-\ufffd); numbers say the same, plainly.
+EMOJI_RANGES = ((0x1F000, 0x1F2FF), (0x1F300, 0x1FAFF), (0x2600, 0x27BF))
+
+
+def is_emoji(ch: str) -> bool:
+    return any(low <= ord(ch) <= high for low, high in EMOJI_RANGES)
+
+
 COMPONENT_DIRS = ("skills/", "commands/", "agents/")
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -709,7 +717,7 @@ def _unicode_findings(rel: str, seen: str) -> list[Finding]:
         elif category == "Pd" or ch in "\u2212\u2e3a\u2e3b":
             label, severity = "a dash that is not ASCII", ERROR
         elif category in ("So", "Cf", "Cs", "Co", "Cc") or category == "Zs" or category == "Zl" \
-                or category == "Zp" or EMOJI.match(ch):
+                or category == "Zp" or is_emoji(ch):
             label, severity = "an emoji, a symbol or an invisible character", ERROR
         elif category.startswith(("P", "S")) and ch not in "\u00bf\u00a1":
             label, severity = "punctuation that is not ASCII", WARNING
