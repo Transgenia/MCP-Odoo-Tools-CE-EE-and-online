@@ -305,6 +305,58 @@ def test_a_remote_server_at_a_public_https_url_is_accepted(plugin: Path) -> None
     assert report["summary"]["error"] == 0 and report["summary"]["warning"] == 0
 
 
+def _bearer(plugin: Path, header: str, sensitive: bool) -> set[tuple[str, str]]:
+    manifest(plugin, mcpServers={"x": {"type": "http", "url": "https://mcp.example.com/mcp",
+                                       "headers": {"Authorization": header}}},
+             userConfig={"api_key": {"type": "string", "title": "k", "description": "d",
+                                     "sensitive": sensitive}})
+    return findings(plugin)
+
+
+def test_a_bearer_prefix_on_a_sensitive_option_is_accepted(plugin: Path) -> None:
+    # "Authorization: Bearer ${user_config.api_key}" is the usual way to send a key.
+    for header in ("Bearer ${user_config.api_key}", "Basic ${user_config.api_key}",
+                   "${user_config.api_key}"):
+        found = _bearer(plugin, header, sensitive=True)
+        assert ("warning", "MCP_FORWARDS_CREDENTIAL_ENV") not in found, header
+    # What stays a warning: the option is not sensitive, or a literal or a foreign variable
+    # sits next to the reference.
+    for header, sensitive in (("Bearer ${user_config.api_key}", False),
+                              ("Bearer abcd1234efgh5678", True),
+                              ("Bearer ${GITHUB_TOKEN}", True),
+                              ("Bearer x${user_config.api_key}", True)):
+        assert ("warning", "MCP_FORWARDS_CREDENTIAL_ENV") in _bearer(plugin, header, sensitive), header
+
+
+def test_a_shell_is_granted_by_the_tools_field_not_by_a_word_elsewhere(plugin: Path) -> None:
+    # A description may talk about Bash; only allowed-tools (or tools) grants it.
+    put(plugin, "commands/explain.md",
+        "---\ndescription: Explain Bash syntax without running commands.\nallowed-tools: Read\n---\nHi\n")
+    assert ("error", "LOCAL_EXEC_PREAPPROVED") not in findings(plugin)
+    for fields in ("allowed-tools: Read, Bash", "allowed-tools:\n  - Read\n  - Bash",
+                   "allowed-tools:\n- Read\n- Bash(git *)", "'Allowed-Tools': [Read, Shell]",
+                   "allowed-tools: >-\n  Read\n  PowerShell", "? allowed-tools\n: Bash"):
+        put(plugin, "commands/grant.md", f"---\ndescription: d\n{fields}\n---\nHi\n")
+        assert ("error", "LOCAL_EXEC_PREAPPROVED") in findings(plugin), fields
+
+
+def test_a_readme_that_is_a_pipe_is_reported_not_waited_for(plugin: Path) -> None:
+    # check_file refuses a pipe; a second, unconditional read of README.md used to block on it.
+    import os
+    import subprocess
+    import sys
+    (plugin / "README.md").unlink()
+    os.mkfifo(plugin / "README.md")
+    done = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "directory_preflight.py"),
+                           str(plugin), "--json"], capture_output=True, text=True, timeout=30,
+                          check=False)
+    report = json.loads(done.stdout)
+    assert any(f["code"] == "INVENTORY_GAPS" and f["path"] == "README.md"
+               for f in report["findings"])
+    assert not any(f["path"] == "README.md" and "words" in f["message"]
+                   for f in report["findings"])
+
+
 def test_the_word_eval_is_a_note_and_never_a_failure(plugin: Path) -> None:
     put(plugin, "README.md", README + "\nThe eval word appears here.\n")
     report = _preflight().run(plugin)

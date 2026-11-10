@@ -190,6 +190,8 @@ def _credential_like(name: str) -> bool:
     spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
     return any(word.lower() in CREDENTIAL_WORDS for word in re.split(r"[^A-Za-z0-9]+", spaced))
 USER_CONFIG_REF = re.compile(r"^\$\{user_config\.([A-Za-z0-9_]+)\}$")
+USER_CONFIG_ANY = re.compile(r"\$\{user_config\.([A-Za-z0-9_]+)\}")
+AUTH_SCHEME = re.compile(r"(?:Bearer|Basic|Token)?", re.IGNORECASE)
 ENV_REF = re.compile(r"\$\{([^}]+)\}")
 OWN_VARIABLES = {"CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA", "CLAUDE_PROJECT_DIR"}
 # A credential written into a file (checklist: "keep real credentials out of every file").
@@ -975,6 +977,26 @@ def _loads_instructions(rel: str, extra: Iterable[str] = ()) -> bool:
     return rel.startswith(COMPONENT_DIRS) or rel == "SKILL.md" or rel in extra
 
 
+def _field_text(block: list[tuple[int, str]], name: str) -> str:
+    """The text of one top-level frontmatter field: its own line, and the indented
+    or list lines under it (a YAML list may sit at the same indent as its key). Other fields,
+    a description for one, are not part of it."""
+    parts: list[str] = []
+    inside = False
+    for _, line in block:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[:1] in " \t-":
+            if inside:
+                parts.append(line)
+            continue
+        key, sep, _ = line.partition(":")
+        inside = bool(sep) and key.strip().strip("\"'").strip().lower() == name
+        if inside:
+            parts.append(line)  # the colon stays: the wildcard test looks for it
+    return "\n".join(parts)
+
+
 def check_frontmatter(rel: str, text: str, extra: Iterable[str] = ()) -> list[Finding]:
     """YAML sanity of the frontmatter of a skill, a command or an agent."""
     out: list[Finding] = []
@@ -1023,7 +1045,8 @@ def check_frontmatter(rel: str, text: str, extra: Iterable[str] = ()) -> list[Fi
                            "portal's rule covers hooks of every type", PORTAL))
     for key in ("allowed-tools", "allowed_tools", "allowedtools", "tools"):
         if key in keys:
-            if SHELL_TOOL.search(raw) or WILDCARD_TOOL.search(raw):
+            granted = _field_text(block, key) or raw  # a form that cannot be located is judged whole
+            if SHELL_TOOL.search(granted) or WILDCARD_TOOL.search(granted):
                 out.append(Finding("LOCAL_EXEC_PREAPPROVED", ERROR, rel, "the frontmatter "
                                    "grants a shell: it would run commands on the user's "
                                    "computer without asking", CAUTION))
@@ -1204,9 +1227,13 @@ def _check_server(rel: str, name: str, server: object, options: dict[str, object
                     and re.search(r"[A-Za-z]", literal)))
             if not (_credential_like(str(key)) or looks_secret):
                 continue
-            ref = USER_CONFIG_REF.match(text)
-            option = options.get(ref.group(1)) if ref else None
-            if not (isinstance(option, dict) and option.get("sensitive") is True):
+            # The value is made of references and at most an authentication scheme in front
+            # ("Bearer ${user_config.api_key}"), and every option it names is sensitive.
+            refs = USER_CONFIG_ANY.findall(text)
+            from_sensitive = bool(refs) and AUTH_SCHEME.fullmatch(literal) is not None and all(
+                isinstance(options.get(name), dict) and options[name].get("sensitive") is True
+                for name in refs)
+            if not from_sensitive:
                 out.append(Finding("MCP_FORWARDS_CREDENTIAL_ENV", WARNING, rel,
                                    f"{label} passes {key} that does not come from a sensitive "
                                    "userConfig option", CHECKLIST))
@@ -1456,15 +1483,16 @@ def check_manifest(base: Path, files: list[str]) -> list[Finding]:
     return out
 
 
-def check_layout(base: Path, files: list[str]) -> list[Finding]:
+def check_layout(files: list[str], readme: str | None) -> list[Finding]:
+    """The layout findings. ``readme`` is the text that check_file read (None when it refused
+    the file: it has said why, and a second read here could block on a pipe)."""
     out: list[Finding] = []
     if len(files) > MAX_FILES:
         out.append(Finding("DIR_LIMITS", ERROR, ".", f"{len(files)} files: more than {MAX_FILES} "
                            "is held for a reviewer", CHECKLIST))
     if "README.md" not in files:
         out.append(Finding("MANIFEST", ERROR, "README.md", "no README.md", CHECKLIST))
-    else:
-        readme = (base / "README.md").read_text(encoding="utf-8", errors="replace")
+    elif readme is not None:
         readme = re.sub(r"(?s)(```|~~~).*?(?:\1|\Z)", " ", readme)  # code blocks do not count
         readme = re.sub(r"(?s)<!--.*?-->", " ", readme)
         words = len([w for w in readme.split() if re.search(r"\w", w)])
@@ -1510,6 +1538,7 @@ def run(base: Path, tracked: bool = False) -> Report:
     files = list_files(base, tracked)
     findings: list[Finding] = []
     extra: set[str] = set()
+    readme: str | None = None
     if ".claude-plugin/plugin.json" in files:
         # Read once more by check_manifest, which reports what is wrong with it; the findings
         # of this first read are dropped so that none is said twice.
@@ -1522,6 +1551,8 @@ def run(base: Path, tracked: bool = False) -> Report:
         try:
             found, text = check_file(base, rel)
             findings.extend(found)
+            if rel == "README.md":
+                readme = text
             if text is not None:
                 findings.extend(check_text(rel, text))
                 if PurePosixPath(rel).suffix.lower() in (".md", ".markdown"):
@@ -1535,7 +1566,7 @@ def run(base: Path, tracked: bool = False) -> Report:
     findings.extend(check_local_code_paths(files))
     findings.extend(check_hooks(base, files))
     findings.extend(check_manifest(base, files))
-    findings.extend(check_layout(base, files))
+    findings.extend(check_layout(files, readme))
     order = {ERROR: 0, WARNING: 1, INFO: 2}
     findings.sort(key=lambda f: (order[f.severity], f.code, f.path, f.line))
     findings = _capped(findings)
