@@ -25,6 +25,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - **`docs/policy.md` said the SessionStart hook reads the policy and connection
   options.** That was true until 1.5.0; since 1.5.1 it reads none, as `PRIVACY.md` says.
 
+### Added
+
+- A local preflight for plugin folders, `scripts/directory_preflight.py` (not Anthropic's
+  scanner; a clean result is not an approval). It is a heuristic with known limits.
+
 ## [1.6.1] - 2026-11-08
 
 A Windows user of the Claude desktop app could not start the plugin and sent the
