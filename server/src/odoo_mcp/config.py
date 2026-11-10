@@ -9,6 +9,8 @@ import re
 import urllib.parse
 from dataclasses import dataclass, field
 
+from .transport.base import hides_user_info
+
 TRANSPORT_CHOICES = ("auto", "json2", "jsonrpc", "xmlrpc")
 
 # A plugin host that leaves a manifest reference unresolved (e.g. an unset
@@ -30,8 +32,14 @@ def _env(name: str) -> str:
 
 
 def _without_userinfo(url: str) -> str:
-    """``https://user:pass@host`` -> ``https://host`` for logs; never raises."""
+    """``https://user:pass@host`` -> ``https://host`` for logs; never raises.
+
+    A URL whose user information cannot be set apart (a password with a raw ``/``, ``?`` or
+    ``#``) is not shown at all: any part of it could be the password.
+    """
     try:
+        if hides_user_info(url):
+            return "<unparseable ODOO_URL>"
         parts = urllib.parse.urlsplit(url)
         if parts.username is None and parts.password is None:
             return url

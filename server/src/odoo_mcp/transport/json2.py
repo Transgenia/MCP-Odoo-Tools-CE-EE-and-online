@@ -50,7 +50,7 @@ from email.message import Message
 from typing import Any
 
 from ..errors import AuthError, CompatError, ConfigError, OdooFault, RateLimited, TransportError
-from .base import parse_retry_after, tls_context
+from .base import URL_UNREADABLE, parse_retry_after, tls_context
 from .json2_signatures import Series, Signature, to_named
 from .jsonrpc import JsonRpcUnavailable, _NoRedirect, split_userinfo
 
@@ -217,8 +217,8 @@ class Json2Transport:
         except (http.client.HTTPException, OSError, EOFError) as exc:
             # Sent, then the reply was cut or timed out: the call may have run.
             raise TransportError(f"json2 transport error: {type(exc).__name__}: {exc}") from None
-        except ValueError as exc:  # malformed URL
-            raise Json2Unreachable(f"json2 transport error: {exc}") from None
+        except ValueError:  # malformed URL: the parser's text would quote the user info
+            raise Json2Unreachable(f"json2 transport error: {URL_UNREADABLE}") from None
         if (reply_headers.get("Content-Encoding") or "").lower() == "gzip":
             try:
                 raw = gzip.decompress(raw)

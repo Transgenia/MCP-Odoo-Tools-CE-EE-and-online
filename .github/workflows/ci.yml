@@ -51,3 +51,18 @@ jobs:
         run: npm ci || npm install
       - name: Build
         run: npm run build
+
+  directory-edition:
+    name: directory edition (preflight)
+    # Transgenia's own check of distribution/directory, the code-free edition meant for
+    # Anthropic's directory (not submitted yet), with that folder as the plugin path. It is
+    # not Anthropic's scanner and a pass is not an approval (docs/directory-channel.md).
+    # ubuntu-24.04 because actions/setup-python has no Python 3.9 for ubuntu-latest.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.9"
+      - name: Preflight of the code-free edition
+        run: python3 scripts/directory_preflight.py distribution/directory --fail-on warning

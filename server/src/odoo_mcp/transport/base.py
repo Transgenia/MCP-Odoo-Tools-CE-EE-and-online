@@ -9,7 +9,39 @@ import email.utils
 import os
 import ssl
 import time
+import urllib.parse
 from typing import Any, Protocol, runtime_checkable
+
+# What a malformed ODOO_URL is reported as, instead of the parser's own text: that text quotes
+# the whole network location, so a gateway's user:pass@ would reach the model and the logs.
+URL_UNREADABLE = ("the Odoo URL cannot be read: write it as https://your-host; if it has a "
+                  "user:pass@ part, write each special character of the password as %XX "
+                  "(# as %23, / as %2F, ? as %3F)")
+
+
+def hides_user_info(url: str) -> bool:
+    """True when ``url`` may carry a ``user:pass@`` part that no parser can set apart.
+
+    Two shapes. The parser refuses the URL and its network location holds an ``@`` or a
+    non-ASCII character (normalization can turn one into ``@``). Or the parser finds no user
+    information although an ``@`` follows the scheme: a password written with a raw ``/``,
+    ``?`` or ``#`` ends the network location early, so the start of the password reads as the
+    host or the port. A message or a display that quotes such a URL would quote the password.
+    The test is deliberately wide: an ``@`` in the path, the query or the fragment with no
+    readable user information (``https://host/@me``) is refused too, because nothing tells it
+    from a password cut short, and an Odoo base URL has no use for one.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        authority = url.partition("://")[2]
+        for delimiter in "/?#":
+            authority = authority.partition(delimiter)[0]
+        return "@" in authority or not authority.isascii()
+    if parts.username is not None or parts.password is not None:
+        return False
+    return "@" in (url.partition("://")[2] or url)
+
 
 # Waits for an HTTP 429 (seconds): the server's Retry-After, capped, or a default.
 RETRY_AFTER_DEFAULT = 10.0

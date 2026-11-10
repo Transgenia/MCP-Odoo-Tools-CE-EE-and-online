@@ -4,6 +4,43 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.3] - 2026-11-10
+
+There is no 1.6.2: that number was never released.
+
+### Security
+
+- **A gateway password in `ODOO_URL` could reach the model and the log.** With
+  `https://user:pass@host` (HTTP basic auth in front of Odoo), a character in the user
+  information that normalizes to a reserved one (a full-width `@`) made the standard URL
+  parser quote the whole network location, password included, in its error; a password
+  written with a raw `#`, `/` or `?` was read as a host or a port, quoted by `http.client`
+  and printed by `odoo_connections`. Such a URL is now not used and not shown: it fails
+  before any request with a fixed text that says to write those characters as `%23`,
+  `%2F` and `%3F`. The same goes for a URL with an `@` in its path, query or fragment and
+  no readable `user:pass@`. Checked on 1.6.1; if a gateway password may have appeared in a
+  conversation or in Claude Code's MCP log through such an error, change it. The Odoo API
+  key and the Odoo login password were never involved.
+
+### Fixed
+
+- **Two skills had an invalid YAML frontmatter since 1.6.0.** The `description` of
+  `odoo-mcp-tools` and `odoo-setup-mcp` held an unquoted `: ` (two sentences added in
+  1.6.0), which a strict YAML parser reads as a mapping. They are quoted, with the same
+  text. A test now checks every frontmatter.
+- **`docs/policy.md` said the SessionStart hook reads the policy and connection
+  options.** That was true until 1.5.0; since 1.5.1 it reads none, as `PRIVACY.md` says.
+
+### Added
+
+- For maintainers; none of it changes what the plugin does. A code-free edition for
+  Anthropic's directory in `distribution/directory` (not in this release's zip, not
+  submitted); a local preflight for plugin folders, `scripts/directory_preflight.py` (not
+  Anthropic's scanner); a `directory-edition` CI job; and two design documents,
+  `docs/directory-channel.md` and `docs/design/remote-mcp-threat-model.md` (nothing is built).
+- `scripts/check_release_version.py` also checks the image pins in `docs/install.md` and
+  `commands/deploy-local.md` and that the CHANGELOG section of the release is not empty.
+
 ## [1.6.1] - 2026-11-08
 
 A Windows user of the Claude desktop app could not start the plugin and sent the

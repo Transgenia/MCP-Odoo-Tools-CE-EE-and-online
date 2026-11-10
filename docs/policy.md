@@ -568,9 +568,10 @@ returns the `policy` block with the error without contacting Odoo; every other
 tool refuses with a text that names the error and the option that fixes it, and
 says nothing was sent to Odoo; the startup log and the instructions line carry
 the error, and the audit start line its E-code. In Claude Code, the plugin's SessionStart
-hook also checks the two policy options and says when the server would start
-locked (it reads only those two options and the three connection options it
-already read, never the API key or the password).
+hook says when the server's last start was locked: it learns this from the server's own
+diagnostics log in the plugin's data folder, and reads only that folder and the name of
+the Claude app, never a plugin option, the API key, the password or the policy file
+(since 1.5.1; [PRIVACY.md](../PRIVACY.md)).
 
 <!-- generated:errors -->
 | Code | Text |

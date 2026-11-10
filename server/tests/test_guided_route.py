@@ -110,10 +110,11 @@ def test_versions_agree_everywhere() -> None:
         re.MULTILINE,
     )
     assert runtime
-    image_tags = set(re.findall(
-        r"ghcr\.io/transgenia/odoo-mcp-tools:([0-9.]+)",
-        (ROOT / "commands/deploy-local.md").read_text(),
-    ))
+    image_tags = set()
+    for rel in ("commands/deploy-local.md", "docs/install.md"):
+        image_tags |= set(re.findall(
+            r"ghcr\.io/transgenia/odoo-mcp-tools:([0-9]+(?:\.[0-9]+)*)", (ROOT / rel).read_text(),
+        ))
     assert {plugin, market["plugins"][0]["version"], pyproject.group(1),
             runtime.group(1)} | image_tags == {plugin}
     assert f"## [{plugin}]" in (ROOT / "CHANGELOG.md").read_text()
@@ -356,6 +357,46 @@ def test_release_version_check_script() -> None:
     usage = subprocess.run([sys.executable, str(script), "1.3"],
                            capture_output=True, text=True, check=False)
     assert usage.returncode == 2
+
+
+def _release_tree(root: Path, version: str, *, changelog: str, pin: str) -> None:
+    """The few files scripts/check_release_version.py reads, all at ``version``."""
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / "server/src/odoo_mcp").mkdir(parents=True)
+    (root / "docs").mkdir()
+    (root / "commands").mkdir()
+    (root / ".claude-plugin/plugin.json").write_text(json.dumps({"version": version}))
+    (root / ".claude-plugin/marketplace.json").write_text(
+        json.dumps({"plugins": [{"version": version}]}))
+    (root / "server/pyproject.toml").write_text(f'[project]\nversion = "{version}"\n')
+    (root / "server/src/odoo_mcp/__init__.py").write_text(f'__version__ = "{version}"\n')
+    for rel in ("docs/install.md", "commands/deploy-local.md"):
+        (root / rel).write_text(f"docker pull ghcr.io/transgenia/odoo-mcp-tools:{pin}\n")
+    (root / "CHANGELOG.md").write_text(changelog)
+
+
+def test_release_version_check_reads_the_pins_and_a_real_section(tmp_path: Path) -> None:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "check_release_version", ROOT / "scripts" / "check_release_version.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    good = "# Changelog\n\n## [2.0.1] - 2026-01-01\n\n### Fixed\n\n- something\n\n## [2.0.0]\n\n- old\n"
+    cases = {
+        "ok": (good, "2.0.1", []),
+        "a stale image pin": (good, "2.0.0", ["docs/install.md pins the image 2.0.0",
+                                              "commands/deploy-local.md pins the image 2.0.0"]),
+        "no section": ("# Changelog\n\nsee ## [2.0.1] below\n", "2.0.1",
+                       ["CHANGELOG.md has no '## [2.0.1]' section"]),
+        "an empty section": ("# Changelog\n\n## [2.0.1] - 2026-01-01\n\n## [2.0.0]\n\n- old\n",
+                             "2.0.1", ["CHANGELOG.md '## [2.0.1]' section is empty"]),
+    }
+    for name, (changelog, pin, expected) in cases.items():
+        root = tmp_path / name.replace(" ", "-")
+        _release_tree(root, "2.0.1", changelog=changelog, pin=pin)
+        module.ROOT = root
+        assert module.problems("2.0.1") == expected, name
 
 
 # --------------------------------------------- sandbox: Odoo 10.0-19.0 + XML-RPC

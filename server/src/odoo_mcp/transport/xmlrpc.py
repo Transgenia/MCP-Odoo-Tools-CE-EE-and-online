@@ -14,7 +14,7 @@ import xmlrpc.client
 from typing import Any
 
 from ..errors import AuthError, OdooFault, RateLimited, TransportError
-from .base import parse_retry_after, tls_context
+from .base import URL_UNREADABLE, hides_user_info, parse_retry_after, tls_context
 
 
 class _TimeoutTransport(xmlrpc.client.Transport):
@@ -77,13 +77,18 @@ class XmlRpcTransport:
     def __init__(self, base_url: str, timeout: int = 30) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        if hides_user_info(self.base_url):  # the errors below would quote the password
+            raise TransportError(f"xmlrpc transport error: {URL_UNREADABLE}")
         # allow_none so Odoo methods returning None do not blow up marshalling
-        self._common = xmlrpc.client.ServerProxy(
-            f"{self.base_url}/xmlrpc/2/common", transport=self._transport(), allow_none=True
-        )
-        self._object = xmlrpc.client.ServerProxy(
-            f"{self.base_url}/xmlrpc/2/object", transport=self._transport(), allow_none=True
-        )
+        try:
+            self._common = xmlrpc.client.ServerProxy(
+                f"{self.base_url}/xmlrpc/2/common", transport=self._transport(), allow_none=True
+            )
+            self._object = xmlrpc.client.ServerProxy(
+                f"{self.base_url}/xmlrpc/2/object", transport=self._transport(), allow_none=True
+            )
+        except ValueError:  # the parser's text quotes the whole URL, user:pass@ included
+            raise TransportError(f"xmlrpc transport error: {URL_UNREADABLE}") from None
 
     def _transport(self) -> xmlrpc.client.Transport:
         if self.base_url.lower().startswith("https://"):
