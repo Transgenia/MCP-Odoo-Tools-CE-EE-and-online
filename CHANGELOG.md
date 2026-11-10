@@ -36,6 +36,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 - `docs/design/remote-mcp-threat-model.md`, a design-only summary of three options for a
   remote MCP server and of its threat model, with the gates before any credential is
   accepted. Nothing is built, tested with Claude or published.
+- A code-free edition for Anthropic's directory in `distribution/directory` (not in the
+  release zip, not submitted), a `directory-edition` CI job, and `docs/directory-channel.md`
+  (what Anthropic's review portal flagged for 1.6.1, what to ask, what the owner decides).
 
 ## [1.6.1] - 2026-11-08
 

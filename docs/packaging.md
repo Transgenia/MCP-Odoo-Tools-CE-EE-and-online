@@ -1,6 +1,7 @@
 # Packaging tiers
 
-This repo ships the **Standard** package only: free, MIT-licensed, public.
+This repo ships the **Standard** package: free, MIT-licensed, public. It also holds the
+code-free directory edition (below), which no artifact carries.
 Enterprise and Teams editions will live in **separate packages/repos** later:
 nothing in this repo is gated, stubbed, or phone-home licensed.
 
@@ -15,7 +16,8 @@ nothing in this repo is gated, stubbed, or phone-home licensed.
 | GitHub Release `v<ver>` | `release.yml` | sdist/wheel + plugin zip, notes = that version's CHANGELOG section |
 
 Release procedure: bump `plugin.json`, `marketplace.json`, `server/pyproject.toml`
-and the telemetry fallback and add the `## [<ver>]` CHANGELOG section. Prepare the
+and the telemetry fallback and add the `## [<ver>]` CHANGELOG section (rename
+`## [Unreleased]`: `release.yml` publishes that section as the release notes). Prepare the
 manual's pull request in the same change (docs.transgenia.org, product rule 8): the
 pages for every change a user can notice, in Spanish, English and Chinese, and
 `software_version` in its `mkdocs.yml`. Then, in this order, because Anthropic's directory picks up a merge to the tracked branch (by
@@ -62,6 +64,27 @@ tag's `container` job finishes:
 Install, inside Claude Code: `/plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online`; in a terminal:
 `claude plugin install odoo-tools --marketplace Transgenia/MCP-Odoo-Tools-CE-EE-and-online --scope user` (Claude Code 2.1.275 or later; older versions add the marketplace
 first, see `docs/install.md`).
+
+## Channels and the directory edition
+
+Two channels leave this repository ([`docs/directory-channel.md`](directory-channel.md)):
+
+- **Channel A, the full local plugin.** The artifacts above and Transgenia's own
+  marketplace (`.claude-plugin/marketplace.json`, source `./`). Anthropic does not review
+  a plugin installed from a marketplace you add yourself. The release zip lists its
+  folders and does not carry `distribution/`.
+- **Channel B, the directory edition.** `distribution/directory`, a code-free plugin
+  folder of its own with its own version in `distribution/directory/.claude-plugin/plugin.json`
+  (`scripts/check_release_version.py` reads only the root manifests and leaves it alone).
+  The directory scans only the folder given as the plugin path, and a submission cannot
+  change its folder, so the edition is a **new** submission with that path; the live
+  `odoo-tools` listing keeps pointing at the repository root. It is not submitted.
+
+The edition is checked by `scripts/directory_preflight.py` (CI job `directory-edition`)
+and `server/tests/test_directory_edition.py`. The preflight is Transgenia's own check,
+not Anthropic's scanner: a clean result is not an approval, and only the directory's own
+scan decides. Changing a file of the edition is a change a user can notice if it is
+submitted: product rule 8 applies then.
 
 ## Enterprise / Teams (later, separate)
 

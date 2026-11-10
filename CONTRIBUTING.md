@@ -53,6 +53,20 @@ pytest -q -m "not live"
   `docs/policy.md` with `python3 scripts/policy_docs.py --write` (see
   [Tool mapping](docs/policy.md#tool-mapping)).
 
+## Directory edition
+
+`distribution/directory` is the plugin folder of the code-free edition meant for
+Anthropic's directory (not submitted yet; [`docs/directory-channel.md`](docs/directory-channel.md)).
+Keep it to Markdown, JSON and one PNG: no hook, no MCP server, no option, no script, no
+instruction that makes Claude run or fetch anything. Never rename, hide or re-encode a
+file to make a check pass; take the file out. Before you change it:
+
+```bash
+python3 scripts/directory_preflight.py --fail-on warning
+```
+
+CI runs the same command. It is Transgenia's own check, not Anthropic's scanner.
+
 ## CLI (TypeScript)
 
 ```bash
