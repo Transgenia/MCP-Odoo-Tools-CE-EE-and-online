@@ -20,6 +20,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
   conversation or in Claude Code's MCP log through such an error, change it. The Odoo API
   key and the Odoo login password were never involved.
 
+### Fixed
+
+- **`docs/policy.md` said the SessionStart hook reads the policy and connection
+  options.** That was true until 1.5.0; since 1.5.1 it reads none, as `PRIVACY.md` says.
+
 ## [1.6.1] - 2026-11-08
 
 A Windows user of the Claude desktop app could not start the plugin and sent the
