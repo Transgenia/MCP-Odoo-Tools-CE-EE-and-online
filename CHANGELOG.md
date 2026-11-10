@@ -22,6 +22,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ### Fixed
 
+- **Two skills had an invalid YAML frontmatter since 1.6.0.** The `description` of
+  `odoo-mcp-tools` and `odoo-setup-mcp` held an unquoted `: ` (two sentences added in
+  1.6.0), which a strict YAML parser reads as a mapping. They are quoted, with the same
+  text. A test now checks every frontmatter.
 - **`docs/policy.md` said the SessionStart hook reads the policy and connection
   options.** That was true until 1.5.0; since 1.5.1 it reads none, as `PRIVACY.md` says.
 
