@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.4] - 2026-11-14
 
 Nothing that the plugin does, reads or sends changes. Anthropic's directory refused v1.6.3
 (commit 35f0235) with findings that describe the product itself; this version records what the
