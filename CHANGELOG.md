@@ -4,6 +4,40 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Nothing that the plugin does, reads or sends changes. Anthropic's directory refused v1.6.3
+(commit 35f0235) with findings that describe the product itself; this version records what the
+review listed and brings the maintainers' tooling and the security notes in line with it.
+
+### Changed
+
+- **For maintainers: the directory preflight follows the portal's review of v1.6.3.**
+  `scripts/directory_preflight.py` reports the codes that review added, says where each finding
+  comes from (the checklist, Claude Code's reference or validator, the portal, this repository or
+  its own caution), reads the text of an image (a heuristic: a text of fewer than 8 characters, a
+  compressed chunk and a text broken by a byte that is not text are not read), and
+  never runs a program named by the scanned repository's own git config. Its run time was measured
+  for quadratic growth with the length of a text, and the shapes that stalled it are now tests (a
+  measured bound, not a proof: a crafted file can still be slow). It is not Anthropic's scanner and says so,
+  and its match with the portal's lists was fitted to them, so it is not a prediction. CI and the
+  release workflow fetch the full history for the jobs that run the server tests, so that the
+  calibration test, which exports the commit the portal scanned, runs instead of skipping.
+- **`SECURITY.md` is plainer about the directory's findings.** It says that they are what the
+  review listed and not an approval, and that the directory's own copy may be older than the
+  current version (current versions come from Transgenia's marketplace, which Anthropic does not
+  review). Under "Contains a download-and-run command" it says what the directory lists
+  (documentation, tests and a developer script that hold the word eval) and keeps the two real
+  flows disclosed apart. It names the maintainers' scripts that the directory lists for
+  credentials, says that the JSON-2 and JSON-RPC transports follow the proxy variables of the
+  environment (and the system's proxy settings on Windows and macOS when none is set), and says
+  what to do if a proxy inspects TLS and what to do with a gateway password in the Odoo URL.
+- **For maintainers: `docs/directory-channel.md` records the review of v1.6.3** (a fourth blocking
+  finding, on config file fields; 13 credential files, 8 download-and-run files, 4 image
+  references) with what is measured, what is inferred and what is unknown. It corrects figures that
+  the version published in 1.6.3 gave and that the real review contradicted, and adds the questions
+  to ask Anthropic and the decisions for the owner.
+
 ## [1.6.3] - 2026-11-10
 
 There is no 1.6.2: that number was never released.

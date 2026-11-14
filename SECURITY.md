@@ -44,8 +44,11 @@
 
 ## What the plugin directory's checks report
 
-The Claude plugin directory lists these findings for this plugin. Each one, and
-where to verify it:
+The Claude plugin directory lists these findings for this plugin. They are what its
+review listed, not an approval of the plugin, and the directory's own copy may be older
+than the current version: current versions are distributed from Transgenia's own
+marketplace, which Anthropic does not review (this repository holds their source, tests
+and checks). Each finding, and where to verify it:
 
 - **Uses a credential from the user's machine** (`.claude-plugin/plugin.json`,
   `server/src/odoo_mcp/config.py`). The MCP server reads two credentials, the
@@ -54,7 +57,31 @@ where to verify it:
   and `odoo_password` (`${user_config.KEY}`). It sends them only to the Odoo URL
   the user configured, the service they belong to: the three transports in
   `server/src/odoo_mcp/transport/` connect to that URL only and refuse
-  redirects. `server/tests/test_product_rules.py` fails if the server reads any
+  redirects. The JSON-2 and JSON-RPC transports use Python's default proxy
+  handling, so if the user's environment sets a proxy (`HTTPS_PROXY`, or `HTTP_PROXY` for a plain
+  `http://` URL), the connection to that URL goes through it; XML-RPC does not. When no variable
+  whose name ends in `_proxy` is set (`NO_PROXY` counts as one), Python reads the manual proxy
+  entries of the system settings on Windows and macOS; it reads no proxy script (PAC) anywhere.
+  When the Odoo URL is `https://`, Python sends its CONNECT request to the proxy in plain text,
+  whatever the proxy address starts with: a proxy that accepts plain text works even if its address
+  starts with `https://`, and one that only speaks TLS fails. If a proxy inspects TLS, or the Odoo
+  URL is plain `http://`, the proxy can read the key: use a least-privilege key that expires, or, if
+  your network allows a direct connection, put the Odoo host itself, without its port
+  (`odoo.example.com`, or `.example.com` for a whole domain), in `NO_PROXY` as a comma-separated
+  list, in the environment that starts Claude Code or in the `env` block of Claude Code's
+  `settings.json`. A value in that block replaces a `NO_PROXY` of the same spelling that your shell
+  passes to the plugin's server and to hooks (a lowercase `no_proxy` of your shell is kept), so write
+  the whole list there, in both spellings if your shell sets both: the hosts you already have and
+  the Odoo host. Python ignores ranges such as `10.0.0.0/8` and patterns such as `*.example.com`
+  there, and if a lowercase `no_proxy` is set, even empty, it ignores `NO_PROXY` altogether: put the
+  host in `no_proxy`, or set both. To check it, run
+  `python3 -c "import urllib.request as u; print(u.proxy_bypass('odoo.example.com'))"`
+  (`py -3` on Windows) in the environment that starts Claude Code, with your own Odoo host in place
+  of `odoo.example.com`: `True` means a direct connection, and `False` means that no bypass applies:
+  a proxy is used for that host, or no proxy is set, or the proxy variables that are set do not
+  apply to an https URL (`HTTP_PROXY` and `ALL_PROXY` do not). It does not see a value set only in
+  `settings.json`: to test one, put the same assignment in front of the command.
+  `server/tests/test_product_rules.py` fails if the server reads any
   other credential from its environment.
 - **`scripts/deploy_local.py`** generates random passwords
   (`secrets.token_urlsafe`) for the local Docker sandbox of
@@ -67,7 +94,13 @@ where to verify it:
   copies it into the plugin's **Odoo API key** option; Claude never reads it.
 - **Tests** (`server/tests/`) set fake canary credentials to prove that no log
   line, audit line, diagnostics record, support report or hook output ever
-  contains a credential. The plugin never runs them.
+  contains a credential. The plugin never runs them. Two more maintainers'
+  scripts that the directory lists hold environment variable names as text and
+  are never run by the plugin either: `scripts/build_mcpb.py` builds the
+  desktop extension preview and smoke-tests it with an empty settings form and
+  no credential, and `scripts/directory_preflight.py` is a local checker of
+  plugin folders whose patterns look for credential and download commands; it
+  makes no network call.
 - **Uses hooks.** Two SessionStart hooks: a shell check that `python3` runs,
   and `hooks/session_start.py`, which reads the plugin's data folder and
   `CLAUDE_CODE_ENTRYPOINT` only, never a plugin option or a credential
@@ -75,8 +108,14 @@ where to verify it:
 - **Runs a local program for an MCP server.** `python3
   ${CLAUDE_PLUGIN_ROOT}/server/run_stdio.py`: standard library only, nothing
   installed or downloaded (Supply chain, above).
-- **Contains a download-and-run command.** Two commands download and run code
-  on the user's computer, and only when the user invokes them and confirms:
+- **Contains a download-and-run command.** For v1.6.3 the directory lists eight
+  files under this finding: documentation (`CHANGELOG.md`, files under `docs/`,
+  `evals/README.md`), tests and one developer script
+  (`scripts/directory_preflight.py`). The plugin runs none of them. All eight hold
+  the word eval, which is also the name of Claude Code's own `plugin eval`
+  command, and the two commands below, which do download and run code, are not on
+  the list (`docs/directory-channel.md`, section 4a). Those two run on the user's
+  computer only when the user invokes them and confirms:
   `/odoo-tools:deploy-local` pulls and runs Docker images (Transgenia's
   unchanged copies of the official PostgreSQL and Odoo images, by series tag,
   and the MCP server image at the plugin's version), and
@@ -161,7 +200,8 @@ where to verify it:
   header for its API key, so such a URL stays on the legacy endpoints (and
   cannot work from Odoo 22 / Odoo Online saas~21.1, where they are removed). Note that **Odoo URL**
   is not a `sensitive` plugin option: a password embedded there is stored in the
-  plugin settings, not in the OS credential store.
+  plugin settings, not in the OS credential store. Use a gateway credential that opens only
+  that gateway, and change it if the settings file is shared.
 - **Timeouts.** Every JSON-2, JSON-RPC and XML-RPC request is bounded by `ODOO_TIMEOUT`
   (seconds, default 120, Odoo's own default request limit; plugin option
   **Request timeout**), so an unresponsive Odoo cannot hang the server
