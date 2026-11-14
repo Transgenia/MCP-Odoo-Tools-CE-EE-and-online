@@ -20,7 +20,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -668,6 +668,143 @@ def test_a_name_is_a_name_between_characters_that_do_not_extend_it(
     found = [f for f in _preflight().run(plugin)["findings"]
              if f["code"] == "UNREAD_ASSET_REFERENCED" and f["path"] == "notes.txt"]
     assert bool(found) is named, text
+
+
+BADGE = {"badge.png": "assets/badge.png"}
+WARNS = ("warning",)
+# A Markdown text names an image for the check only inside an inline code span or a fenced code
+# block. A span is read on one line by its backtick runs, as CommonMark reads it, with one
+# difference that is meant (an opening run that nothing matches) and four limits that are known:
+# each row says what CommonMark does with the name, and why the check differs where it does.
+TO_THE_END = ("an opening run that no later run of its length matches is read as a span to the end "
+              "of the line: the check warns rather than stays silent")
+
+
+class SpanCase(NamedTuple):
+    """One text, and what the check must say about badge.png in it."""
+
+    what: str
+    text: str
+    found: tuple[str, ...]  # the severities of its findings
+    commonmark: str  # where CommonMark puts the name (inside or outside), or why it does not apply
+    why: str = ""  # where the check parts from CommonMark on purpose: the reason
+    rel: str = "README.md"
+    skip: frozenset[str] = frozenset()
+
+
+SPAN_CASES = [
+    # --- the nine texts of the finding on the parity count (it counted backticks, not runs)
+    SpanCase("one backtick", "Use `badge.png`.", WARNS, "inside"),
+    SpanCase("two backticks, which the parity count missed", "Use ``badge.png``.", WARNS, "inside"),
+    SpanCase("three backticks", "Use ```badge.png```.", WARNS, "inside"),
+    SpanCase("no backtick: prose does not count", "Use badge.png.", (), "outside"),
+    SpanCase("the name after a double span that holds a backtick", "``a ` b`` badge.png", (),
+             "outside"),
+    SpanCase("the name after two single spans", "`a` `b` badge.png", (), "outside"),
+    SpanCase("a double span, then a single span", "``badge.png`` and `x`", WARNS, "inside"),
+    SpanCase("a double span with a space inside each end", "`` badge.png ``", WARNS, "inside"),
+    SpanCase("an opening backtick that nothing closes", "It is `badge.png and more", WARNS,
+             "outside", TO_THE_END),
+    # --- runs of other lengths, and what closes a span
+    SpanCase("four backticks", "Use ````badge.png````.", WARNS, "inside"),
+    SpanCase("five backticks", "Use `````badge.png`````.", WARNS, "inside"),
+    SpanCase("a longer run inside a span does not close it", "``a ```badge.png`` b", WARNS,
+             "inside"),
+    SpanCase("a shorter run inside a span does not close it", "``a `badge.png`` b", WARNS,
+             "inside"),
+    SpanCase("a longer run is no partner for a single backtick", "`a`` badge.png", WARNS,
+             "outside", TO_THE_END),
+    SpanCase("a double run that nothing closes, then a single span", "``a `b` badge.png", WARNS,
+             "outside", TO_THE_END),
+    # --- two spans, and where the name sits in the line
+    SpanCase("the name in the second of two spans", "`a` and ``badge.png`` b", WARNS, "inside"),
+    SpanCase("the name between two spans", "`a` badge.png `b`", (), "outside"),
+    SpanCase("the name right after the opening run", "`badge.png` is it", WARNS, "inside"),
+    SpanCase("the name right before the closing run, at the end of the line", "it is `badge.png`",
+             WARNS, "inside"),
+    SpanCase("the name at the start of the line, a span after it", "badge.png `x`", (),
+             "outside"),
+    SpanCase("the name alone before a lone backtick", "badge.png`", (), "outside"),
+    SpanCase("a tab inside the span", "`\tbadge.png\t`", WARNS, "inside"),
+    SpanCase("a space inside the span", "` badge.png `", WARNS, "inside"),
+    SpanCase("capitals", "`BADGE.PNG`", WARNS, "inside"),
+    SpanCase("Markdown image syntax, the way the checklist asks", "![pic](assets/badge.png)", (),
+             "outside"),
+    # --- a longer name is another name, in a span or not
+    SpanCase("a longer name that ends with it", "`xbadge.png`", (), "inside, but another name"),
+    SpanCase("a longer name that starts with it", "`badge.pngx`", (), "inside, but another name"),
+    # --- fenced blocks
+    SpanCase("a block fenced with backticks", "Text\n```\nbadge.png\n```\n", WARNS, "inside"),
+    SpanCase("a block fenced with tildes", "Text\n~~~\nbadge.png\n~~~\n", WARNS, "inside"),
+    SpanCase("after the fence is closed", "```\ncode\n```\nbadge.png\n", (), "outside"),
+    # --- the file is not Markdown, or the name is the plugin's own icon
+    SpanCase("not Markdown: any mention counts", "Use badge.png.", WARNS, "not Markdown",
+             rel="notes.txt"),
+    SpanCase("not Markdown: backticks mean nothing", "``a ` b`` badge.png", WARNS, "not Markdown",
+             rel="notes.txt"),
+    SpanCase("not Markdown: a line that starts with three backticks is not a fence",
+             "```badge.png", WARNS, "not Markdown", rel="notes.txt"),
+    SpanCase("not Markdown: a line that starts with three tildes is not a fence",
+             "~~~badge.png", WARNS, "not Markdown", rel="notes.txt"),
+    SpanCase("the skip set: a note and not a warning in a span", "Use ``badge.png``.",
+             ("info",), "inside", skip=frozenset({"badge.png"})),
+    SpanCase("the skip set: still nothing outside a span", "Use badge.png.", (), "outside",
+             skip=frozenset({"badge.png"})),
+    # --- the suffix of the file name decides what is Markdown: .markdown too, in any case
+    SpanCase("a .markdown file is Markdown: prose does not count", "Use badge.png.", (), "outside",
+             rel="notes.markdown"),
+    SpanCase("an upper case .MD file is Markdown: prose does not count", "Use badge.png.", (),
+             "outside", rel="README.MD"),
+    # --- the limits that are known: what CommonMark reads and this check does not
+    SpanCase("a span that goes on in the next line", "`a\nbadge.png`", (), "inside",
+             "a span is read on one line: one that goes on in the next line is not found (a "
+             "known limit, it under-warns)"),
+    SpanCase("a backslash before a backtick", "\\`badge.png\\`", WARNS, "outside",
+             "a backslash before a backtick is not read (a known limit: it can warn too much "
+             "or too little)"),
+    SpanCase("an indented code block", "    badge.png\n", (), "inside",
+             "an indented code block is not read (a known limit, it under-warns)"),
+    SpanCase("a line that starts with three backticks and holds more text",
+             "```badge.png``` is the name", (), "inside",
+             "a line that starts with three backticks is a fence line, as before, even when it "
+             "holds more text: its name is not read and the lines after it are read as code (a "
+             "known limit)"),
+]
+
+
+@pytest.mark.parametrize("case", SPAN_CASES, ids=[case.what for case in SPAN_CASES])
+def test_a_name_counts_in_markdown_only_inside_a_code_span_read_by_its_backtick_runs(
+        case: SpanCase) -> None:
+    found = _preflight().check_asset_references(case.rel, case.text, BADGE, case.skip)
+    assert tuple(f.severity for f in found) == case.found, case.text
+    if case.commonmark in ("inside", "outside"):
+        # The check parts from CommonMark only where the row says why, and the row says why only
+        # where it does: a table that drifts from either reading fails here.
+        parted = bool(case.found) != (case.commonmark == "inside")
+        assert parted == bool(case.why), case.what
+
+
+def test_a_finding_names_the_line_of_the_name_in_the_span() -> None:
+    # The lines that hold no backtick are skipped at once, and still counted.
+    text = "a badge.png here\n``a ` b`` badge.png\nno backtick, badge.png\n`` badge.png ``\nlast\n"
+    (found,) = _preflight().check_asset_references("README.md", text, BADGE)
+    assert found.line == 4
+
+
+def test_the_spans_are_read_in_the_same_lowercased_line_as_the_names() -> None:
+    # str.lower() can make a line longer (U+0130 gives two characters), and the names are found in
+    # the lowercased line: the spans must be read there too. Read in the original line they sit
+    # to the left of where they are, and the name drifts out of its span (four such characters
+    # are the least that move ".png" out of it, eight leave no doubt).
+    text = "\u0130" * 8 + "`badge.png`"
+    assert len(_preflight().check_asset_references("README.md", text, BADGE)) == 1
+
+
+def test_a_file_named_by_its_suffix_alone_counts_right_after_the_opening_run() -> None:
+    # The one name that can start where a span starts: a file called .png. At the other ends of a
+    # span no name can tell a comparison apart, because a name never holds a backtick.
+    found = _preflight().check_asset_references("README.md", "`.png`", {".png": "img/.png"})
+    assert len(found) == 1
 
 
 def test_a_name_is_reported_once_for_a_file(plugin: Path) -> None:

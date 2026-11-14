@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import stat
 import struct
@@ -779,6 +780,53 @@ def test_the_asset_check_never_looks_up_more_than_one_name_per_distinct_length()
     assert _CountingNames.calls <= 100 * hits, (_CountingNames.calls, hits)
 
 
+def test_the_asset_check_reads_the_code_spans_of_a_line_once_and_only_where_a_name_needs_them(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    # A count of readings is the same on every machine, which a clock is not. A line is read for
+    # its spans when it holds a backtick and a name could count, and then once, however many names
+    # it holds: reading it again for each name is the square that a long line of spans would show.
+    preflight = _preflight()
+    read: list[str] = []
+    real = preflight._code_spans
+
+    def counting(line: str) -> Any:
+        read.append(line)
+        return real(line)
+
+    monkeypatch.setattr(preflight, "_code_spans", counting)
+    lines = ["`a.png` and ``b.png`` and c.png, `d.png`",  # four names and backticks: one reading
+             "`a backtick and no name`",                   # a backtick, and no name to place
+             "a.png, b.png and c.png: no backtick here",   # names, and no backtick to place them
+             "`a.png` once more"]
+    preflight.check_asset_references("README.md", "\n".join(lines) + "\n",
+                                     {"badge.png": "img/badge.png"})
+    assert read == [lines[0], lines[3]]
+
+
+def test_the_asset_check_does_not_search_a_markdown_line_that_holds_no_backtick(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    # Outside a code block no name of such a line can count, so the line is passed by and its
+    # names are not even looked for. In a code block, and in a file that is not Markdown, every
+    # line is searched.
+    preflight = _preflight()
+    searched: list[str] = []
+    real = preflight.ASSET_SUFFIX_IN_TEXT
+
+    class Searching:
+        def finditer(self, text: str) -> Any:
+            searched.append(text)
+            return real.finditer(text)
+
+    monkeypatch.setattr(preflight, "ASSET_SUFFIX_IN_TEXT", Searching())
+    text = "a.png here\n`b.png` here\n```\nc.png in a block\n```\nd.png after the block\n"
+    assets = {"badge.png": "img/badge.png"}
+    preflight.check_asset_references("README.md", text, assets)
+    assert searched == ["`b.png` here", "c.png in a block"]
+    searched.clear()
+    preflight.check_asset_references("notes.txt", text, assets)
+    assert searched == text.split("\n")
+
+
 def test_a_json_web_token_glued_to_a_hyphen_is_a_known_limit(plugin: Path) -> None:
     # The pattern starts a token where no letter, digit, '_' or '-' comes before it: a '-' in front
     # would let every 'eyJ' of a long 'eyJ-eyJ-' run start a scan (a quadratic). This pins the price,
@@ -825,6 +873,90 @@ def test_the_asset_check_does_not_grow_with_the_square_of_a_long_line() -> None:
 
     small, large = cost(10_000), cost(40_000)
     assert large < small * 8 + 0.05
+
+
+def _in_a_span(line: str, to_the_end: bool) -> list[bool]:
+    """Whether each character of ``line`` is inside an inline code span, by the rule and as plainly
+    as it can be written (quadratic, on purpose): from each opening run, forward to the next run of
+    exactly its length. ``to_the_end`` is how the check reads an opening run that no run matches (a
+    span to the end of the line); False is how CommonMark reads it (plain text, reading goes on)."""
+    inside = [False] * len(line)
+    at = 0
+    while at < len(line):
+        if line[at] != "`":
+            at += 1
+            continue
+        after = at
+        while after < len(line) and line[after] == "`":
+            after += 1
+        size, close, look = after - at, None, after
+        while look < len(line) and close is None:
+            if line[look] != "`":
+                look += 1
+                continue
+            stop = look
+            while stop < len(line) and line[stop] == "`":
+                stop += 1
+            if stop - look == size:
+                close = look
+            look = stop
+        if close is None and to_the_end:
+            inside[after:] = [True] * (len(line) - after)
+            return inside
+        if close is None:
+            at = after
+            continue
+        inside[after:close] = [True] * (close - after)
+        at = close + size
+    return inside
+
+
+def _a_name_counts(preflight: Any, text: str, name: str, to_the_end: bool) -> bool:
+    """Whether ``text`` (a Markdown file) holds ``name`` where it counts: in a fenced block, or in a
+    span (read as ``_in_a_span`` says). The place that is tested is where the suffix starts."""
+    fenced = False
+    for line in text.lower().split("\n"):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        inside = _in_a_span(line, to_the_end)
+        at = line.find(name)
+        while at >= 0:
+            end = at + len(name)
+            alone = ((at == 0 or not preflight._in_name(line[at - 1]))
+                     and (end == len(line) or not preflight._in_name(line[end])))
+            if alone and (fenced or inside[at + name.rindex(".")]):
+                return True
+            at = line.find(name, at + 1)
+    return False
+
+
+def test_the_asset_check_agrees_with_a_slow_reading_of_the_rule_on_random_texts() -> None:
+    # Texts of a few lines made of backticks, letters, spaces and the name, read by the check and
+    # by a quadratic reading that is written as the rule says. The sample is seeded, so it is the
+    # same on every run: 20,000 texts, about half a second of CPU time.
+    preflight = _preflight()
+    assets = {"badge.png": "img/badge.png"}
+    index = preflight._asset_index(assets)
+    pieces = ["`", "`", "`", "``", "```", "````", " ", " ", "a", "b", "x", "-", "\t",
+              "badge.png", "badge.png", "BADGE.PNG", "~~~", "\n"]
+    rng = random.Random(163)
+    warned = over_warned = 0
+    for _ in range(20_000):
+        text = "".join(rng.choice(pieces) for _ in range(rng.randint(1, 24)))
+        found = bool(preflight.check_asset_references("README.md", text, assets, frozenset(),
+                                                      index))
+        assert found is _a_name_counts(preflight, text, "badge.png", True), repr(text)
+        # Never silent where the one-line reading of CommonMark warns (the limits that the
+        # docstring lists, such as a span over two lines, are not part of that reading). The check
+        # warns where it does not only for an opening run that no run matches, the one reading
+        # that is meant to differ.
+        commonmark = _a_name_counts(preflight, text, "badge.png", False)
+        assert found or not commonmark, repr(text)
+        warned += found
+        over_warned += found and not commonmark
+    # Both sides were tried: texts it warns on, texts it does not, and the meant difference.
+    assert 2_000 < warned < 18_000 and over_warned > 500, (warned, over_warned)
 
 
 def _image_findings(plugin: Path, rel: str, data: bytes) -> set[str]:
@@ -1324,6 +1456,43 @@ def test_no_check_of_a_text_costs_the_square_of_a_repeated_unit() -> None:
             if len(slow) >= 5:  # a real square costs seconds here, not the whole sweep
                 break
     assert not slow, slow
+
+
+def _runs_of_growing_length(size: int) -> str:
+    """` `` ``` ````...: one run of each length, 1, 2, 3 and so on, so that no run has a partner,
+    and a name after each, so that the spans of the line are read."""
+    parts: list[str] = []
+    total = 0
+    while total < size:
+        parts.append("`" * (len(parts) + 1) + " x.png ")
+        total += len(parts[-1])
+    return "".join(parts)[:size]
+
+
+def _single_backticks(size: int) -> str:
+    """One long line of spans made of single backticks, with a name inside each and one between."""
+    return ("`a.png` b.png " * (size // 14 + 1))[:size]
+
+
+@pytest.mark.parametrize("make", [_runs_of_growing_length, _single_backticks],
+                         ids=["runs of growing length, none with a partner", "single backticks"])
+def test_the_code_spans_of_a_long_line_cost_no_more_than_the_line(
+        make: Callable[[int], str]) -> None:
+    # A careless reading finds the spans of the line again for every name, or scans them for each
+    # name: either is a square on the second shape, a long line of spans with a name in each. The
+    # first shape holds the longest runs and none with a partner, but only about sqrt(2n) runs, so
+    # a cost that grows with the square of the number of runs is still linear in n there: a doubling
+    # does not see that, and this test does not claim to.
+    check = _preflight().check_asset_references
+    assets = {"badge.png": "img/badge.png"}
+
+    def cost(size: int) -> float:
+        text = make(size) + "\n"
+        started = time.process_time()
+        check("big.md", text, assets, frozenset())
+        return time.process_time() - started
+
+    assert _grows_like_a_square(cost, 24_000) is None
 
 
 # The readers of an image have their own shapes: many small places, many cuts at a NUL, many

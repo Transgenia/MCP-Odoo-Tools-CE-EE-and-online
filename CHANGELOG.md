@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **For maintainers: the directory preflight reads Markdown code spans by their backtick runs.**
+  A name written in a double-backtick span, which is valid inline code, was missed because the
+  check counted backtick characters. It now reads a span as CommonMark does on one line (a run of
+  n backticks closes at the next run of n), so a name in such a span is found and a name after a
+  closed span is not. A run that nothing closes counts to the end of the line, which warns where
+  CommonMark would not, and a backslash before a backtick is not read. Nothing that the plugin
+  does, reads or sends changes.
+
 ## [1.6.4] - 2026-11-14
 
 Nothing that the plugin does, reads or sends changes. Anthropic's directory refused v1.6.3

@@ -77,10 +77,11 @@ text: the doubling test of server/tests/test_directory_preflight_gate.py repeats
 hundred units (hand-written ones on six kinds of input, the words of this module's own patterns
 on two) at a second size when the first is not trivial, and a unit that looks quadratic is measured
 again and fails only if three tries agree (a burst of load on the machine does not repeat). The
-readers of an image have a doubling test of their own, on six shapes, and the shapes that stalled
-the gate are kept as tests. That measures the shapes it tries, and a quadratic whose cost is far
-below its floors is not seen: it is not a proof for every input. A crafted file under the 5 MiB read
-limit can still be slow, and the checker has no clock of its own.
+readers of an image have a doubling test of their own, on six shapes, and so has the reading of
+the code spans of a Markdown line, on two. The shapes that stalled the gate are kept as tests.
+That measures the shapes it tries, and a quadratic whose cost is far below its floors is not seen:
+it is not a proof for every input. A crafted file under the 5 MiB read limit can still be slow, and
+the checker has no clock of its own.
 """
 
 from __future__ import annotations
@@ -233,6 +234,8 @@ ASSET_SUFFIX_IN_TEXT = re.compile(r"\.(?:png|jpe?g|gif|webp|ico|woff2?|ttf|otf|e
 # one of them, and says so), and the longest name it looks for.
 ASSET_NAME_STOP = re.compile(r"[\s/\\\"'`()<>\[\]{},;|=*?:]")
 MAX_ASSET_NAME = 255
+# A maximal run of backticks: what opens and what closes an inline code span in Markdown.
+BACKTICK_RUN = re.compile(r"`+")
 # Keys that start a program on the user's computer or declare one.
 LOCAL_CODE_KEYS = {
     "hooks": ("LOCAL_CODE_HOOK_COMMAND", PORTAL),
@@ -2110,13 +2113,53 @@ def _asset_index(assets: dict[str, str]) -> AssetIndex:
     return {suffix: tuple(sorted(found)) for suffix, found in sizes.items()}, checkable
 
 
+def _code_spans(line: str) -> tuple[list[int], list[int]]:
+    """Where the inline code spans of one line of Markdown start and end, as two sorted lists.
+
+    A span starts after its opening run of backticks and ends where its closing run starts: the
+    next run of exactly as many backticks on the line (CommonMark reads a span over several lines
+    too: not here). An opening run that no later run of its length matches is read as opening a
+    span that lasts to the end of the line, where CommonMark reads it as plain text: a name after
+    it is inside, and the check warns rather than stays silent. Linear in the line: one pass from
+    the right finds, for each run, the next run of its length, and one pass from the left pairs
+    them and goes on after the closing run, so that what a span holds is not read again.
+    """
+    runs = [run.span() for run in BACKTICK_RUN.finditer(line)]
+    partner = [-1] * len(runs)
+    nearest: dict[int, int] = {}  # a length -> the nearest run of that length to the right
+    for index in range(len(runs) - 1, -1, -1):
+        begin, end = runs[index]
+        partner[index] = nearest.get(end - begin, -1)
+        nearest[end - begin] = index
+    starts: list[int] = []
+    ends: list[int] = []
+    index = 0
+    while index < len(runs):
+        starts.append(runs[index][1])
+        closing = partner[index]
+        if closing < 0:
+            ends.append(len(line))  # nothing of its length follows: the span lasts to the end
+            break
+        ends.append(runs[closing][0])
+        index = closing + 1  # on after the closing run: what the span holds is not read again
+    return starts, ends
+
+
 def check_asset_references(rel: str, text: str, assets: dict[str, str],
                            skip: frozenset[str] = frozenset(),
                            index: AssetIndex | None = None) -> list[Finding]:
     """UNREAD_ASSET_REFERENCED: a text that names, by file name, an image or font of the folder.
 
-    In Markdown only a name in backticks or in a code block counts (the checklist's wording: a
-    bundled image is shown with Markdown image syntax). Anywhere else any mention counts. A name
+    In Markdown only a name in an inline code span or in a fenced code block counts (the
+    checklist's wording: a bundled image is shown with Markdown image syntax). Anywhere else any
+    mention counts. A span is read on one line, as CommonMark reads it: a run of n backticks
+    opens a span that the next run of exactly n backticks closes, and a name counts when its
+    suffix starts between the two (so ``name.png`` and ```name.png``` count, ``a ` b`` name.png
+    does not). A run that no later run of its length matches is read as opening a span to the end
+    of the line: the check warns rather than stays silent, which over-warns on ``a `b` name.png
+    (a name that CommonMark puts outside). Not read: a span that goes on in the next line, a
+    backslash before a backtick, an indented code block, and a line that starts with three
+    backticks or tildes and holds more text (a fence line, as the fence rule reads it). A name
     is a name when the character before it and the character after it are not a letter, a digit,
     '_' or '-' (or a combining mark): favicon.png and icon.pngx are other names than icon.png,
     while @icon.png, a.icon.png and a name that ends a sentence (icon.png.) are that name. The
@@ -2139,18 +2182,23 @@ def check_asset_references(rel: str, text: str, assets: dict[str, str],
         if markdown and line.lstrip().startswith(("```", "~~~")):
             fenced = not fenced
             continue
+        if markdown and not fenced and "`" not in line:
+            continue  # no backtick, no code span: no name of this line counts
         low = line.lower()
-        ticks, counted = 0, 0  # the backticks before position ``counted`` of this line
+        span_starts: list[int] | None = None  # where the code spans of this line start, found once
+        span_ends: list[int] = []
         stops: list[int] | None = None  # where a character that ends a name sits, once per line
         for hit in ASSET_SUFFIX_IN_TEXT.finditer(low):
             sizes = by_suffix.get(hit.group(0))
             if not sizes:
                 continue
             if markdown and not fenced:
-                ticks += low.count("`", counted, hit.start())
-                counted = hit.start()
-                if ticks % 2 == 0:
-                    continue  # in Markdown only a name in backticks or a code block counts
+                if span_starts is None:
+                    span_starts, span_ends = _code_spans(low)
+                # the last span that starts at or before the hit holds it if it ends after it
+                last = bisect_right(span_starts, hit.start()) - 1
+                if last < 0 or hit.start() >= span_ends[last]:
+                    continue  # in Markdown only a name in a code span or a code block counts
             end = hit.end()
             if end < len(low) and _in_name(low[end]):
                 continue
