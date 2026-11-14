@@ -12,11 +12,14 @@ and 5). They say nothing about whether the directory accepts it: only Anthropic 
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+import tarfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -190,12 +193,122 @@ def test_the_edition_is_versioned_with_the_repository() -> None:
         assert f"distribution/directory/{name}" in tracked, name
 
 
-def test_the_full_local_plugin_still_fails_the_three_portal_rules() -> None:
-    # Calibration: Anthropic's check refused v1.6.1 for these three rules. The preflight
-    # reproduces them for the repository root, which is why the full plugin cannot be the
-    # plugin path of a submission and the edition is a folder of its own.
+def test_the_editions_own_icon_is_a_note_and_an_assumption() -> None:
+    # Nothing in the portal's reviews shows that the plugin's own icon is exempt from
+    # UNREAD_ASSET_REFERENCED, so the edition's report says so in a note, and its gate stays clean
+    # on that assumption. If the portal holds the edition for it, this is the line to look at.
+    report = _preflight().run(EDITION)
+    named = [f for f in report["findings"] if f["code"] == "UNREAD_ASSET_REFERENCED"]
+    assert [(f["severity"], f["path"]) for f in named] == [("info", ".claude-plugin/plugin.json")]
+    assert report["summary"]["error"] == 0 and report["summary"]["warning"] == 0
+
+
+def test_the_full_local_plugin_still_fails_the_four_portal_rules() -> None:
+    # Calibration: Anthropic's check refused v1.6.1 for three rules and v1.6.3 for four (it added
+    # the fields outside its lists). The preflight reproduces them for the repository root, which
+    # is why the full plugin cannot be the plugin path of a submission and the edition is a
+    # folder of its own.
     _tracked()  # skips outside a git checkout
     report = _preflight().run(ROOT, tracked=True)
     errors = {f["code"] for f in report["findings"] if f["severity"] == "error"}
-    assert {"LOCAL_CODE_HOOK_COMMAND", "LOCAL_CODE_MCP_SERVER",
-            "LOCAL_CODE_FILE_TYPE"} <= errors
+    assert {"LOCAL_CODE_HOOK_COMMAND", "LOCAL_CODE_MCP_SERVER", "LOCAL_CODE_FILE_TYPE",
+            "LOCAL_CODE_UNKNOWN_KEY"} <= errors
+
+
+def test_the_root_shows_the_edition_as_a_claude_plugin_folder_that_is_not_its_own() -> None:
+    # The portal's v1.6.3 text refuses "each .claude-plugin folder but the plugin's own". Scanned
+    # from the root, the edition is such a folder; scanned as the plugin path, it is the plugin's
+    # own and the folder has no error at all.
+    _tracked()
+    report = _preflight().run(ROOT, tracked=True)
+    folders = {f["path"] for f in report["findings"] if f["code"] == "LOCAL_CODE_FILE_TYPE"
+               and f["message"].startswith("a .claude-plugin folder")}
+    assert "distribution/directory/.claude-plugin" in folders
+    assert _preflight().run(EDITION)["summary"]["error"] == 0
+
+
+# The portal's lists for v1.6.3 (commit 35f0235, printed 2026-11-13; the review names no file
+# for its four blocking findings). The preflight was calibrated on these and on the v1.6.1 lists.
+CALIBRATION_COMMIT = "35f0235a58a834d8f4d1f282a20193b817b5d105"  # the whole hash: it cannot grow ambiguous
+PORTAL_V163 = {
+    "MCP_FORWARDS_CREDENTIAL_ENV": {
+        "scripts/build_mcpb.py", "scripts/deploy_local.py", "scripts/directory_preflight.py",
+        "server/src/odoo_mcp/config.py", "server/tests/test_audit.py",
+        "server/tests/test_diagnostics.py", "server/tests/test_directory_preflight.py",
+        "server/tests/test_directory_preflight_gate.py", "server/tests/test_guided_route.py",
+        "server/tests/test_install_check.py", "server/tests/test_mcpb_bundle.py",
+        "server/tests/test_session_start_hook.py", ".claude-plugin/plugin.json"},
+    "RUNTIME_FETCH_EXEC": {
+        "CHANGELOG.md", "docs/design/json2-online-lite.md", "docs/directory-channel.md",
+        "evals/README.md", "scripts/directory_preflight.py",
+        "server/tests/test_directory_preflight.py",
+        "server/tests/test_directory_preflight_gate.py", "server/tests/test_docs_surfaces.py"},
+    "UNREAD_ASSET_REFERENCED": {
+        "server/tests/test_directory_edition.py", "server/tests/test_directory_preflight.py",
+        "server/tests/test_directory_preflight_gate.py",
+        "distribution/directory/.claude-plugin/plugin.json"},
+    "ASSETS_PASSED_UNREAD": {"distribution/directory/.claude-plugin/icon.png"},
+}
+
+
+def _git(*args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(["git", *args], check=False, cwd=ROOT, capture_output=True, timeout=60)
+
+
+def _cannot_run(reason: str) -> None:
+    """Skip, on a machine where the history is not there; fail in CI, where it must be.
+
+    A skip is green: a job added without the full history would drop this guard in silence.
+    GitHub sets CI=true in every job, and every job that runs these tests fetches the history.
+    """
+    if os.environ.get("CI"):
+        pytest.fail(f"{reason}: the calibration test must run in CI (check out with "
+                    "fetch-depth: 0)")
+    pytest.skip(reason)
+
+
+def _export(commit: str, target: Path) -> None:
+    """The files of ``commit`` under ``target`` (a commit never changes, a work tree does)."""
+    try:
+        have = _git("cat-file", "-e", commit + "^{commit}").returncode == 0
+        shallow = _git("rev-parse", "--is-shallow-repository").stdout.strip() == b"true"
+    except (OSError, subprocess.SubprocessError) as exc:
+        _cannot_run(f"git cannot be run here ({type(exc).__name__})")
+        return
+    if not have:
+        _cannot_run("this checkout is shallow (a clone with history has the commit)" if shallow
+                    else f"commit {commit} is not in this checkout")
+        return
+    archive = subprocess.run(["git", "archive", commit], cwd=ROOT, capture_output=True,
+                             check=True, timeout=60).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        for member in tar.getmembers():
+            parts = PurePosixPath(member.name).parts
+            if not member.isfile() or ".." in parts or PurePosixPath(member.name).is_absolute():
+                continue
+            handle = tar.extractfile(member)
+            assert handle is not None
+            path = target.joinpath(*parts)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(handle.read())
+
+
+def test_the_preflight_still_finds_every_file_the_portal_listed_for_v163(tmp_path: Path) -> None:
+    # A regression test of recall, on the exact files the portal scanned (not on this work tree,
+    # which moves). A rule that stops finding one of them has lost what it was calibrated on.
+    _export(CALIBRATION_COMMIT, tmp_path)
+    report = _preflight().run(tmp_path)
+
+    def where(code: str) -> set[str]:
+        return {f["path"] for f in report["findings"] if f["code"] == code}
+
+    for code, listed in PORTAL_V163.items():
+        assert listed <= where(code), (code, sorted(listed - where(code)))
+    # Where the reading fits exactly, keep it exact: no file the portal did not list.
+    assert where("UNREAD_ASSET_REFERENCED") == PORTAL_V163["UNREAD_ASSET_REFERENCED"]
+    assert where("ASSETS_PASSED_UNREAD") == PORTAL_V163["ASSETS_PASSED_UNREAD"]
+    errors = {f["code"] for f in report["findings"] if f["severity"] == "error"}
+    assert {"LOCAL_CODE_HOOK_COMMAND", "LOCAL_CODE_MCP_SERVER", "LOCAL_CODE_FILE_TYPE",
+            "LOCAL_CODE_UNKNOWN_KEY"} <= errors
+    # The review of v1.6.3 has no INVENTORY_GAPS, and the two SKILL.md that had one are quoted.
+    assert not where("INVENTORY_GAPS") and not where("FRONTMATTER")
