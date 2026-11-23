@@ -219,6 +219,9 @@ class FallbackTransport:
         self._warned_fallback = False
         self._notice_logged = False
         self._sleep = sleep
+        # The user's context when the sign-in went over JSON-2 (it calls
+        # res.users.context_get anyway), else None.
+        self.signin_context: dict[str, Any] | None = None
 
     # -- lazy transport builders -------------------------------------------
     def _xmlrpc(self) -> XmlRpcTransport:
@@ -417,6 +420,9 @@ class FallbackTransport:
                 self._pinned = "json2"
             else:
                 self._frozen = kinds
+        self.signin_context = (
+            getattr(self._j2, "signin_context", None) if kind == "json2" else None
+        )
         return uid
 
     def execute_kw(

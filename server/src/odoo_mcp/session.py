@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 import threading
 from dataclasses import dataclass, field
@@ -16,9 +17,27 @@ from .compat import EnvFacts, probe
 from .errors import ConfigError
 from .transport.fallback import FallbackTransport
 
+log = logging.getLogger(__name__)
+
 # Per process, never persisted or logged: it keys the HMAC of the secret in
 # Credentials.session_key(), so a key from one process means nothing in another.
 _SESSION_SALT = secrets.token_bytes(32)
+
+# Without a "lang" in the context Odoo answers translatable fields in en_US, the
+# language of the source text, whatever the user's own language. The session adds
+# the default language (ODOO_DEFAULT_LANG) to these read methods only; writes and
+# every other method are sent as the caller wrote them.
+LANG_READ_METHODS = frozenset(
+    {
+        "read", "search_read", "search", "search_count", "name_search", "name_get",
+        "web_read", "web_search_read", "web_name_search", "read_group",
+        "formatted_read_group", "web_read_group", "export_data", "fields_get",
+        "search_fetch", "fetch",
+    }
+)
+# Odoo 10 to 12 also read a context passed positionally; a second one by name
+# would reach the method as an unexpected keyword. From 13 on only kwargs count.
+_KWARGS_CONTEXT_ONLY_SINCE = 13
 
 
 @dataclass
@@ -59,7 +78,7 @@ class OdooSession:
     """A single authenticated connection to one Odoo instance."""
 
     def __init__(self, creds: Credentials, *, timeout: int = 30, transport_pref: str = "auto",
-                 cache_ttl: int = 300) -> None:
+                 cache_ttl: int = 300, default_lang: str = "user") -> None:
         if not (creds.url and creds.db and creds.login and creds.secret):
             raise ConfigError("incomplete Odoo credentials (need url, db, login, secret)")
         self.creds = creds
@@ -72,6 +91,10 @@ class OdooSession:
         # Reentrant: facts() holds the lock while probe() may call
         # module_installed() -> execute() -> uid, which takes it again.
         self._lock = threading.RLock()
+        # "user", "off" or a language code (config.default_lang_setting); the
+        # language itself is known once the sign-in resolved it.
+        self.default_lang_mode = default_lang
+        self._lang: str | None = None
 
     # -- auth ---------------------------------------------------------------
     @property
@@ -79,10 +102,63 @@ class OdooSession:
         if self._uid is None:
             with self._lock:
                 if self._uid is None:
-                    self._uid = self.transport.authenticate(
+                    uid = self.transport.authenticate(
                         self.creds.db, self.creds.login, self.creds.secret
                     )
+                    self._lang = self._resolve_lang(uid)
+                    self._uid = uid
         return self._uid
+
+    @property
+    def default_lang(self) -> str | None:
+        """The language reads get when the caller sets none, once signed in."""
+        return self._lang
+
+    def _resolve_lang(self, uid: int) -> str | None:
+        """The default read language, once per sign-in. Never raises: on any
+        error reads keep Odoo's own default (en_US), as before."""
+        mode = self.default_lang_mode
+        if mode == "off":
+            return None
+        db, secret = self.creds.db, self.creds.secret
+        try:
+            if mode == "user":
+                context = getattr(self.transport, "signin_context", None)
+                if not isinstance(context, dict) or "lang" not in context:
+                    context = self.transport.execute_kw(
+                        db, uid, secret, "res.users", "context_get", [], {})
+                lang = context.get("lang") if isinstance(context, dict) else None
+                return lang if isinstance(lang, str) and lang else None
+            active = self.transport.execute_kw(
+                db, uid, secret, "res.lang", "search_count", [[["code", "=", mode]]], {})
+        except Exception as exc:  # a default must never break the sign-in
+            log.warning("default language not resolved, reads stay in en_US: %s", exc)
+            return None
+        if not active:
+            log.warning("ODOO_DEFAULT_LANG=%s is not an active language in this Odoo; "
+                        "reads stay in en_US", mode)
+            return None
+        return mode
+
+    def _with_default_lang(self, method: str, args: list[Any],
+                           kwargs: dict[str, Any]) -> dict[str, Any]:
+        """``kwargs`` with the default language in its context, for a read whose
+        caller set no ``lang`` (an explicit one, ``False`` included, wins). The
+        caller's dict is never changed."""
+        lang = self._lang
+        # en_US is what Odoo reads without a lang: nothing to add, nothing changes.
+        if not lang or lang == "en_US" or method not in LANG_READ_METHODS:
+            return kwargs
+        context = kwargs.get("context")
+        if context is None:
+            context = {}
+        elif not isinstance(context, dict) or "lang" in context:
+            return kwargs
+        facts = self._facts
+        if any(isinstance(arg, dict) for arg in args) and (
+                facts is None or facts.version < _KWARGS_CONTEXT_ONLY_SINCE):
+            return kwargs  # may be a positional context (Odoo 10 to 12): leave it alone
+        return {**kwargs, "context": {**context, "lang": lang}}
 
     @property
     def authenticated(self) -> bool:
@@ -102,15 +178,19 @@ class OdooSession:
         method when given apart from ``args`` (``odoo_execute``): JSON-2 sends
         them as ``"ids"``, the legacy transports as the first positional arg.
         ``transports`` limits the call to those transport kinds (e.g.
-        ``("json2", "jsonrpc")``); it is never replayed over another one."""
+        ``("json2", "jsonrpc")``); it is never replayed over another one.
+        A read without ``lang`` in its context gets the default language
+        (``ODOO_DEFAULT_LANG``, the Odoo user's own by default)."""
         extra: dict[str, Any] = {}
         if ids is not None:
             extra["ids"] = ids
         if transports is not None:
             extra["transports"] = tuple(transports)
+        uid = self.uid  # signs in first, which resolves the default language
+        args = args or []
+        kwargs = self._with_default_lang(method, args, kwargs or {})
         return self.transport.execute_kw(
-            self.creds.db, self.uid, self.creds.secret, model, method, args or [],
-            kwargs or {}, **extra,
+            self.creds.db, uid, self.creds.secret, model, method, args, kwargs, **extra,
         )
 
     def version_info(self) -> dict[str, Any]:

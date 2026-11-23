@@ -180,6 +180,9 @@ class Json2Transport:
         self._warned_header = False
         # (db, model, method) -> the signature a 422 bind error taught us
         self._learned: dict[tuple[str, str, str], Signature] = {}
+        # The user's context from the last sign-in (res.users.context_get):
+        # OdooSession takes its "lang" from it instead of asking again.
+        self.signin_context: dict[str, Any] | None = None
 
     # -- HTTP ------------------------------------------------------------------
     def _request(
@@ -358,6 +361,7 @@ class Json2Transport:
                 "to the login of the key's owner, or create a key while signed in as "
                 "ODOO_LOGIN"
             )
+        self.signin_context = dict(context)
         return uid
 
     # -- ORM calls -------------------------------------------------------------

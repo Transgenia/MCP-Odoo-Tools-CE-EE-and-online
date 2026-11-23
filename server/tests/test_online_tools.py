@@ -1001,8 +1001,10 @@ def test_session_execute_passes_transports_only_when_given() -> None:
             seen.append(kwargs)
             return True
 
+    # default_lang="off": this test counts transport extras, not the sign-in's
+    # context_get (test_default_lang.py covers that).
     session = OdooSession(Credentials(url="https://odoo.example", db="db", login="admin",
-                                      secret=KEY))
+                                      secret=KEY), default_lang="off")
     session.transport = Transport()  # type: ignore[assignment]
     session.execute("res.partner", "search", [[]])
     session.execute("res.partner", "load", [[], []], transports=IMPORT_TRANSPORTS)
@@ -1124,6 +1126,8 @@ def test_jsonrpc_import_on_18_with_a_password(fake: FakeOdoo) -> None:
     def orm(model: str, method: str, args: list[Any], kwargs: dict[str, Any]) -> Any:
         if method == "search_count":
             return 0
+        if (model, method) == ("res.users", "context_get"):  # the sign-in's language
+            return {"lang": "es_MX", "tz": "UTC", "uid": 2}
         assert (model, method) == ("res.partner", "load")
         return {"ids": [11], "messages": [], "nextrow": 0}
 

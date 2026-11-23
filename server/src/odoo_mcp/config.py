@@ -65,6 +65,21 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+# An Odoo language code: es_MX, de_DE, es_419, sr@latin, ...
+_LANG_CODE = re.compile(r"^[A-Za-z]{2,3}(?:_[A-Za-z0-9]{2,4})?(?:@[A-Za-z]+)?$")
+
+
+def default_lang_setting(raw: str) -> str:
+    """``ODOO_DEFAULT_LANG``: "user" (unset, empty, ``user`` or not a language
+    code), "off" (``off``, ``none``, ``false``, ``0``, ``no``) or a code."""
+    value = raw.strip()
+    if value.lower() in ("off", "none", "false", "0", "no"):
+        return "off"
+    if not value or value.lower() == "user" or not _LANG_CODE.match(value):
+        return "user"
+    return value
+
+
 @dataclass
 class Settings:
     """Server-wide settings, loaded from the process environment."""
@@ -101,6 +116,10 @@ class Settings:
     audit_retention_days: int = 90
     # The local diagnostics (odoo_mcp.diagnostics): a folder, or "off"; unset is off.
     diag_dir: str = ""
+    # The language reads ask for when the caller sets none (odoo_mcp.session):
+    # "user" (the Odoo user's own language), "off" (Odoo's default, en_US, as
+    # before 1.7.0) or a language code such as "es_MX".
+    default_lang: str = "user"
 
     extra: dict = field(default_factory=dict)
 
@@ -133,6 +152,7 @@ class Settings:
             audit_dir=_env("ODOO_AUDIT_DIR").strip(),
             audit_retention_days=min(max(_get_int("ODOO_AUDIT_RETENTION_DAYS", 90), 0), 3650),
             diag_dir=_env("ODOO_DIAG_DIR").strip(),
+            default_lang=default_lang_setting(_env("ODOO_DEFAULT_LANG")),
         )
 
     def redacted(self) -> dict:

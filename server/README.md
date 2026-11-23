@@ -31,7 +31,8 @@ the repository's `docker/` folder.
 Configure via environment: `ODOO_URL`, `ODOO_DB`, `ODOO_LOGIN`,
 `ODOO_API_KEY` (or `ODOO_PASSWORD`). Optional: `ODOO_TRANSPORT_PREF`
 (`auto`|`jsonrpc`|`xmlrpc`), `ODOO_TIMEOUT`, `ODOO_CACHE_TTL`, `ODOO_METRICS`,
-`ODOO_OTEL_ENDPOINT`.
+`ODOO_OTEL_ENDPOINT`, `ODOO_DEFAULT_LANG` (`user`|`off`|a code such as `es_MX`:
+the language of reads that set no `lang`).
 
 See the repository root README for the full plugin, the CLI fallback, and the
 compatibility matrix.
