@@ -326,9 +326,24 @@ standalone (`python3 server/run_stdio.py` from a checkout, `odoo-mcp` after
 | `ODOO_AUDIT_DIR` | no | audit folder; `stderr` (the default outside the plugin) or `off` |
 | `ODOO_AUDIT_RETENTION_DAYS` | no | days an audit file is kept (default 90, `0` keeps them) |
 | `ODOO_CACHE_TTL` | no | int (seconds) |
+| `ODOO_DEFAULT_LANG` | no | language of reads that set no `lang`: `user` (default, the Odoo user's own language), `off` (Odoo's default, `en_US`) or a code such as `es_MX` (see [Read language](#read-language)) |
 | `ODOO_METRICS`, `ODOO_OTEL_ENDPOINT` | no | optional observability |
 
 \* one of `ODOO_API_KEY` or `ODOO_PASSWORD`.
+
+#### Read language
+
+Odoo answers translatable fields (product names, descriptions, labels) in `en_US`
+when a call carries no `lang` in its context, whatever the user's own language is.
+The server therefore asks Odoo once per sign-in for the user's language and adds it
+to the context of read methods (`read`, `search_read`, `search`, `search_count`,
+`name_search`, `read_group`, `export_data`, `fields_get` and the other pure reads).
+A `lang` you pass in `kwargs.context` always wins, also `false`. Writes and every
+other method are sent as written, and the translation tools pass their own `lang`.
+`ODOO_DEFAULT_LANG=off` restores Odoo's default; a code such as `es_MX` fixes the
+language for every read (it must be an active language in that Odoo). The plugin
+has no option for it yet; when you run the server standalone or in Docker, set the
+variable in its environment.
 
 ### Tools
 

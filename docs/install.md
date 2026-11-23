@@ -144,9 +144,11 @@ pip install ./server && odoo-mcp
 Environment when running the server outside the plugin (see the root README for
 the full table): `ODOO_URL`, `ODOO_DB`, `ODOO_LOGIN`, `ODOO_API_KEY` (or
 `ODOO_PASSWORD`), and optionally `ODOO_POLICY` (default `standard`),
-`ODOO_POLICY_FILE`, `ODOO_AUDIT_DIR` (a folder, `stderr` by default, or `off`) and
-`ODOO_AUDIT_RETENTION_DAYS` (default 90). Inside the plugin these are filled from
-the plugin options.
+`ODOO_POLICY_FILE`, `ODOO_AUDIT_DIR` (a folder, `stderr` by default, or `off`),
+`ODOO_AUDIT_RETENTION_DAYS` (default 90) and `ODOO_DEFAULT_LANG` (the language of
+reads that set no `lang`: `user` by default, `off`, or a code such as `es_MX`).
+Inside the plugin these are filled from the plugin options, except
+`ODOO_DEFAULT_LANG`, which has no option yet.
 
 Check a policy file before you configure it (offline, nothing is sent to Odoo):
 

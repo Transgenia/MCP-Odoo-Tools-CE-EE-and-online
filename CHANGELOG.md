@@ -8,6 +8,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ### Changed
 
+- **Reads come back in the Odoo user's language.** Without a `lang` in the context, Odoo
+  answers translatable fields (product names, descriptions, labels) in `en_US`, the language of
+  the source text, whatever the user's own language is; a database whose `en_US` text was never
+  translated hid this. The server now asks Odoo once per sign-in for the user's language
+  (`res.users.context_get`; on JSON-2 it reuses the call the sign-in already makes) and adds it to
+  the context of read methods only (`read`, `search_read`, `search`, `search_count`,
+  `name_search`, `read_group`, `formatted_read_group`, `web_read`, `web_search_read`,
+  `export_data`, `fields_get` and the other pure reads listed in `odoo_mcp.session`). A `lang`
+  the caller sets wins, `False` included, so `odoo_translate_get`, `odoo_translate_set` and an
+  `odoo_execute` with its own context send exactly what they sent before. Writes and every other
+  method are sent as written. A user whose language is `en_US`, or who has none, sees no change.
+  On Odoo 10 to 12 a read with an object among its positional arguments is left alone, since
+  those versions may take it as the context. If Odoo does not answer, a warning is logged and
+  reads behave as before. New variable `ODOO_DEFAULT_LANG`: `user` (default), `off` (the
+  previous behaviour, no extra call) or a language code such as `es_MX` (checked once against
+  the active languages). The plugin has no option for it yet; outside the plugin (standalone
+  or Docker) set it in the server's environment.
 - **For maintainers: the directory preflight reads Markdown code spans by their backtick runs.**
   A name written in a double-backtick span, which is valid inline code, was missed because the
   check counted backtick characters. It now reads a span as CommonMark does on one line (a run of

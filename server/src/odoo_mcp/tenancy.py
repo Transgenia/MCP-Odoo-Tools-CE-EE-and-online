@@ -32,6 +32,7 @@ class ConnectionManager:
             timeout=self.settings.timeout,
             transport_pref=self.settings.transport_pref,
             cache_ttl=self.settings.cache_ttl,
+            default_lang=self.settings.default_lang,
         )
 
     def get(self, creds: Credentials) -> OdooSession:
