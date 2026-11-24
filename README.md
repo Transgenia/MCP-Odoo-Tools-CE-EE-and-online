@@ -7,6 +7,8 @@
 > account, or ask Transgenia for assisted setup (dev@transgenia.org, WhatsApp
 > +52 55 8034 0405). See [Where it works](#where-it-works).
 
+The [directory candidate for Cowork](distribution/directory/README.md) uses the Odoo connector already authorized by each organization. Its connection check reads the Odoo server version. The instructions below apply to the full local edition.
+
 [![CI](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml/badge.svg)](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](server/pyproject.toml)

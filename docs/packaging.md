@@ -1,7 +1,7 @@
 # Packaging tiers
 
 This repo ships the **Standard** package: free, MIT-licensed, public. It also holds the
-code-free directory edition (below), which no artifact carries.
+code-free directory edition (below), which is packaged separately from the Standard release.
 Enterprise and Teams editions will live in **separate packages/repos** later:
 nothing in this repo is gated, stubbed, or phone-home licensed.
 
@@ -81,12 +81,13 @@ Two channels leave this repository ([`docs/directory-channel.md`](directory-chan
   marketplace (`.claude-plugin/marketplace.json`, source `./`). Anthropic does not review
   a plugin installed from a marketplace you add yourself. The release zip lists its
   folders and does not carry `distribution/`.
-- **Channel B, the directory edition.** `distribution/directory`, a code-free plugin
-  folder of its own with its own version in `distribution/directory/.claude-plugin/plugin.json`
-  (`scripts/check_release_version.py` reads only the root manifests and leaves it alone).
-  The directory scans only the folder given as the plugin path, and a submission cannot
-  change its folder, so the edition is a **new** submission with that path; the live
-  `odoo-tools` listing keeps pointing at the repository root. It is not submitted.
+- **Channel B, the directory edition.** The source in `distribution/directory` keeps
+  the `odoo-tools` name and supplies skills and commands for an existing Odoo connector.
+  Export this directory as the entire root of the dedicated `directory/odoo-tools`
+  branch for the existing listing. Verify that the source folder and the branch root
+  have the same Git tree ID. The root of `main` distributes the full local plugin.
+  The portal can change its tracked branch. The listing's repository and folder are fixed.
+  See the [directory review and publication procedure](directory-channel.md#current-directory-candidate).
 
 The edition is checked by `scripts/directory_preflight.py` (CI job `directory-edition`)
 and `server/tests/test_directory_edition.py`. The preflight is Transgenia's own check,

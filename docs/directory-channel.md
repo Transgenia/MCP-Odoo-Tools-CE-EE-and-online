@@ -1,5 +1,71 @@
 # Distribution channels and Anthropic's directory
 
+## Current directory candidate
+
+The review of 23 November 2026 refused `b59da4d` (v1.6.4). The portal fetched 236
+files from the repository root. Validation returned two notes, the directory policy
+refused the version, the security scan was skipped and no reviewer action was recorded
+for this commit. The previous v1.6.4 scan (`8c39c6b`) had a passing security scan.
+The published version shown on the Review tab was v1.4.0 (`26de374`). The Versions
+tab also records a waiting publish request for v1.3.0 (`d322cb9`).
+
+For the v1.6.5 candidate the product owner chose the existing Odoo connector authorized
+by each organization. The directory package supplies two skills and two commands.
+It binds no host and installs no connector. In Cowork, the selected connector supplies
+the tools and authenticates the user. The local plugin from Transgenia's marketplace
+retains its server. This candidate supersedes the earlier proposal for a separate
+reference-only guide described in the historical sections below.
+
+| Portal finding at b59da4d | How the directory candidate addresses it |
+|---|---|
+| MCP_FORWARDS_CREDENTIAL_ENV | The package has no credential input, environment reader or process. The user signs in through their own connector. The privacy notice identifies who handles the query and the result. |
+| UPDATE_ADDS_CREDENTIAL_FORWARD | The manifest declares no server, headers, options or destination that could receive an Odoo credential. The portal compares the exact candidate to its live version. |
+| LOCAL_CODE_HOOK_COMMAND | The package declares and ships no hook. The user requests the connection check explicitly. |
+| LOCAL_CODE_MCP_SERVER | The user's connector supplies the tool. The directory package contains no executable, server entry or launcher. |
+| LOCAL_CODE_FILE_TYPE | The package inventory is pinned by a test. It consists of Markdown, a single JSON manifest, the text license and one PNG icon. |
+| LOCAL_CODE_UNKNOWN_KEY | The only JSON file is the plugin manifest. The test enumerates its fields. There is no package manager, MCP or hook configuration. |
+| LOCAL_CODE_NOT_READ | The old review named no unreadable file. Validate the exported root with the directory profile and inspect its component inventory. The portal must also read that commit. |
+| UNREAD_ASSET_REFERENCED, ASSETS_PASSED_UNREAD | The sole image is the listing icon. Only the manifest references it. No command consumes the image. |
+| UNKNOWN_KEY, UNKNOWN_KEY_CROSS_TOOL | Keep the four listing URLs and the icon. The portal explicitly describes these five fields as listing metadata that can stay. |
+| RUNTIME_FETCH_EXEC, FILE_REGISTRY_REDIRECT | The directory package has no installer, package configuration, download-and-run command or instruction to fetch executable content. |
+| USES_HOOKS, LOCAL_MCP_SERVER, STDIO_WEB_UNSUPPORTED | These describe the full local distribution. The directory package has no hook or local server. |
+| INVENTORY_GAPS (earlier history) | Both skills and both commands must appear in the validator inventory. Directory policy and security-scan results must be read for the candidate itself. |
+
+### Reproducing the submitted tree
+
+The existing listing tracks the repository root. From a reviewed source commit,
+use `git subtree split --prefix=distribution/directory <source-commit>` and publish
+the resulting commit to the dedicated `directory/odoo-tools` branch. Compare
+`git rev-parse <source-commit>:distribution/directory` with
+`git rev-parse <distribution-commit>^{tree}`. They must match. Fast-forward future
+updates to this branch. The directory reviews exactly what an installation receives.
+The repository root on the development branch contains the full local product.
+
+1. Run the local preflight on the directory folder with `--fail-on warning`. Run
+   `claude plugin validate --profile directory --strict --json` on the exported
+   plugin folder. Check the inventory, the directory findings and the incomplete flag.
+2. In a Cowork task with the candidate installed, select the organization's Odoo
+   connector and run `/odoo-tools:odoo-doctor`. Verify a successful read-only version
+   call under that connector. With no connector, the command must explain how to
+   connect and must not report a live version. Record the candidate and observed
+   result without account, database or customer identifiers.
+   When there is no Claude model budget, run the [offline connector scenarios in
+   Codex Cloud](../evals/cowork-connector/README.md). Record the simulated tool calls
+   separately from a run inside the Cowork application.
+3. In the existing listing's Settings, changing the tracked branch starts a new
+   scan. Saving the change cancels a waiting publish request. A new commit replaces
+   the prior refused version for appeal purposes. Confirm this transition with the
+   listing owner and record the publish setting before saving.
+4. Read policy, security scan, reviewer decision and publication separately for the
+   distribution commit. Record the owner's acceptance of the runtime evidence and
+   Anthropic's clearance before releasing 1.6.5 through the standard workflow. Keep the development
+   branch, the distribution commit, and the full release tag distinct in the record.
+
+See Anthropic's [submission and tracked branch instructions](https://claude.com/docs/plugins/submit)
+and [plugin support by app](https://claude.com/docs/plugins/platform-support).
+
+## Historical review notes through 14 November 2026
+
 Draft for the product owner, written on 2026-11-10 after the directory refused
 v1.6.1 and updated on 2026-11-14 after it refused v1.6.3. The code-free edition has not
 been submitted to Anthropic. Where a fact comes from Anthropic's

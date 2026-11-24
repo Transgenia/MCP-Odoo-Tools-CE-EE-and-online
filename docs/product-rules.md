@@ -24,6 +24,10 @@ Transgenia can help.
 
 ## 2. Honest on every surface
 
+The directory edition uses the Odoo connector selected by the organization. It has no
+local server or plugin options. The restrictions on the bundled server below describe
+the full local edition.
+
 Where the Odoo tools cannot run, the plugin says so the first time it matters, in
 plain words: in Cowork and Claude chat the Odoo tools do not run, by design of
 those apps, and nothing is wrong with the user's account, Odoo or Python. It

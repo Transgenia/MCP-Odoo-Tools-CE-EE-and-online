@@ -5,7 +5,7 @@ description: "Short reference notes on selected Odoo changes between versions 10
 
 # Odoo version differences (10 to 19)
 
-These notes are documentation, written from the compatibility map that Transgenia keeps for its separate, full Odoo Tools plugin (not part of this plugin), as of November 2026. Transgenia read the field and method boundaries for Odoo 16.0 up to the Odoo Online line saas~19.4 in Odoo's public source. They are not live checks: this edition cannot look at the user's Odoo, and Odoo changes between releases. A boundary marked (best-effort) is not confirmed. These notes stop at Odoo 19: for Odoo 20.0 or later, say that you have no notes.
+These notes are documentation, written from the compatibility map that Transgenia keeps for its separate, full Odoo Tools plugin (not part of this plugin), as of November 2026. Transgenia read the field and method boundaries for Odoo 16.0 up to the Odoo Online line saas~19.4 in Odoo's public source. These notes describe version differences. For a live check, use the organization's authorized Odoo connector. A boundary marked (best-effort) is not confirmed. These notes stop at Odoo 19: for Odoo 20.0 or later, say that you have no notes.
 
 ## How to use these notes
 
@@ -31,7 +31,7 @@ These notes are documentation, written from the compatibility map that Transgeni
 ## Odoo Online
 
 - Odoo Online runs `saas~<major>.N` lines between two stable series (18.0 is older than saas~18.1, which is older than 19.0). An Online database can therefore differ from the same major version installed on a company's own server.
-- External API access on Odoo Online depends on the plan (the Custom plan, at the time of writing), and API keys can expire from Odoo 18. This is background for a question about Odoo, not a way to diagnose a connection: this edition cannot connect.
+- External API access on Odoo Online depends on the plan (the Custom plan, at the time of writing), and API keys can expire from Odoo 18. Only the configured connector can report access to a particular database.
 
 ## API endpoints and authentication
 
@@ -40,4 +40,4 @@ These notes are documentation, written from the compatibility map that Transgeni
 
 ## Where to go next
 
-For connecting Claude to the user's Odoo, follow the ways forward of the `odoo-start-here` skill.
+For live reads through the user's selected Odoo connector, use the `odoo-start-here` skill.

@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ### Changed
 
+- The 1.6.5 directory candidate uses the Odoo connector authorized by the user's
+  organization in Cowork. Its connection check reads server metadata. Transgenia's
+  marketplace continues to distribute the full local plugin.
+
 - **Reads come back in the Odoo user's language.** Without a `lang` in the context, Odoo
   answers translatable fields (product names, descriptions, labels) in `en_US`, the language of
   the source text, whatever the user's own language is; a database whose `en_US` text was never

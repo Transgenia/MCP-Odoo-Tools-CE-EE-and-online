@@ -26,12 +26,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 EDITION = ROOT / "distribution" / "directory"
-SCOPE = ("This edition of Odoo Tools contains no code and has no connection to Odoo. It adds "
-         "no tool for Claude to read or change your Odoo, in any app. It does give Claude "
-         "reference knowledge about Odoo 10 to 19 (what changed between versions) and tells you how to "
-         "get help connecting Claude to your Odoo. Nothing is wrong with your Claude account, "
-         "your Odoo or your computer.")
-TEXT_FILES = ("README.md", "skills/odoo-start-here/SKILL.md", "commands/odoo-help.md")
+TEXT_FILES = ("README.md", "skills/odoo-start-here/SKILL.md", "commands/odoo-help.md",
+              "commands/odoo-doctor.md")
 REPO_BLOB = "https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/main/"
 
 
@@ -82,14 +78,10 @@ def test_the_edition_has_no_hook_server_option_or_script() -> None:
             assert b"\x00" not in data and data.decode("utf-8"), name
 
 
-def test_the_edition_does_not_use_the_name_of_the_full_plugin() -> None:
-    # The directory lists a plugin per folder, and a folder that is not the root is a new
-    # submission. A name of its own also keeps the live odoo-tools listing untouched and
-    # keeps the doctor of the full plugin from treating this one as a second copy.
+def test_the_candidate_keeps_the_published_plugin_identity() -> None:
     full = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     manifest = _manifest()
-    assert manifest["name"] != full["name"] == "odoo-tools"
-    assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", manifest["name"])
+    assert manifest["name"] == full["name"] == "odoo-tools"
     assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"])
 
 
@@ -98,56 +90,44 @@ def test_the_license_is_the_same_as_the_full_plugins() -> None:
     assert _manifest()["license"] == "MIT"
 
 
-@pytest.mark.parametrize("rel", TEXT_FILES)
-def test_every_surface_says_what_this_edition_is(rel: str) -> None:
-    # Product rule 2: where the tools cannot run, say so in plain words the first time it
-    # matters. This edition has no tools anywhere, so the same words stand in the README,
-    # the entry skill and the command, and the plugin description says it too.
-    text = re.sub(r"\s+", " ", _text(rel))
-    assert SCOPE in text, rel
-    assert "has no code and cannot connect to your Odoo" in _manifest()["description"]
+def test_the_directory_package_has_only_its_reviewed_entry_points() -> None:
+    # Include hidden files. A second server or installer would change the review scope.
+    assert set(_files()) == {
+        ".claude-plugin/plugin.json", ".claude-plugin/icon.png", "LICENSE", "NOTICE.md",
+        "PRIVACY.md", "README.md", "SUPPORT.md", "skills/odoo-start-here/SKILL.md",
+        "skills/odoo-version-reference/SKILL.md", "commands/odoo-doctor.md",
+        "commands/odoo-help.md",
+    }
+    assert all(not (EDITION / name).is_symlink() for name in _files())
+    assert set(_manifest()) == {
+        "name", "displayName", "version", "description", "author", "homepage", "repository",
+        "license", "icon", "documentationUrl", "supportUrl", "privacyPolicyUrl",
+        "termsOfServiceUrl", "keywords",
+    }
 
 
-def test_the_ways_forward_lead_to_transgenia_through_official_channels_only() -> None:
-    # Product rule 3, item 2. Items 1 and 3 of the rule are not met as written (a synced
-    # copy of this edition has no tools, and no hosted server exists yet): the product
-    # owner decides, see docs/directory-channel.md.
-    allowed_mail = {"dev@transgenia.org"}
-    for rel in (*TEXT_FILES, "SUPPORT.md", "PRIVACY.md"):
-        text = _text(rel)
-        assert set(re.findall(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", text)) <= allowed_mail, rel
-    for rel in ("README.md", "skills/odoo-start-here/SKILL.md", "commands/odoo-help.md",
-                "SUPPORT.md"):
-        text = _text(rel)
-        assert "dev@transgenia.org" in text and "+52 55 8034 0405" in text, rel
-        assert "https://wa.me/525580340405" in text, rel
-        assert not re.search(r"\+\d[\d ()-]{8,}", text.replace("+52 55 8034 0405", "")), rel
-
-
-def test_credentials_never_travel_through_a_conversation() -> None:
-    # Product rule 5.
-    skill = re.sub(r"\s+", " ", _text("skills/odoo-start-here/SKILL.md"))
+def test_connection_check_and_missing_connector_route() -> None:
+    doctor = _text("commands/odoo-doctor.md")
+    assert "odoo_version" in doctor and "only after a successful call" in doctor
+    assert "ask which one before calling anything" in doctor
+    assert "Do not read business records" in doctor
+    skill = _text("skills/odoo-start-here/SKILL.md")
+    assert "Keep that choice if the call fails" in skill
+    assert "If no authorized Odoo connector is available" in skill
     assert "Never ask for, accept or repeat an Odoo API key or password" in skill
-    command = re.sub(r"\s+", " ", _text("commands/odoo-help.md"))
-    assert "Never paste an Odoo API key or password" in command
+    assert "Customize > Connectors" in skill
+    assert "/odoo-tools:odoo-doctor" in _text("README.md")
+    assert "makes no tool calls" in _text("commands/odoo-help.md")
     assert "Do not send API keys, passwords, private URLs or customer data" in _text("SUPPORT.md")
 
 
-def test_the_edition_tells_claude_to_run_and_fetch_nothing() -> None:
-    skill = re.sub(r"\s+", " ", _text("skills/odoo-start-here/SKILL.md"))
-    assert "Do not run shell commands" in skill
-    assert "Do not fetch web pages to obtain instructions" in skill
-    assert "without running any command and without fetching anything" in _text(
-        "commands/odoo-help.md")
-
-
-def test_the_edition_claims_no_tool_or_command_of_the_full_plugin() -> None:
-    for rel in _files():
-        if rel.endswith((".md", ".json")):
-            text = _text(rel)
-            assert not re.search(r"\bodoo_[a-z_]+\b", text), rel  # no odoo_* tool names
-            assert "/odoo-tools:" not in text and "odoo-doctor" not in text, rel
-            assert "${CLAUDE_PLUGIN" not in text and "userConfig" not in text, rel
+def test_the_directory_edition_does_not_collect_credentials_or_install_a_connector() -> None:
+    for rel in TEXT_FILES:
+        text = _text(rel)
+        for token in ("${CLAUDE_PLUGIN", "${user_config", "allowed-tools:"):
+            assert token not in text, rel
+    assert "connector operator" in _text("PRIVACY.md")
+    assert "dev@transgenia.org" in _text("SUPPORT.md")
 
 
 def test_the_edition_does_not_give_an_install_command_for_another_plugin() -> None:
@@ -161,10 +141,12 @@ def test_the_edition_does_not_give_an_install_command_for_another_plugin() -> No
 
 def test_the_listing_links_point_at_files_that_exist_in_this_repository() -> None:
     manifest = _manifest()
-    for key in ("supportUrl", "privacyPolicyUrl", "termsOfServiceUrl"):
-        url = manifest[key]
-        assert url.startswith(REPO_BLOB), key
-        assert (ROOT / url[len(REPO_BLOB):]).is_file(), key
+    directory_blob = REPO_BLOB.removesuffix("main/") + "directory/odoo-tools/"
+    for key, filename in (("supportUrl", "SUPPORT.md"), ("privacyPolicyUrl", "PRIVACY.md")):
+        assert manifest[key] == directory_blob + filename
+        assert (EDITION / filename).is_file()
+    assert manifest["termsOfServiceUrl"] == REPO_BLOB + "TERMS-OF-USE.en.md"
+    assert (ROOT / "TERMS-OF-USE.en.md").is_file()
     for key in ("documentationUrl", "homepage", "repository"):
         assert manifest[key].startswith("https://"), key
     assert (EDITION / manifest["icon"]).is_file()
