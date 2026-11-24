@@ -1,23 +1,13 @@
-# Privacy: Odoo Tools Guide
+# Privacy for Odoo Tools in the Claude directory
 
-This edition collects nothing. It has no code, no hooks, no servers, no network calls, no analytics and no storage of its own. Its files are instructions and reference text that Claude reads inside your conversation.
+This edition contains instructions, reference notes and a listing icon. It has no server, local program, settings form, analytics or storage of its own. Installing the plugin does not grant access to an Odoo database.
 
-## Who handles your conversation
+## Live Odoo questions
 
-Your conversation with Claude is handled by the Claude app and the model provider you use, under their terms and privacy policy (for Anthropic's own apps, Anthropic's). Transgenia receives nothing from this plugin and cannot see your conversations.
+When you request a lookup, Claude sends its tool arguments to the Odoo connector you have enabled. Depending on the question, these can include model names, field names and search filters. The connector queries its configured Odoo instance under your existing permissions. The returned data is available to Claude in your task. A connection check requests only server version information.
 
-## If you contact Transgenia
+Your Claude provider, connector operator and Odoo administrator handle that data under their own terms and retention settings. The plugin specifies no destination for Odoo requests and sends no telemetry to Transgenia. If your organization uses a connector operated by Transgenia, that separate service handles the connector traffic under its own terms.
 
-If you write to Transgenia by e-mail or WhatsApp, Transgenia receives what you choose to send and handles it under its privacy notice: https://transgenia.org/en/legal-privacy.html (Spanish: https://transgenia.org/legal-privacidad.html). E-mail and WhatsApp are run by other companies, under their own terms. Do not send API keys, passwords, private URLs or customer data.
+## Credentials and support
 
-## Credentials
-
-This plugin never asks for an Odoo API key or password and has no place to store one.
-
-## The full local edition
-
-The full local edition of Odoo Tools is a separate plugin with its own privacy policy: https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/main/PRIVACY.md
-
-## Contact
-
-Requests about your personal data: follow the privacy notice above. Technical questions: dev@transgenia.org
+Use your connector's sign-in interface. Never paste API keys or passwords into a conversation. If you contact Transgenia, it receives what you choose to send. Do not send API keys, passwords, private URLs or customer data. The support email is dev@transgenia.org. [Transgenia privacy notice](https://transgenia.org/en/legal-privacy.html).

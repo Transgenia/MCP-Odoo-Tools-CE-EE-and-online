@@ -1,6 +1,6 @@
 # Notice
 
-Odoo Tools Guide
+Odoo Tools (directory edition)
 Copyright (c) 2026 Transgenia (Centrum Transgenia SAS)
 
 This plugin is licensed under the MIT License (see LICENSE). It contains text and one image only, written by Transgenia, and no third-party code.

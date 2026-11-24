@@ -1,42 +1,21 @@
-# Odoo Tools Guide
+# Odoo Tools for Cowork
 
-This edition of Odoo Tools contains no code and has no connection to Odoo. It adds no tool for Claude to read or change your Odoo, in any app. It does give Claude reference knowledge about Odoo 10 to 19 (what changed between versions) and tells you how to get help connecting Claude to your Odoo. Nothing is wrong with your Claude account, your Odoo or your computer.
+Ask Claude a question about your Odoo database using the Odoo connector your organization has already authorized. For example, ask how many confirmed sales orders match a date range or which fields are available on a model. The directory edition provides instructions and a version reference. Your selected connector provides the live data and enforces access.
 
-It is published by [Transgenia](https://transgenia.org). It is an independent tool: it is not affiliated with or endorsed by Odoo S.A. or by Anthropic. If your Claude app already has another Odoo connector, keep using it: this plugin does not replace or change it.
+## Check the connection
 
-## What is in this plugin
+1. Open a Cowork task in the Claude organization that owns the connection. Under Customize > Connectors, check that the intended Odoo connector is connected and available to this task.
+2. Run `/odoo-tools:odoo-doctor`. If several Odoo connections are visible, select the one you intend. The command asks that connector for the server version. It does not open business records.
+3. Ask your question. For example: "Using that Odoo connection, count confirmed sales orders for last month." Claude uses the read operations your connector offers and identifies any limitation that affects its answer.
 
-- Skill `odoo-start-here`: says what this edition is, what it is not, and how to get help.
-- Skill `odoo-version-reference`: reference notes on what changed in Odoo between versions 10 and 19 (models, fields, API endpoints, Odoo Online lines).
-- Command `/odoo-tools-guide:odoo-help`: shows the scope of this edition and the ways forward.
+Use `/odoo-tools:odoo-help` for setup help. Without a connected Odoo tool you can still ask about the version differences covered in this plugin.
 
-All of it is plain text (Markdown and JSON) and one image. It needs no Python, no Node and no Docker, and it has no settings to fill in.
+## Moving from the older directory version
 
-## Example prompts
+The previous directory version started its own server in Claude Code. This edition uses the organization's existing connection in Cowork or another Claude app that exposes it. It does not import old local settings, start a server, install software, or supply the local deployment and CLI commands. The connector may expose different operations or permissions. The local edition for Claude Code is maintained separately. See the [manual](https://docs.transgenia.org/odoo-tools/).
 
-- "On Odoo 16 or later, which field replaces analytic_account_id on account.move.line?"
-- "My Odoo Online database is on saas~19.2 and read_group fails. Why, and what do I use instead?"
-- "Can I still connect to Odoo 19 with XML-RPC and a password? What replaces it?"
+## Privacy and support
 
-## What it does not do
+Odoo queries and results pass through Claude and the connector you select. Sign in through that connector's own interface. Never put an API key or password in a conversation or support message. For help, contact dev@transgenia.org or WhatsApp +52 55 8034 0405. [Privacy](PRIVACY.md) and [support](SUPPORT.md).
 
-- It does not run programs, hooks or servers on your computer.
-- It does not connect to Odoo, to Transgenia or to any other service.
-- It does not send, fetch or store anything. The skills and the command are instructions for Claude written in this folder, and none of them tells Claude to fetch instructions from anywhere else.
-- It does not ask for, accept or keep Odoo API keys or passwords.
-
-## Ways forward
-
-In this order:
-
-1. The full local edition connects Claude to your Odoo with a program that runs on your own computer, in Claude Code (terminal, VS Code, JetBrains, or a local session of the Code tab of Claude Desktop). It does not run in Claude chat or in Cowork. It is a separate plugin published by Transgenia on GitHub and is not included in this plugin. Anthropic's directory review does not cover a plugin you add from GitHub: add it only if you trust its publisher. The instructions are in the manual: https://docs.transgenia.org/odoo-tools/
-2. Assisted setup by Transgenia, a service that you contract through its official channels only: dev@transgenia.org and WhatsApp +52 55 8034 0405 (https://wa.me/525580340405).
-
-## Credentials
-
-Never paste an Odoo API key or password into a conversation with Claude, an e-mail or a message. Transgenia never asks for them either. If you pasted an API key by mistake, delete that key in Odoo (Preferences > Account Security) and create a new one. If you pasted a password, change it in Odoo now.
-
-## Privacy, support and license
-
-- Privacy: [PRIVACY.md](PRIVACY.md). Support: [SUPPORT.md](SUPPORT.md).
-- MIT license: [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md). "Odoo" is a trademark of Odoo S.A.; this is an independent tool, not affiliated with or endorsed by Odoo S.A.
+Published by Transgenia under the [MIT license](LICENSE). Odoo is a trademark of Odoo S.A.
