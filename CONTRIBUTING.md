@@ -56,9 +56,10 @@ pytest -q -m "not live"
 ## Directory edition
 
 `distribution/directory` is the plugin folder of the code-free edition meant for
-Anthropic's directory (not submitted yet; [`docs/directory-channel.md`](docs/directory-channel.md)).
+the existing Odoo Tools listing. Its skills use the organization's authorized Odoo connector.
+See the [directory review record](docs/directory-channel.md).
 Keep it to Markdown, JSON and one PNG: no hook, no MCP server, no option, no script, no
-instruction that makes Claude run or fetch anything. Never rename, hide or re-encode a
+instruction to install software, run a local process or fetch external instructions. Never rename, hide or re-encode a
 file to make a check pass; take the file out. Before you change it:
 
 ```bash

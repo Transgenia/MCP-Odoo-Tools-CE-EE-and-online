@@ -59,7 +59,7 @@ jobs:
   directory-edition:
     name: directory edition (preflight)
     # Transgenia's own check of distribution/directory, the code-free edition meant for
-    # Anthropic's directory (not submitted yet), with that folder as the plugin path. It is
+    # the directory. The distribution branch uses these same files at its root. It is
     # not Anthropic's scanner and a pass is not an approval (docs/directory-channel.md).
     # ubuntu-24.04 because actions/setup-python has no Python 3.9 for ubuntu-latest.
     runs-on: ubuntu-24.04
