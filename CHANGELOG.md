@@ -4,11 +4,11 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.5]
 
 ### Changed
 
-- The 1.6.5 directory candidate uses the Odoo connector authorized by the user's
+- The 1.6.5 directory edition uses the Odoo connector authorized by the user's
   organization in Cowork. Its connection check reads server metadata. Transgenia's
   marketplace continues to distribute the full local plugin.
 
