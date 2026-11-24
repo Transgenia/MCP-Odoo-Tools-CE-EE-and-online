@@ -92,3 +92,10 @@ def test_a_skipped_tag_job_does_not_skip_the_rest() -> None:
             continue
         condition = job.split("    if: ", 1)[1].split("\n    runs-on", 1)[0] if "    if: " in job else ""
         assert "!cancelled()" in condition, name
+
+
+def test_standard_zip_includes_the_published_terms_of_use() -> None:
+    step = _jobs()["build-standard"].split("- name: Build standard plugin zip", 1)[1]
+    inputs = step.split("zip -r", 1)[1].split("-x ", 1)[0].split()
+    for name in ("TERMS-OF-USE.en.md", "TERMS-OF-USE.es.md"):
+        assert name in inputs, name

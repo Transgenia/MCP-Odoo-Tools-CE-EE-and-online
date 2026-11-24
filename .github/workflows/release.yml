@@ -181,7 +181,7 @@ jobs:
           VERSION="${TAG#v}"
           zip -r "odoo-tools-standard-${VERSION}.zip" \
             .claude-plugin agents skills commands context hooks cli docs server scripts docker \
-            README.md SUPPORT.md SECURITY.md PRIVACY.md CHANGELOG.md CONTRIBUTING.md LICENSE NOTICE \
+            README.md SUPPORT.md SECURITY.md PRIVACY.md CHANGELOG.md CONTRIBUTING.md LICENSE NOTICE TERMS-OF-USE.en.md TERMS-OF-USE.es.md \
             -x "cli/node_modules/*" "cli/.env" "server/dist/*" "server/.venv/*" \
                "*/__pycache__/*" "server/.pytest_cache/*" "server/.ruff_cache/*"
       - name: Release notes (this version only)
