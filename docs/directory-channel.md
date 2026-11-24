@@ -50,7 +50,7 @@ The repository root on the development branch contains the full local product.
    connect and must not report a live version. Record the candidate and observed
    result without account, database or customer identifiers.
    When there is no Claude model budget, run the [offline connector scenarios in
-   Codex Cloud](../evals/cowork-connector/README.md). Record the simulated tool calls
+   Codex Cloud](https://github.com/Transgenia/MCP-Odoo-Tools-CE-EE-and-online/blob/8739fd097e4028ad782b5ac3da225ccf3f21a0ec/evals/cowork-connector/README.md). Record the simulated tool calls
    separately from a run inside the Cowork application.
 3. In the existing listing's Settings, changing the tracked branch starts a new
    scan. Saving the change cancels a waiting publish request. A new commit replaces
