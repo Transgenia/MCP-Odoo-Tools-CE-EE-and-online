@@ -20,6 +20,8 @@ The [directory edition for Cowork](https://github.com/Transgenia/MCP-Odoo-Tools-
 
 **Links:** [Homepage](https://transgenia.org/mcp-transgenia-odoo.html) · [Documentation](https://docs.transgenia.org/odoo-tools/) · [Support](SUPPORT.md) (dev@transgenia.org, WhatsApp +52 55 8034 0405) · [Privacy policy](PRIVACY.md) · [Terms of use](TERMS-OF-USE.en.md) · [License: MIT](LICENSE)
 
+**Start with the Odoo Tools guide.** Choose your Claude setup, compare Odoo versions, and practice your first read-only query. [Español](https://transgenia.org/mcp-odoo-tools/) · [English](https://transgenia.org/en/mcp-odoo-tools/) · [中文](https://transgenia.org/zh/mcp-odoo-tools/)
+
 A **Claude Code plugin** that unifies Odoo tooling into one install. Its skills and
 commands also load in Cowork and Claude chat, but the Odoo tools themselves run in
 Claude Code only (see [Where it works](#where-it-works)):
