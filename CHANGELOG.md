@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.6] - 2026-11-25
+
+### Documentation
+
+- Link the Standard plugin README to the practical Odoo Tools guide in Spanish,
+  English and Chinese. It includes setup by Claude environment, version examples
+  and exercises for read-only queries.
+- The Standard archive now includes the English and Spanish terms of use. Its
+  README links to the directory edition at the reviewed commit on GitHub.
+
 ## [1.6.5]
 
 ### Changed
